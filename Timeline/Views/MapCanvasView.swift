@@ -1,6 +1,7 @@
 import SwiftUI
 import MapKit
 import AppKit
+import QuartzCore
 
 struct MapCanvasView: View {
     @Environment(TimelineStore.self) private var store
@@ -19,6 +20,8 @@ struct MapCanvasView: View {
             if store.selectedDay != nil || store.selectedPlace != nil {
                 SelectionCard()
                     .padding(20)
+                    .id(store.selectedDayID)
+                    .transition(.opacity)
             }
         }
         .background(Palette.ink)
@@ -125,6 +128,16 @@ private struct TimelineKitMap: NSViewRepresentable {
         private var lastHoverID: String?
         private var lastRouteGeneration: UInt64 = 0
         private var lastVisitFocusID: String?
+        private var overlayRenderers: [ObjectIdentifier: MKOverlayRenderer] = [:]
+        private var contentTick: UInt64 = 0
+        private var pathTick: UInt64 = 0
+        private var annotationFadeIn = false
+        private var contentInFlight = false
+        private var latestDay: DayRecord?
+        private var latestPlace: PlaceRecord?
+        private var latestRouted: [[CLLocationCoordinate2D]] = []
+        private var latestRouteGeneration: UInt64 = 0
+        private var latestVisitFocusID: String?
         var onSelectVisit: ((String) -> Void)?
 
         func sync(
@@ -144,17 +157,35 @@ private struct TimelineKitMap: NSViewRepresentable {
             onSelectVisit: @escaping (String) -> Void
         ) {
             self.onSelectVisit = onSelectVisit
+            latestDay = day
+            latestPlace = place
+            latestRouted = routed
+            latestRouteGeneration = routeGeneration
+            latestVisitFocusID = visitFocusID
             if dayID != lastDayID || placeID != lastPlaceID {
                 lastDayID = dayID
                 lastPlaceID = placeID
-                lastRouteGeneration = routed.isEmpty ? 0 : routeGeneration
+                lastRouteGeneration = routeGeneration
                 lastVisitFocusID = visitFocusID
-                rebuild(map: map, day: day, place: place, routed: routed)
                 lastHoverID = nil
+                pathTick &+= 1
+                contentInFlight = true
+                crossfade(map: map) {
+                    self.contentInFlight = false
+                    self.rebuild(
+                        map: map,
+                        day: self.latestDay,
+                        place: self.latestPlace,
+                        routed: self.latestRouted
+                    )
+                    self.lastRouteGeneration = self.latestRouteGeneration
+                    self.lastVisitFocusID = self.latestVisitFocusID
+                }
             } else if routeGeneration != lastRouteGeneration || visitFocusID != lastVisitFocusID {
                 lastRouteGeneration = routeGeneration
                 lastVisitFocusID = visitFocusID
-                replacePaths(map: map, day: day, routed: routed)
+                if contentInFlight { return }
+                crossfadePaths(map: map, day: latestDay, routed: latestRouted)
             }
             if generation != lastGeneration {
                 lastGeneration = generation
@@ -175,7 +206,88 @@ private struct TimelineKitMap: NSViewRepresentable {
             }
         }
 
+        private func crossfade(map: MKMapView, rebuild: @escaping () -> Void) {
+            contentTick &+= 1
+            let tick = contentTick
+            let vacant = map.overlays.isEmpty && map.annotations.isEmpty
+            let install = {
+                guard tick == self.contentTick else { return }
+                self.annotationFadeIn = true
+                rebuild()
+                for overlay in map.overlays {
+                    self.overlayRenderers[ObjectIdentifier(overlay)]?.alpha = 0
+                }
+                self.fadeMap(map, to: 1, duration: 0.32, token: tick)
+            }
+            if vacant {
+                install()
+                return
+            }
+            fadeMap(map, to: 0, duration: 0.18, token: tick, completion: install)
+        }
+
+        private func crossfadePaths(map: MKMapView, day: DayRecord?, routed: [[CLLocationCoordinate2D]]) {
+            pathTick &+= 1
+            let tick = pathTick
+            let stale = map.overlays.filter { $0 is PathPolyline || $0 is DashPolyline }
+            fadeOverlays(stale, to: 0, duration: 0.16, stillCurrent: { tick == self.pathTick }) {
+                guard tick == self.pathTick else { return }
+                map.removeOverlays(stale)
+                stale.forEach { self.overlayRenderers.removeValue(forKey: ObjectIdentifier($0)) }
+                guard let day = self.latestDay else { return }
+                self.addDayPaths(map: map, day: day, routed: self.latestRouted)
+                let fresh = map.overlays.filter { $0 is PathPolyline || $0 is DashPolyline }
+                fresh.forEach { self.overlayRenderers[ObjectIdentifier($0)]?.alpha = 0 }
+                self.fadeOverlays(fresh, to: 1, duration: 0.28, stillCurrent: { tick == self.pathTick })
+            }
+        }
+
+        private func fadeMap(_ map: MKMapView, to alpha: CGFloat, duration: TimeInterval, token: UInt64, completion: (() -> Void)? = nil) {
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = duration
+                context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+                for annotation in map.annotations {
+                    map.view(for: annotation)?.animator().alphaValue = alpha
+                }
+            }
+            fadeOverlays(map.overlays, to: alpha, duration: duration, stillCurrent: { token == self.contentTick }, completion: completion)
+        }
+
+        private func fadeOverlays(
+            _ overlays: [MKOverlay],
+            to alpha: CGFloat,
+            duration: TimeInterval,
+            stillCurrent: @escaping () -> Bool,
+            completion: (() -> Void)? = nil
+        ) {
+            let renderers = overlays.compactMap { overlayRenderers[ObjectIdentifier($0)] }
+            guard !renderers.isEmpty else {
+                DispatchQueue.main.asyncAfter(deadline: .now() + duration) {
+                    guard stillCurrent() else { return }
+                    completion?()
+                }
+                return
+            }
+            let start = renderers.map(\.alpha)
+            let begun = CACurrentMediaTime()
+            func frame() {
+                guard stillCurrent() else { return }
+                let u = min(1, (CACurrentMediaTime() - begun) / duration)
+                let t = u * u * (3 - 2 * u)
+                for (index, renderer) in renderers.enumerated() {
+                    renderer.alpha = start[index] + (alpha - start[index]) * t
+                }
+                if u < 1 {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.0 / 60.0, execute: frame)
+                } else {
+                    completion?()
+                }
+            }
+            frame()
+        }
+
         private func rebuild(map: MKMapView, day: DayRecord?, place: PlaceRecord?, routed: [[CLLocationCoordinate2D]]) {
+            overlayRenderers.removeAll(keepingCapacity: true)
             map.removeOverlays(map.overlays)
             map.removeAnnotations(map.annotations)
             hoverOverlay = nil
@@ -198,13 +310,6 @@ private struct TimelineKitMap: NSViewRepresentable {
                 pin.semantic = place.semanticType
                 map.addAnnotation(pin)
             }
-        }
-
-        private func replacePaths(map: MKMapView, day: DayRecord?, routed: [[CLLocationCoordinate2D]]) {
-            let stale = map.overlays.filter { $0 is PathPolyline || $0 is DashPolyline }
-            map.removeOverlays(stale)
-            guard let day else { return }
-            addDayPaths(map: map, day: day, routed: routed)
         }
 
         private func addDayPaths(map: MKMapView, day: DayRecord, routed: [[CLLocationCoordinate2D]]) {
@@ -243,28 +348,42 @@ private struct TimelineKitMap: NSViewRepresentable {
         }
 
         func mapView(_ mapView: MKMapView, rendererFor overlay: MKOverlay) -> MKOverlayRenderer {
+            let renderer: MKOverlayRenderer
             if let circle = overlay as? MKCircle {
-                let renderer = MKCircleRenderer(circle: circle)
-                renderer.fillColor = NSColor(red: 0.78, green: 0.36, blue: 0.22, alpha: 0.22)
-                renderer.strokeColor = NSColor(red: 0.93, green: 0.89, blue: 0.82, alpha: 0.85)
-                renderer.lineWidth = 1.5
-                return renderer
-            }
-            if let line = overlay as? MKPolyline {
-                let renderer = MKPolylineRenderer(polyline: line)
+                let circleRenderer = MKCircleRenderer(circle: circle)
+                circleRenderer.fillColor = NSColor(red: 0.78, green: 0.36, blue: 0.22, alpha: 0.22)
+                circleRenderer.strokeColor = NSColor(red: 0.93, green: 0.89, blue: 0.82, alpha: 0.85)
+                circleRenderer.lineWidth = 1.5
+                renderer = circleRenderer
+            } else if let polyline = overlay as? MKPolyline {
+                let line = MKPolylineRenderer(polyline: polyline)
                 if overlay is DashPolyline {
-                    renderer.strokeColor = NSColor(red: 0.16, green: 0.45, blue: 0.42, alpha: 0.55)
-                    renderer.lineWidth = 2
-                    renderer.lineDashPattern = [5, 5]
+                    line.strokeColor = NSColor(red: 0.16, green: 0.45, blue: 0.42, alpha: 0.55)
+                    line.lineWidth = 2
+                    line.lineDashPattern = [5, 5]
                 } else {
-                    renderer.strokeColor = NSColor(red: 0.78, green: 0.36, blue: 0.22, alpha: 1)
-                    renderer.lineWidth = 3.5
-                    renderer.lineCap = .round
-                    renderer.lineJoin = .round
+                    line.strokeColor = NSColor(red: 0.78, green: 0.36, blue: 0.22, alpha: 1)
+                    line.lineWidth = 3.5
+                    line.lineCap = .round
+                    line.lineJoin = .round
                 }
-                return renderer
+                renderer = line
+            } else {
+                renderer = MKOverlayRenderer(overlay: overlay)
             }
-            return MKOverlayRenderer(overlay: overlay)
+            overlayRenderers[ObjectIdentifier(overlay)] = renderer
+            return renderer
+        }
+
+        func mapView(_ mapView: MKMapView, didAdd views: [MKAnnotationView]) {
+            guard annotationFadeIn else { return }
+            annotationFadeIn = false
+            for view in views { view.alphaValue = 0 }
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = 0.32
+                context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+                for view in views { view.animator().alphaValue = 1 }
+            }
         }
 
         func mapView(_ mapView: MKMapView, viewFor annotation: MKAnnotation) -> MKAnnotationView? {

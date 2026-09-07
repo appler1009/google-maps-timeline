@@ -236,7 +236,7 @@ final class TimelineStore {
 
     func focus(day: DayRecord) {
         focusRegion = day.region
-        focusAnimated = false
+        focusAnimated = true
         focusGeneration &+= 1
     }
 
