@@ -11,20 +11,30 @@ enum SidebarTab: String, CaseIterable, Identifiable {
 enum Geo {
     static func coordinate(from geoURI: String?) -> CLLocationCoordinate2D? {
         guard let geoURI else { return nil }
-        var body = geoURI
-        if let prefix = body.range(of: "geo:", options: .caseInsensitive) {
-            body = String(body[prefix.upperBound...])
+        let utf8 = Array(geoURI.utf8)
+        var i = 0
+        if utf8.count > 4, utf8[0] == 103, utf8[1] == 101, utf8[2] == 111, utf8[3] == 58 { // geo:
+            i = 4
         }
-        if let q = body.firstIndex(of: "?") {
-            body = String(body[..<q])
+        func readDouble() -> Double? {
+            let start = i
+            if i < utf8.count, utf8[i] == 45 || utf8[i] == 43 { i += 1 }
+            var sawDigit = false
+            while i < utf8.count {
+                let c = utf8[i]
+                if c >= 48, c <= 57 { sawDigit = true; i += 1; continue }
+                if c == 46 { i += 1; continue }
+                break
+            }
+            guard sawDigit, start < i else { return nil }
+            return Double(String(decoding: utf8[start..<i], as: UTF8.self))
         }
-        let parts = body.split(separator: ",")
-        guard parts.count >= 2,
-              let lat = Double(parts[0].trimmingCharacters(in: .whitespaces)),
-              let lon = Double(parts[1].trimmingCharacters(in: .whitespaces)),
-              CLLocationCoordinate2DIsValid(.init(latitude: lat, longitude: lon))
-        else { return nil }
-        return CLLocationCoordinate2D(latitude: lat, longitude: lon)
+        guard let lat = readDouble() else { return nil }
+        if i < utf8.count, utf8[i] == 44 { i += 1 }
+        guard let lon = readDouble() else { return nil }
+        let coordinate = CLLocationCoordinate2D(latitude: lat, longitude: lon)
+        guard CLLocationCoordinate2DIsValid(coordinate) else { return nil }
+        return coordinate
     }
 
     static func placeKey(id: String?, coordinate: CLLocationCoordinate2D?) -> String {
@@ -34,93 +44,53 @@ enum Geo {
     }
 }
 
-struct TimelineVisit: Identifiable, Hashable {
+struct TimelineVisit: Identifiable {
     let id: String
     let start: Date
     let end: Date
     let coordinate: CLLocationCoordinate2D?
-    let placeID: String?
     let semanticType: String?
-    let probability: Double?
     let placeKey: String
-
-    func hash(into hasher: inout Hasher) { hasher.combine(id) }
-    static func == (lhs: TimelineVisit, rhs: TimelineVisit) -> Bool { lhs.id == rhs.id }
 
     var duration: TimeInterval { end.timeIntervalSince(start) }
 }
 
-struct TimelineActivity: Identifiable, Hashable {
+struct TimelinePath: Identifiable {
     let id: String
     let start: Date
-    let end: Date
-    let startCoordinate: CLLocationCoordinate2D?
-    let endCoordinate: CLLocationCoordinate2D?
-    let type: String?
-    let distanceMeters: Double?
-
-    func hash(into hasher: inout Hasher) { hasher.combine(id) }
-    static func == (lhs: TimelineActivity, rhs: TimelineActivity) -> Bool { lhs.id == rhs.id }
-}
-
-struct TimelinePath: Identifiable, Hashable {
-    let id: String
-    let start: Date
-    let end: Date
     let points: [CLLocationCoordinate2D]
-
-    func hash(into hasher: inout Hasher) { hasher.combine(id) }
-    static func == (lhs: TimelinePath, rhs: TimelinePath) -> Bool { lhs.id == rhs.id }
 }
 
-struct DayRecord: Identifiable, Hashable {
+struct ActivityLine: Identifiable {
+    let id: String
+    let start: CLLocationCoordinate2D
+    let end: CLLocationCoordinate2D
+}
+
+struct DayRecord: Identifiable {
     var id: Date { day }
     let day: Date
     let visits: [TimelineVisit]
-    let activities: [TimelineActivity]
     let paths: [TimelinePath]
-
+    let activityLines: [ActivityLine]
+    let travelMeters: Double
+    let region: MKCoordinateRegion
     var visitCount: Int { visits.count }
-    var travelMeters: Double {
-        activities.compactMap(\.distanceMeters).reduce(0, +)
-    }
-
-    var allCoordinates: [CLLocationCoordinate2D] {
-        var coords: [CLLocationCoordinate2D] = []
-        coords.append(contentsOf: visits.compactMap(\.coordinate))
-        for path in paths { coords.append(contentsOf: path.points) }
-        for activity in activities {
-            if let s = activity.startCoordinate { coords.append(s) }
-            if let e = activity.endCoordinate { coords.append(e) }
-        }
-        return coords
-    }
 }
 
-struct PlaceRecord: Identifiable, Hashable {
+struct PlaceRecord: Identifiable {
     let id: String
-    let placeID: String?
     let coordinate: CLLocationCoordinate2D?
     let semanticType: String?
-    let visits: [TimelineVisit]
-
-    var visitCount: Int { visits.count }
-
-    var lastVisit: Date? { visits.map(\.end).max() }
-    var firstVisit: Date? { visits.map(\.start).min() }
-
-    var totalDuration: TimeInterval {
-        visits.reduce(0) { $0 + $1.duration }
-    }
-
-    func hash(into hasher: inout Hasher) { hasher.combine(id) }
-    static func == (lhs: PlaceRecord, rhs: PlaceRecord) -> Bool { lhs.id == rhs.id }
+    let visitCount: Int
+    let firstVisit: Date?
+    let lastVisit: Date?
+    let recentVisits: [TimelineVisit]
 }
 
 struct ParsedTimeline {
     let sourceName: String
     let days: [DayRecord]
     let places: [PlaceRecord]
-    let visits: [TimelineVisit]
 }
 

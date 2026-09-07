@@ -1,5 +1,6 @@
 import Foundation
 import CoreLocation
+import MapKit
 
 enum TimelineParseError: LocalizedError {
     case unreadable
@@ -36,7 +37,7 @@ enum TimelineParser {
 
     private static func assemble(segments: [[String: Any]], sourceName: String) -> ParsedTimeline {
         var visits: [TimelineVisit] = []
-        var activities: [TimelineActivity] = []
+        var activities: [RawActivity] = []
         var paths: [TimelinePath] = []
         visits.reserveCapacity(segments.count / 2)
         activities.reserveCapacity(segments.count / 2)
@@ -52,50 +53,39 @@ enum TimelineParser {
                 let placeID = candidate?["placeID"] as? String
                 visits.append(
                     TimelineVisit(
-                        id: "visit-\(index)-\(start.timeIntervalSince1970)",
+                        id: "v\(index)",
                         start: start,
                         end: end,
                         coordinate: coord,
-                        placeID: placeID,
                         semanticType: candidate?["semanticType"] as? String,
-                        probability: doubleValue(visit["probability"]),
                         placeKey: Geo.placeKey(id: placeID, coordinate: coord)
                     )
                 )
             }
 
             if let activity = segment["activity"] as? [String: Any] {
-                let candidate = activity["topCandidate"] as? [String: Any]
                 activities.append(
-                    TimelineActivity(
-                        id: "activity-\(index)-\(start.timeIntervalSince1970)",
+                    RawActivity(
+                        id: "a\(index)",
                         start: start,
-                        end: end,
+                        distance: doubleValue(activity["distanceMeters"]) ?? 0,
                         startCoordinate: Geo.coordinate(from: activity["start"] as? String),
-                        endCoordinate: Geo.coordinate(from: activity["end"] as? String),
-                        type: candidate?["type"] as? String,
-                        distanceMeters: doubleValue(activity["distanceMeters"])
+                        endCoordinate: Geo.coordinate(from: activity["end"] as? String)
                     )
                 )
             }
 
             if let pathPoints = segment["timelinePath"] as? [[String: Any]] {
                 let coords = pathPoints.compactMap { Geo.coordinate(from: $0["point"] as? String) }
-                if !coords.isEmpty {
-                    paths.append(
-                        TimelinePath(
-                            id: "path-\(index)-\(start.timeIntervalSince1970)",
-                            start: start,
-                            end: end,
-                            points: coords
-                        )
-                    )
+                let simplified = PathSimplifier.simplify(coords, epsilonMeters: 12)
+                if simplified.count >= 2 {
+                    paths.append(TimelinePath(id: "p\(index)", start: start, points: simplified))
                 }
             }
         }
 
         let calendar = Calendar.current
-        var daysMap: [Date: (visits: [TimelineVisit], activities: [TimelineActivity], paths: [TimelinePath])] = [:]
+        var daysMap: [Date: DayBucket] = [:]
 
         func dayKey(_ date: Date) -> Date {
             calendar.startOfDay(for: date)
@@ -103,30 +93,54 @@ enum TimelineParser {
 
         for visit in visits {
             let key = dayKey(visit.start)
-            daysMap[key, default: ([], [], [])].visits.append(visit)
+            var bucket = daysMap[key] ?? DayBucket()
+            bucket.visits.append(visit)
+            daysMap[key] = bucket
         }
         for activity in activities {
             let key = dayKey(activity.start)
-            daysMap[key, default: ([], [], [])].activities.append(activity)
+            var bucket = daysMap[key] ?? DayBucket()
+            bucket.travelMeters += activity.distance
+            if let startC = activity.startCoordinate, let endC = activity.endCoordinate {
+                bucket.lines.append(ActivityLine(id: activity.id, start: startC, end: endC))
+            }
+            daysMap[key] = bucket
         }
         for path in paths {
             let key = dayKey(path.start)
-            daysMap[key, default: ([], [], [])].paths.append(path)
+            var bucket = daysMap[key] ?? DayBucket()
+            bucket.paths.append(path)
+            daysMap[key] = bucket
         }
 
-        let days = daysMap.keys.sorted(by: >).map { day in
+        let fallback = CLLocationCoordinate2D(latitude: 49.25, longitude: -123.12)
+        let days = daysMap.keys.sorted(by: >).map { day -> DayRecord in
             let bucket = daysMap[day]!
+            let visitsSorted = bucket.visits.sorted { $0.start < $1.start }
+            let pathsSorted = bucket.paths
+            let lines = pathsSorted.isEmpty ? bucket.lines : []
+            var coords = visitsSorted.compactMap(\.coordinate)
+            for path in pathsSorted { coords.append(contentsOf: path.points) }
+            for line in lines {
+                coords.append(line.start)
+                coords.append(line.end)
+            }
             return DayRecord(
                 day: day,
-                visits: bucket.visits.sorted { $0.start < $1.start },
-                activities: bucket.activities.sorted { $0.start < $1.start },
-                paths: bucket.paths.sorted { $0.start < $1.start }
+                visits: visitsSorted,
+                paths: pathsSorted,
+                activityLines: lines,
+                travelMeters: bucket.travelMeters,
+                region: region(covering: coords, fallback: fallback)
             )
         }
 
         var placeMap: [String: [TimelineVisit]] = [:]
+        placeMap.reserveCapacity(min(visits.count, 4096))
         for visit in visits {
-            placeMap[visit.placeKey, default: []].append(visit)
+            var grouped = placeMap[visit.placeKey] ?? []
+            grouped.append(visit)
+            placeMap[visit.placeKey] = grouped
         }
 
         let places = placeMap.map { key, grouped -> PlaceRecord in
@@ -135,10 +149,12 @@ enum TimelineParser {
             let representative = named ?? sorted[0]
             return PlaceRecord(
                 id: key,
-                placeID: representative.placeID,
                 coordinate: representative.coordinate,
                 semanticType: representative.semanticType,
-                visits: sorted
+                visitCount: sorted.count,
+                firstVisit: sorted.last?.start,
+                lastVisit: sorted.first?.end,
+                recentVisits: Array(sorted.prefix(20))
             )
         }
         .sorted { lhs, rhs in
@@ -146,7 +162,7 @@ enum TimelineParser {
             return (lhs.lastVisit ?? .distantPast) > (rhs.lastVisit ?? .distantPast)
         }
 
-        return ParsedTimeline(sourceName: sourceName, days: days, places: places, visits: visits)
+        return ParsedTimeline(sourceName: sourceName, days: days, places: places)
     }
 
     private static func parseLegacyTimelineObjects(_ objects: [[String: Any]], sourceName: String) throws -> ParsedTimeline {
@@ -220,20 +236,20 @@ enum TimelineParser {
         return nil
     }
 
-    /// Parses `2024-11-19T11:50:02.112-08:00` / `...Z` without ISO8601DateFormatter.
+    /// Parses `2024-11-19T11:50:02.112-08:00` / `...Z` without ISO8601DateFormatter or Calendar.
     private static func parseCivilISO8601(_ string: String) -> Date? {
-        let utf8 = string.utf8
-        let count = utf8.count
-        guard count >= 19 else { return nil }
+        let u = Array(string.utf8)
+        guard u.count >= 19 else { return nil }
         func int(_ start: Int, _ length: Int) -> Int? {
             var value = 0
-            var i = utf8.index(utf8.startIndex, offsetBy: start)
-            for _ in 0..<length {
-                guard i < utf8.endIndex else { return nil }
-                let c = utf8[i]
+            var i = start
+            let end = start + length
+            guard end <= u.count else { return nil }
+            while i < end {
+                let c = u[i]
                 guard c >= 48, c <= 57 else { return nil }
                 value = value * 10 + Int(c - 48)
-                i = utf8.index(after: i)
+                i += 1
             }
             return value
         }
@@ -243,60 +259,52 @@ enum TimelineParser {
 
         var offset = 19
         var nanosecond = 0
-        if offset < count {
-            let fracIndex = utf8.index(utf8.startIndex, offsetBy: offset)
-            if utf8[fracIndex] == 46 { // '.'
-                offset += 1
-                var frac = 0
-                var digits = 0
-                while offset < count {
-                    let c = utf8[utf8.index(utf8.startIndex, offsetBy: offset)]
-                    guard c >= 48, c <= 57 else { break }
-                    if digits < 9 {
-                        frac = frac * 10 + Int(c - 48)
-                        digits += 1
-                    }
-                    offset += 1
-                }
-                while digits < 9 {
-                    frac *= 10
+        if offset < u.count, u[offset] == 46 {
+            offset += 1
+            var frac = 0
+            var digits = 0
+            while offset < u.count, u[offset] >= 48, u[offset] <= 57 {
+                if digits < 9 {
+                    frac = frac * 10 + Int(u[offset] - 48)
                     digits += 1
                 }
-                nanosecond = frac
+                offset += 1
             }
+            while digits < 9 {
+                frac *= 10
+                digits += 1
+            }
+            nanosecond = frac
         }
 
         var secondsFromGMT = 0
-        if offset < count {
-            let tzIndex = utf8.index(utf8.startIndex, offsetBy: offset)
-            let tz = utf8[tzIndex]
-            if tz == 90 { // Z
+        if offset < u.count {
+            let tz = u[offset]
+            if tz == 90 {
                 secondsFromGMT = 0
-            } else if tz == 43 || tz == 45 { // + or -
+            } else if tz == 43 || tz == 45 {
                 guard let tzHour = int(offset + 1, 2), let tzMinute = int(offset + 4, 2) else { return nil }
-                let sign = tz == 43 ? 1 : -1
-                secondsFromGMT = sign * (tzHour * 3600 + tzMinute * 60)
+                secondsFromGMT = (tz == 43 ? 1 : -1) * (tzHour * 3600 + tzMinute * 60)
             }
         }
 
-        var components = DateComponents()
-        components.calendar = gregorian
-        components.timeZone = TimeZone(secondsFromGMT: secondsFromGMT)
-        components.year = year
-        components.month = month
-        components.day = day
-        components.hour = hour
-        components.minute = minute
-        components.second = second
-        components.nanosecond = nanosecond
-        return components.date
+        let days = daysFromCivil(year, month, day)
+        let utc = Double(days * 86_400 + hour * 3_600 + minute * 60 + second - secondsFromGMT)
+            + Double(nanosecond) / 1_000_000_000
+        return Date(timeIntervalSince1970: utc)
     }
 
-    private static let gregorian: Calendar = {
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
-        return calendar
-    }()
+    /// Howard Hinnant civil-from-days; unix epoch is 1970-01-01.
+    private static func daysFromCivil(_ year: Int, _ month: Int, _ day: Int) -> Int {
+        var y = year
+        let m = month
+        y -= m <= 2 ? 1 : 0
+        let era = (y >= 0 ? y : y - 399) / 400
+        let yoe = y - era * 400
+        let doy = (153 * (m + (m > 2 ? -3 : 9)) + 2) / 5 + day - 1
+        let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy
+        return era * 146_097 + doe - 719_468
+    }
 
     private static func doubleValue(_ value: Any?) -> Double? {
         if let number = value as? Double { return number }
@@ -304,5 +312,90 @@ enum TimelineParser {
         if let number = value as? NSNumber { return number.doubleValue }
         if let string = value as? String { return Double(string) }
         return nil
+    }
+
+    private static func region(covering coordinates: [CLLocationCoordinate2D], fallback: CLLocationCoordinate2D) -> MKCoordinateRegion {
+        guard !coordinates.isEmpty else {
+            return MKCoordinateRegion(center: fallback, span: MKCoordinateSpan(latitudeDelta: 0.08, longitudeDelta: 0.08))
+        }
+        var minLat = coordinates[0].latitude
+        var maxLat = minLat
+        var minLon = coordinates[0].longitude
+        var maxLon = minLon
+        for coordinate in coordinates {
+            minLat = min(minLat, coordinate.latitude)
+            maxLat = max(maxLat, coordinate.latitude)
+            minLon = min(minLon, coordinate.longitude)
+            maxLon = max(maxLon, coordinate.longitude)
+        }
+        return MKCoordinateRegion(
+            center: CLLocationCoordinate2D(latitude: (minLat + maxLat) / 2, longitude: (minLon + maxLon) / 2),
+            span: MKCoordinateSpan(
+                latitudeDelta: max((maxLat - minLat) * 1.4, 0.008),
+                longitudeDelta: max((maxLon - minLon) * 1.4, 0.008)
+            )
+        )
+    }
+}
+
+private struct RawActivity {
+    let id: String
+    let start: Date
+    let distance: Double
+    let startCoordinate: CLLocationCoordinate2D?
+    let endCoordinate: CLLocationCoordinate2D?
+}
+
+private struct DayBucket {
+    var visits: [TimelineVisit] = []
+    var paths: [TimelinePath] = []
+    var lines: [ActivityLine] = []
+    var travelMeters: Double = 0
+}
+
+private enum PathSimplifier {
+    static func simplify(_ points: [CLLocationCoordinate2D], epsilonMeters: Double) -> [CLLocationCoordinate2D] {
+        guard points.count > 2 else { return points }
+        let epsilon = epsilonMeters / 111_320
+        return douglas(points, epsilon: epsilon)
+    }
+
+    private static func douglas(_ points: [CLLocationCoordinate2D], epsilon: Double) -> [CLLocationCoordinate2D] {
+        var keep = [Bool](repeating: false, count: points.count)
+        keep[0] = true
+        keep[points.count - 1] = true
+        var stack: [(Int, Int)] = [(0, points.count - 1)]
+        while let (start, end) = stack.popLast() {
+            var maxDist = 0.0
+            var index = start
+            for i in (start + 1)..<end {
+                let dist = perpendicularDistance(points[i], a: points[start], b: points[end])
+                if dist > maxDist {
+                    maxDist = dist
+                    index = i
+                }
+            }
+            if maxDist > epsilon {
+                keep[index] = true
+                if index - start > 1 { stack.append((start, index)) }
+                if end - index > 1 { stack.append((index, end)) }
+            }
+        }
+        return points.enumerated().compactMap { keep[$0.offset] ? $0.element : nil }
+    }
+
+    private static func perpendicularDistance(_ p: CLLocationCoordinate2D, a: CLLocationCoordinate2D, b: CLLocationCoordinate2D) -> Double {
+        let dx = b.longitude - a.longitude
+        let dy = b.latitude - a.latitude
+        if dx == 0, dy == 0 {
+            let x = p.longitude - a.longitude
+            let y = p.latitude - a.latitude
+            return (x * x + y * y).squareRoot()
+        }
+        let t = ((p.longitude - a.longitude) * dx + (p.latitude - a.latitude) * dy) / (dx * dx + dy * dy)
+        let clamped = min(1, max(0, t))
+        let x = p.longitude - (a.longitude + clamped * dx)
+        let y = p.latitude - (a.latitude + clamped * dy)
+        return (x * x + y * y).squareRoot()
     }
 }

@@ -65,8 +65,13 @@ struct SidebarView: View {
                 } else if let day = store.selectedDay {
                     store.focus(day: day)
                 }
-            } else if store.selectedPlace == nil, let place = store.parsed?.places.first {
-                store.select(place: place)
+            } else {
+                if store.selectedPlace == nil, let place = store.parsed?.places.first {
+                    store.select(place: place)
+                } else if let place = store.selectedPlace {
+                    store.focus(place: place)
+                }
+                store.prefetchPlaceCatalog()
             }
         }
     }
@@ -175,13 +180,10 @@ struct SidebarView: View {
         ScrollViewReader { proxy in
             List(selection: Bindable(store).selectedDayID) {
                 let scale = store.distanceScaleMeters
-                ForEach(store.daysByMonth, id: \.month) { group in
+                ForEach(store.monthGroups, id: \.month) { group in
                     Section {
                         ForEach(group.days) { day in
-                            DayRow(day: day, scaleMeters: scale)
-                                .tag(day.day)
-                                .id(day.day)
-                                .listRowBackground(rowBackground(isSelected: store.selectedDayID == day.day))
+                            dayRow(day, scale: scale)
                         }
                     } header: {
                         Text(TimelineStore.monthTitle(group.month))
@@ -192,11 +194,8 @@ struct SidebarView: View {
             }
             .listStyle(.sidebar)
             .scrollContentBackground(.hidden)
-            .onChange(of: store.selectedDayID) { _, newValue in
-                if let day = store.parsed?.days.first(where: { $0.day == newValue }) {
-                    store.focus(day: day)
-                    store.selectedPlaceID = nil
-                }
+            .onChange(of: store.selectedDayID) { _, _ in
+                store.handleDaySelectionChange()
             }
             .onChange(of: store.filterYear) { _, _ in
                 if let id = store.selectedDayID { proxy.scrollTo(id, anchor: .top) }
@@ -207,20 +206,31 @@ struct SidebarView: View {
         }
     }
 
+    @ViewBuilder
+    private func dayRow(_ day: DayRecord, scale: Double) -> some View {
+        DayRow(day: day, scaleMeters: scale)
+            .tag(day.day)
+            .id(day.day)
+            .listRowBackground(rowBackground(isSelected: store.selectedDayID == day.day))
+    }
+
     private var placesList: some View {
         List(selection: Bindable(store).selectedPlaceID) {
             ForEach(store.filteredPlaces) { place in
-                PlaceRow(place: place, title: store.displayName(for: place), subtitle: store.subtitle(for: place))
+                PlaceRow(
+                    place: place,
+                    title: store.displayName(for: place),
+                    subtitle: store.subtitle(for: place),
+                    details: store.details(for: place.id)
+                )
                     .tag(place.id)
                     .listRowBackground(rowBackground(isSelected: store.selectedPlaceID == place.id))
             }
         }
         .listStyle(.sidebar)
         .scrollContentBackground(.hidden)
-        .onChange(of: store.selectedPlaceID) { _, newValue in
-            if let place = store.parsed?.places.first(where: { $0.id == newValue }) {
-                store.select(place: place)
-            }
+        .onChange(of: store.selectedPlaceID) { _, _ in
+            store.handlePlaceSelectionChange()
         }
     }
 
@@ -231,9 +241,16 @@ struct SidebarView: View {
     }
 }
 
-struct DayRow: View {
+struct DayRow: View, Equatable {
     let day: DayRecord
     let scaleMeters: Double
+
+    static func == (lhs: DayRow, rhs: DayRow) -> Bool {
+        lhs.day.day == rhs.day.day
+            && lhs.day.travelMeters == rhs.day.travelMeters
+            && lhs.day.visitCount == rhs.day.visitCount
+            && lhs.scaleMeters == rhs.scaleMeters
+    }
 
     private let barWidth: CGFloat = 58
 
@@ -299,6 +316,7 @@ struct PlaceRow: View {
     let place: PlaceRecord
     let title: String
     let subtitle: String
+    var details: PlaceDetails?
 
     var body: some View {
         HStack(spacing: 10) {
@@ -317,6 +335,11 @@ struct PlaceRow: View {
             }
         }
         .padding(.vertical, 4)
+        .help(helpText)
+    }
+
+    private var helpText: String {
+        [details?.category, details?.address].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: "\n")
     }
 
     private var pinColor: Color {

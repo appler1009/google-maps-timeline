@@ -84,8 +84,11 @@ struct TimelineAppScene: View {
         .onAppear {
             NSApp.setActivationPolicy(.regular)
             bringWindowOnscreen()
-            if store.parsed == nil {
-                store.restoreLastOpenedFile()
+            Task { @MainActor in
+                await Task.yield()
+                if store.parsed == nil {
+                    store.restoreLastOpenedFile()
+                }
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .openTimelineRequested)) { _ in
