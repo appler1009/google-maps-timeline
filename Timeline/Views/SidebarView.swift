@@ -121,7 +121,7 @@ struct SidebarView: View {
             ForEach(store.daysByMonth, id: \.month) { group in
                 Section {
                     ForEach(group.days) { day in
-                        DayRow(day: day)
+                        DayRow(day: day, scaleMeters: store.distanceScaleMeters)
                             .tag(day.day)
                             .listRowBackground(rowBackground(isSelected: store.selectedDayID == day.day))
                     }
@@ -168,38 +168,65 @@ struct SidebarView: View {
 
 struct DayRow: View {
     let day: DayRecord
+    let scaleMeters: Double
+
+    private let barWidth: CGFloat = 58
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 10) {
+        HStack(alignment: .center, spacing: 10) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(day.day.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated)))
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(Palette.parchment)
-                Text(summary)
+                Text(placeSummary)
                     .font(.system(size: 11))
                     .foregroundStyle(Palette.muted)
             }
-            Spacer()
-            Text(day.day.formatted(.dateTime.year()))
-                .font(.system(size: 11, design: .serif))
-                .foregroundStyle(Palette.muted.opacity(0.8))
+            Spacer(minLength: 8)
+            VStack(alignment: .trailing, spacing: 3) {
+                distanceBar
+                Text(distanceLabel)
+                    .font(.system(size: 11, weight: .semibold, design: .serif))
+                    .foregroundStyle(day.travelMeters > 1 ? distanceColor : Palette.muted.opacity(0.7))
+                    .monospacedDigit()
+            }
+            .frame(width: barWidth, alignment: .trailing)
         }
         .padding(.vertical, 4)
     }
 
-    private var summary: String {
-        let visits = "\(day.visitCount) place\(day.visitCount == 1 ? "" : "s")"
-        if day.travelMeters > 1 {
-            return "\(visits) · \(Self.formatDistance(day.travelMeters))"
-        }
-        return visits
+    private var placeSummary: String {
+        "\(day.visitCount) place\(day.visitCount == 1 ? "" : "s")"
     }
 
-    private static func formatDistance(_ meters: Double) -> String {
-        if meters >= 1000 {
-            return String(format: "%.1f km", meters / 1000)
+    private var fraction: CGFloat {
+        guard scaleMeters > 0, day.travelMeters > 1 else { return 0 }
+        return min(1, CGFloat(day.travelMeters / scaleMeters))
+    }
+
+    private var distanceColor: Color {
+        Palette.distance(meters: day.travelMeters)
+    }
+
+    private var distanceBar: some View {
+        ZStack(alignment: .leading) {
+            Capsule()
+                .fill(Palette.rule.opacity(0.55))
+                .frame(width: barWidth, height: 5)
+            Capsule()
+                .fill(distanceColor)
+                .frame(width: day.travelMeters > 1 ? max(4, barWidth * fraction) : 0, height: 5)
         }
-        return String(format: "%.0f m", meters)
+        .frame(width: barWidth, height: 5, alignment: .leading)
+        .accessibilityHidden(true)
+    }
+
+    private var distanceLabel: String {
+        guard day.travelMeters > 1 else { return "—" }
+        if day.travelMeters >= 1000 {
+            return String(format: "%.1f km", day.travelMeters / 1000)
+        }
+        return String(format: "%.0f m", day.travelMeters)
     }
 }
 

@@ -79,6 +79,14 @@ final class TimelineStore: ObservableObject {
         return groups.map { (month: $0.0, days: $0.1) }
     }
 
+    /// Full bar ≈ 90th percentile of daily travel, so typical days stay readable next to a rare long trip.
+    var distanceScaleMeters: Double {
+        let distances = (parsed?.days ?? []).map(\.travelMeters).filter { $0 > 1 }.sorted()
+        guard !distances.isEmpty else { return 50_000 }
+        let index = Int((Double(distances.count - 1) * 0.90).rounded(.towardZero))
+        return max(distances[index], 10_000)
+    }
+
     var filteredPlaces: [PlaceRecord] {
         guard let parsed else { return [] }
         let query = search.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -107,6 +115,11 @@ final class TimelineStore: ObservableObject {
         return visits
     }
 
+    func restoreLastOpenedFile() {
+        if restoreBookmark() { return }
+        tryOpenDownloadsExample()
+    }
+
     func tryOpenDownloadsExample() {
         let downloads = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first
         let url = downloads?.appendingPathComponent("Timeline.json")
@@ -124,6 +137,7 @@ final class TimelineStore: ObservableObject {
             }
             do {
                 let data = try Data(contentsOf: url, options: [.mappedIfSafe])
+                saveBookmark(url)
                 let name = url.lastPathComponent
                 let parsed = try await Task.detached {
                     try TimelineParser.parse(data: data, sourceName: name)
@@ -134,6 +148,31 @@ final class TimelineStore: ObservableObject {
                 isLoading = false
             }
         }
+    }
+
+    private static let bookmarkKey = "lastTimelineBookmark"
+
+    private func saveBookmark(_ url: URL) {
+        guard let data = try? url.bookmarkData(
+            options: .withSecurityScope,
+            includingResourceValuesForKeys: nil,
+            relativeTo: nil
+        ) else { return }
+        UserDefaults.standard.set(data, forKey: Self.bookmarkKey)
+    }
+
+    private func restoreBookmark() -> Bool {
+        guard let data = UserDefaults.standard.data(forKey: Self.bookmarkKey) else { return false }
+        var isStale = false
+        guard let url = try? URL(
+            resolvingBookmarkData: data,
+            options: [.withSecurityScope],
+            relativeTo: nil,
+            bookmarkDataIsStale: &isStale
+        ) else { return false }
+        if isStale { saveBookmark(url) }
+        open(url: url)
+        return true
     }
 
     func apply(_ parsed: ParsedTimeline) {

@@ -171,22 +171,19 @@ struct SelectionCard: View {
                     .font(.system(size: 12))
                     .foregroundStyle(Palette.muted)
                 Divider().overlay(Palette.rule.opacity(0.5))
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 2) {
-                        ForEach(day.visits) { visit in
-                            legendRow(
-                                time: visit.start.formatted(date: .omitted, time: .shortened),
-                                title: placeTitle(visit),
-                                duration: Self.duration(visit.duration),
-                                highlighted: store.hoveredVisitID == visit.id
-                            )
-                            .onHover { hovering in
-                                store.hoveredVisitID = hovering ? visit.id : nil
-                            }
+                VStack(alignment: .leading, spacing: 2) {
+                    ForEach(day.visits) { visit in
+                        legendRow(
+                            time: visit.start.formatted(date: .omitted, time: .shortened),
+                            title: placeTitle(visit),
+                            duration: Self.duration(visit.duration),
+                            highlighted: store.hoveredVisitID == visit.id
+                        )
+                        .onHover { hovering in
+                            store.hoveredVisitID = hovering ? visit.id : nil
                         }
                     }
                 }
-                .frame(maxHeight: 220)
                 .onHover { hovering in
                     if !hovering { store.hoveredVisitID = nil }
                 }
@@ -202,27 +199,31 @@ struct SelectionCard: View {
                         .foregroundStyle(Palette.muted)
                 }
                 Divider().overlay(Palette.rule.opacity(0.5))
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 2) {
-                        ForEach(place.visits.prefix(20)) { visit in
-                            legendRow(
-                                time: visit.start.formatted(date: .abbreviated, time: .shortened),
-                                title: nil,
-                                duration: Self.duration(visit.duration),
-                                highlighted: store.hoveredVisitID == visit.id
-                            )
-                            .onHover { hovering in
-                                store.hoveredVisitID = hovering ? visit.id : nil
-                            }
-                            .onTapGesture {
-                                if let day = store.parsed?.days.first(where: { Calendar.current.isDate($0.day, inSameDayAs: visit.start) }) {
-                                    store.select(day: day)
-                                }
+                VStack(alignment: .leading, spacing: 2) {
+                    ForEach(place.visits.prefix(20)) { visit in
+                        legendRow(
+                            time: visit.start.formatted(date: .abbreviated, time: .shortened),
+                            title: nil,
+                            duration: Self.duration(visit.duration),
+                            highlighted: store.hoveredVisitID == visit.id
+                        )
+                        .onHover { hovering in
+                            store.hoveredVisitID = hovering ? visit.id : nil
+                        }
+                        .onTapGesture {
+                            if let day = store.parsed?.days.first(where: { Calendar.current.isDate($0.day, inSameDayAs: visit.start) }) {
+                                store.select(day: day)
                             }
                         }
                     }
+                    if place.visits.count > 20 {
+                        Text("\(place.visits.count - 20) older visits")
+                            .font(.system(size: 11))
+                            .foregroundStyle(Palette.muted)
+                            .padding(.horizontal, 6)
+                            .padding(.top, 4)
+                    }
                 }
-                .frame(maxHeight: 200)
                 .onHover { hovering in
                     if !hovering { store.hoveredVisitID = nil }
                 }

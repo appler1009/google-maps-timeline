@@ -28,6 +28,8 @@ targets:
         COMBINE_HIDPI_IMAGES: YES
         CODE_SIGN_ENTITLEMENTS: Timeline/Timeline.entitlements
         CODE_SIGN_STYLE: Automatic
+        CODE_SIGN_IDENTITY: Apple Development
+        DEVELOPMENT_TEAM: TN2RQ5P647
         ENABLE_HARDENED_RUNTIME: YES
         ENABLE_PREVIEWS: YES
         SWIFT_EMIT_LOC_STRINGS: YES
@@ -39,6 +41,7 @@ targets:
         CFBundleDisplayName: Timeline
         LSMinimumSystemVersion: "14.0"
         NSHighResolutionCapable: true
+        NSDownloadsFolderUsageDescription: Timeline reads a Timeline.json export from Downloads when you open it.
         UTImportedTypeDeclarations:
           - UTTypeIdentifier: public.json
             UTTypeConformsTo: [public.text]
