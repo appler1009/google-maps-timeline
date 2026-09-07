@@ -71,7 +71,6 @@ struct SidebarView: View {
                 } else if let place = store.selectedPlace {
                     store.focus(place: place)
                 }
-                store.prefetchPlaceCatalog()
             }
         }
     }
@@ -220,8 +219,7 @@ struct SidebarView: View {
                 PlaceRow(
                     place: place,
                     title: store.displayName(for: place),
-                    subtitle: store.subtitle(for: place),
-                    details: store.details(for: place.id)
+                    subtitle: store.subtitle(for: place)
                 )
                     .tag(place.id)
                     .listRowBackground(rowBackground(isSelected: store.selectedPlaceID == place.id))
@@ -316,13 +314,20 @@ struct PlaceRow: View {
     let place: PlaceRecord
     let title: String
     let subtitle: String
-    var details: PlaceDetails?
 
     var body: some View {
         HStack(spacing: 10) {
-            Circle()
-                .fill(pinColor)
-                .frame(width: 8, height: 8)
+            if let symbol = TimelineParser.symbolName(place.semanticType) {
+                Image(systemName: symbol)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(pinColor)
+                    .frame(width: 12)
+            } else {
+                Circle()
+                    .fill(pinColor)
+                    .frame(width: 8, height: 8)
+                    .frame(width: 12)
+            }
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
                     .font(.system(size: 14, weight: .medium))
@@ -335,11 +340,6 @@ struct PlaceRow: View {
             }
         }
         .padding(.vertical, 4)
-        .help(helpText)
-    }
-
-    private var helpText: String {
-        [details?.category, details?.address].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: "\n")
     }
 
     private var pinColor: Color {

@@ -55,16 +55,44 @@ struct TimelineVisit: Identifiable {
     var duration: TimeInterval { end.timeIntervalSince(start) }
 }
 
+enum TravelKind {
+    case automobile
+    case walking
+    case raw
+
+    init(googleType: String?) {
+        let type = googleType?.lowercased() ?? ""
+        if type.contains("walk") || type.contains("run") || type.contains("hik") || type.contains("cycl") || type.contains("bik") {
+            self = .walking
+        } else if type.contains("fly") || type.contains("air") || type.contains("train") || type.contains("subway")
+                    || type.contains("tram") || type.contains("metro") || type.contains("ferry") || type.contains("boat") {
+            self = .raw
+        } else {
+            self = .automobile
+        }
+    }
+
+    var directionsType: MKDirectionsTransportType? {
+        switch self {
+        case .automobile: return .automobile
+        case .walking: return .walking
+        case .raw: return nil
+        }
+    }
+}
+
 struct TimelinePath: Identifiable {
     let id: String
     let start: Date
     let points: [CLLocationCoordinate2D]
+    let kind: TravelKind
 }
 
 struct ActivityLine: Identifiable {
     let id: String
     let start: CLLocationCoordinate2D
     let end: CLLocationCoordinate2D
+    let kind: TravelKind
 }
 
 struct DayRecord: Identifiable {

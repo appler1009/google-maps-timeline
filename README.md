@@ -11,7 +11,7 @@ Requires macOS 14 or later. Open `Timeline.xcodeproj` in Xcode and run the Timel
 
 Exports from Google Maps Timeline (Settings → Location history / Timeline → export) are supported as a JSON array of semantic segments (`visit`, `activity`, `timelinePath`). Older Takeout files that wrap `timelineObjects` are also accepted.
 
-The export stores coordinates and Google place IDs, not street names. Unnamed places are reverse-geocoded and cached locally.
+The export stores coordinates, Google place IDs, and labels such as Home or Work — not street or business names.
 
 ## Using the app
 

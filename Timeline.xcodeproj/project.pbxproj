@@ -11,8 +11,8 @@
 		1CD3E01255B7DB2F10F2877A /* TimelineModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A498B0C8D72090AC4BAF657 /* TimelineModels.swift */; };
 		1F871A670ACA865C3799C580 /* TimelineStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 55715F8BD5815481AB80CCAE /* TimelineStore.swift */; };
 		493D9C070A371BADBE884EB4 /* TimelineAppScene.swift in Sources */ = {isa = PBXBuildFile; fileRef = 82ECD6098781D0E441C5CEE4 /* TimelineAppScene.swift */; };
+		558C9EE220B4208A1F4FAEF8 /* RouteSnapper.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD3B7EEBCFA7764518D9E18E /* RouteSnapper.swift */; };
 		5D3FF653B980461CE85050C1 /* TimelineParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 30475295489F71438FC87FC3 /* TimelineParser.swift */; };
-		B550674FF5EE7288B0AF5D8D /* PlaceNameCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = 96889D841C4D22238F38D8EA /* PlaceNameCache.swift */; };
 		B9042DFCF179AFD7E99CDEBF /* TimelineApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 27A603B8D2E85569C4F2AC40 /* TimelineApp.swift */; };
 		C3BEF453066BD0B1AF4598BE /* MapCanvasView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C84392A4A35D3A0FF607D83 /* MapCanvasView.swift */; };
 		FEA9531547A7545401BDC325 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = F38FDE28A77697434B262F4C /* Assets.xcassets */; };
@@ -27,7 +27,7 @@
 		55715F8BD5815481AB80CCAE /* TimelineStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimelineStore.swift; sourceTree = "<group>"; };
 		6A498B0C8D72090AC4BAF657 /* TimelineModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimelineModels.swift; sourceTree = "<group>"; };
 		82ECD6098781D0E441C5CEE4 /* TimelineAppScene.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimelineAppScene.swift; sourceTree = "<group>"; };
-		96889D841C4D22238F38D8EA /* PlaceNameCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaceNameCache.swift; sourceTree = "<group>"; };
+		AD3B7EEBCFA7764518D9E18E /* RouteSnapper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RouteSnapper.swift; sourceTree = "<group>"; };
 		E27C0E12EC51D3A3D0B395AC /* SidebarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarView.swift; sourceTree = "<group>"; };
 		E9FD67E5B4CED0700ACC3F75 /* Timeline.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Timeline.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		F38FDE28A77697434B262F4C /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
@@ -73,7 +73,7 @@
 		B298A13FC9D6E9CE95AB0671 /* Services */ = {
 			isa = PBXGroup;
 			children = (
-				96889D841C4D22238F38D8EA /* PlaceNameCache.swift */,
+				AD3B7EEBCFA7764518D9E18E /* RouteSnapper.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -164,7 +164,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				C3BEF453066BD0B1AF4598BE /* MapCanvasView.swift in Sources */,
-				B550674FF5EE7288B0AF5D8D /* PlaceNameCache.swift in Sources */,
+				558C9EE220B4208A1F4FAEF8 /* RouteSnapper.swift in Sources */,
 				0F204A09F57B6BFD331620F8 /* SidebarView.swift in Sources */,
 				B9042DFCF179AFD7E99CDEBF /* TimelineApp.swift in Sources */,
 				493D9C070A371BADBE884EB4 /* TimelineAppScene.swift in Sources */,

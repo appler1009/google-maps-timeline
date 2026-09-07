@@ -64,13 +64,15 @@ enum TimelineParser {
             }
 
             if let activity = segment["activity"] as? [String: Any] {
+                let type = (activity["topCandidate"] as? [String: Any])?["type"] as? String
                 activities.append(
                     RawActivity(
                         id: "a\(index)",
                         start: start,
                         distance: doubleValue(activity["distanceMeters"]) ?? 0,
                         startCoordinate: Geo.coordinate(from: activity["start"] as? String),
-                        endCoordinate: Geo.coordinate(from: activity["end"] as? String)
+                        endCoordinate: Geo.coordinate(from: activity["end"] as? String),
+                        kind: TravelKind(googleType: type)
                     )
                 )
             }
@@ -79,7 +81,7 @@ enum TimelineParser {
                 let coords = pathPoints.compactMap { Geo.coordinate(from: $0["point"] as? String) }
                 let simplified = PathSimplifier.simplify(coords, epsilonMeters: 12)
                 if simplified.count >= 2 {
-                    paths.append(TimelinePath(id: "p\(index)", start: start, points: simplified))
+                    paths.append(TimelinePath(id: "p\(index)", start: start, points: simplified, kind: .automobile))
                 }
             }
         }
@@ -101,15 +103,17 @@ enum TimelineParser {
             let key = dayKey(activity.start)
             var bucket = daysMap[key] ?? DayBucket()
             bucket.travelMeters += activity.distance
+            bucket.kinds.append((activity.start, activity.kind))
             if let startC = activity.startCoordinate, let endC = activity.endCoordinate {
-                bucket.lines.append(ActivityLine(id: activity.id, start: startC, end: endC))
+                bucket.lines.append(ActivityLine(id: activity.id, start: startC, end: endC, kind: activity.kind))
             }
             daysMap[key] = bucket
         }
         for path in paths {
             let key = dayKey(path.start)
             var bucket = daysMap[key] ?? DayBucket()
-            bucket.paths.append(path)
+            let kind = nearestKind(path.start, in: bucket.kinds)
+            bucket.paths.append(TimelinePath(id: path.id, start: path.start, points: path.points, kind: kind))
             daysMap[key] = bucket
         }
 
@@ -226,6 +230,14 @@ enum TimelineParser {
         }
     }
 
+    static func symbolName(_ type: String?) -> String? {
+        switch type {
+        case "Home": return "house.fill"
+        case "Work": return "briefcase.fill"
+        default: return nil
+        }
+    }
+
     private static func parseDate(_ string: String?) -> Date? {
         guard let string, string.count >= 19 else {
             if let string, let ms = Double(string) { return Date(timeIntervalSince1970: ms / 1000) }
@@ -314,6 +326,11 @@ enum TimelineParser {
         return nil
     }
 
+    private static func nearestKind(_ date: Date, in kinds: [(Date, TravelKind)]) -> TravelKind {
+        guard !kinds.isEmpty else { return .automobile }
+        return kinds.min(by: { abs($0.0.timeIntervalSince(date)) < abs($1.0.timeIntervalSince(date)) })?.1 ?? .automobile
+    }
+
     private static func region(covering coordinates: [CLLocationCoordinate2D], fallback: CLLocationCoordinate2D) -> MKCoordinateRegion {
         guard !coordinates.isEmpty else {
             return MKCoordinateRegion(center: fallback, span: MKCoordinateSpan(latitudeDelta: 0.08, longitudeDelta: 0.08))
@@ -344,6 +361,7 @@ private struct RawActivity {
     let distance: Double
     let startCoordinate: CLLocationCoordinate2D?
     let endCoordinate: CLLocationCoordinate2D?
+    let kind: TravelKind
 }
 
 private struct DayBucket {
@@ -351,6 +369,7 @@ private struct DayBucket {
     var paths: [TimelinePath] = []
     var lines: [ActivityLine] = []
     var travelMeters: Double = 0
+    var kinds: [(Date, TravelKind)] = []
 }
 
 private enum PathSimplifier {

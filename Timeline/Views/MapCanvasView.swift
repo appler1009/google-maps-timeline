@@ -52,7 +52,9 @@ private struct TimelineKitMapHost: View {
             hoverID: store.hoveredVisitID,
             day: store.selectedDay,
             place: store.selectedPlace,
-            hovered: store.hoveredVisit
+            hovered: store.hoveredVisit,
+            routed: store.snappedDayID == store.selectedDayID ? store.snappedRoutes : [],
+            routeGeneration: store.routeGeneration
         )
     }
 }
@@ -67,6 +69,8 @@ private struct TimelineKitMap: NSViewRepresentable {
     var day: DayRecord?
     var place: PlaceRecord?
     var hovered: TimelineVisit?
+    var routed: [[CLLocationCoordinate2D]]
+    var routeGeneration: UInt64
 
     func makeCoordinator() -> Coordinator {
         Coordinator()
@@ -97,7 +101,9 @@ private struct TimelineKitMap: NSViewRepresentable {
             hoverID: hoverID,
             day: day,
             place: place,
-            hovered: hovered
+            hovered: hovered,
+            routed: routed,
+            routeGeneration: routeGeneration
         )
     }
 
@@ -108,6 +114,7 @@ private struct TimelineKitMap: NSViewRepresentable {
         private var hoverOverlay: MKCircle?
 
         private var lastHoverID: String?
+        private var lastRouteGeneration: UInt64 = 0
 
         func sync(
             map: MKMapView,
@@ -119,13 +126,19 @@ private struct TimelineKitMap: NSViewRepresentable {
             hoverID: String?,
             day: DayRecord?,
             place: PlaceRecord?,
-            hovered: TimelineVisit?
+            hovered: TimelineVisit?,
+            routed: [[CLLocationCoordinate2D]],
+            routeGeneration: UInt64
         ) {
             if dayID != lastDayID || placeID != lastPlaceID {
                 lastDayID = dayID
                 lastPlaceID = placeID
-                rebuild(map: map, day: day, place: place)
+                lastRouteGeneration = routed.isEmpty ? 0 : routeGeneration
+                rebuild(map: map, day: day, place: place, routed: routed)
                 lastHoverID = nil
+            } else if routeGeneration != lastRouteGeneration {
+                lastRouteGeneration = routeGeneration
+                replacePaths(map: map, day: day, routed: routed)
             }
             if generation != lastGeneration {
                 lastGeneration = generation
@@ -146,18 +159,13 @@ private struct TimelineKitMap: NSViewRepresentable {
             }
         }
 
-        private func rebuild(map: MKMapView, day: DayRecord?, place: PlaceRecord?) {
+        private func rebuild(map: MKMapView, day: DayRecord?, place: PlaceRecord?, routed: [[CLLocationCoordinate2D]]) {
             map.removeOverlays(map.overlays)
             map.removeAnnotations(map.annotations)
             hoverOverlay = nil
 
             if let day {
-                for path in day.paths where path.points.count >= 2 {
-                    addPolyline(map: map, points: path.points, dashed: false)
-                }
-                for line in day.activityLines {
-                    addPolyline(map: map, points: [line.start, line.end], dashed: true)
-                }
+                addDayPaths(map: map, day: day, routed: routed)
                 for visit in day.visits {
                     guard let coordinate = visit.coordinate else { continue }
                     let pin = VisitAnnotation()
@@ -172,6 +180,28 @@ private struct TimelineKitMap: NSViewRepresentable {
                 pin.title = TimelineParser.semanticTitle(place.semanticType) ?? "Place"
                 pin.semantic = place.semanticType
                 map.addAnnotation(pin)
+            }
+        }
+
+        private func replacePaths(map: MKMapView, day: DayRecord?, routed: [[CLLocationCoordinate2D]]) {
+            let stale = map.overlays.filter { $0 is PathPolyline || $0 is DashPolyline }
+            map.removeOverlays(stale)
+            guard let day else { return }
+            addDayPaths(map: map, day: day, routed: routed)
+        }
+
+        private func addDayPaths(map: MKMapView, day: DayRecord, routed: [[CLLocationCoordinate2D]]) {
+            if !routed.isEmpty {
+                for line in routed where line.count >= 2 {
+                    addPolyline(map: map, points: line, dashed: false)
+                }
+                return
+            }
+            for path in day.paths where path.points.count >= 2 {
+                addPolyline(map: map, points: path.points, dashed: false)
+            }
+            for line in day.activityLines {
+                addPolyline(map: map, points: [line.start, line.end], dashed: true)
             }
         }
 
@@ -253,6 +283,7 @@ private final class VisitAnnotation: MKPointAnnotation {
 
 private final class VisitMarkerView: MKAnnotationView {
     private let dot = NSView()
+    private let glyph = NSImageView()
     private let label = NSTextField(labelWithString: "")
 
     override init(annotation: MKAnnotation?, reuseIdentifier: String?) {
@@ -264,6 +295,8 @@ private final class VisitMarkerView: MKAnnotationView {
         dot.layer?.cornerRadius = 6
         dot.layer?.borderWidth = 1.5
         dot.layer?.borderColor = NSColor(red: 0.93, green: 0.89, blue: 0.82, alpha: 0.9).cgColor
+        glyph.imageScaling = .scaleProportionallyUpOrDown
+        glyph.symbolConfiguration = .init(pointSize: 13, weight: .semibold)
         label.font = .systemFont(ofSize: 10, weight: .semibold)
         label.textColor = NSColor(red: 0.93, green: 0.89, blue: 0.82, alpha: 1)
         label.backgroundColor = NSColor.black.withAlphaComponent(0.45)
@@ -272,8 +305,9 @@ private final class VisitMarkerView: MKAnnotationView {
         label.layer?.cornerRadius = 8
         label.layer?.masksToBounds = true
         addSubview(dot)
+        addSubview(glyph)
         addSubview(label)
-        frame = CGRect(x: 0, y: 0, width: 120, height: 36)
+        frame = CGRect(x: 0, y: 0, width: 120, height: 40)
     }
 
     required init?(coder: NSCoder) {
@@ -288,14 +322,25 @@ private final class VisitMarkerView: MKAnnotationView {
         case "Work": color = NSColor(red: 0.16, green: 0.45, blue: 0.42, alpha: 1)
         default: color = NSColor(red: 0.78, green: 0.36, blue: 0.22, alpha: 1)
         }
-        dot.layer?.backgroundColor = color.cgColor
+        if let name = TimelineParser.symbolName(annotation?.semantic) {
+            glyph.image = NSImage(systemSymbolName: name, accessibilityDescription: annotation?.title)
+            glyph.contentTintColor = color
+            glyph.isHidden = false
+            dot.isHidden = true
+        } else {
+            glyph.isHidden = true
+            dot.isHidden = false
+            dot.layer?.backgroundColor = color.cgColor
+        }
         needsLayout = true
     }
 
     override func layout() {
         super.layout()
-        let size: CGFloat = 12
-        dot.frame = CGRect(x: (bounds.width - size) / 2, y: 16, width: size, height: size)
+        let pin: CGFloat = glyph.isHidden ? 12 : 16
+        let pinFrame = CGRect(x: (bounds.width - pin) / 2, y: 18, width: pin, height: pin)
+        dot.frame = pinFrame
+        glyph.frame = pinFrame
         label.sizeToFit()
         let labelSize = label.frame.size
         label.frame = CGRect(
@@ -327,7 +372,7 @@ struct SelectionCard: View {
                             title: placeTitle(visit),
                             duration: Self.duration(visit.duration),
                             highlighted: store.hoveredVisitID == visit.id,
-                            details: store.details(for: visit.placeKey)
+                            symbol: TimelineParser.symbolName(visit.semanticType)
                         )
                         .onHover { hovering in
                             store.hoveredVisitID = hovering ? visit.id : nil
@@ -359,8 +404,7 @@ struct SelectionCard: View {
                             time: visit.start.formatted(date: .abbreviated, time: .shortened),
                             title: nil,
                             duration: Self.duration(visit.duration),
-                            highlighted: store.hoveredVisitID == visit.id,
-                            details: store.details(for: place.id)
+                            highlighted: store.hoveredVisitID == visit.id
                         )
                         .onHover { hovering in
                             store.hoveredVisitID = hovering ? visit.id : nil
@@ -397,27 +441,26 @@ struct SelectionCard: View {
         .onDisappear { store.hoveredVisitID = nil }
     }
 
-    @ViewBuilder
-    private func legendRow(time: String, title: String?, duration: String, highlighted: Bool, details: PlaceDetails?) -> some View {
-        VStack(alignment: .leading, spacing: 3) {
-            HStack(alignment: .firstTextBaseline) {
-                Text(time)
-                    .font(.system(size: 11, design: .monospaced))
-                    .foregroundStyle(highlighted ? Palette.parchment : Palette.muted)
-                    .frame(width: title == nil ? 120 : 58, alignment: .leading)
-                if let title {
-                    Text(title)
-                        .font(.system(size: 12, weight: highlighted ? .semibold : .medium))
-                        .lineLimit(1)
-                }
-                Spacer()
-                Text(duration)
-                    .font(.system(size: 11))
-                    .foregroundStyle(highlighted ? Palette.parchment : Palette.muted)
+    private func legendRow(time: String, title: String?, duration: String, highlighted: Bool, symbol: String? = nil) -> some View {
+        HStack(alignment: .firstTextBaseline) {
+            Text(time)
+                .font(.system(size: 11, design: .monospaced))
+                .foregroundStyle(highlighted ? Palette.parchment : Palette.muted)
+                .frame(width: title == nil ? 120 : 58, alignment: .leading)
+            if let symbol {
+                Image(systemName: symbol)
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(symbol == "house.fill" ? Palette.copper : Palette.water)
             }
-            if highlighted, let details {
-                PlaceBalloon(title: title ?? details.title, details: details, semantic: nil, compact: true)
+            if let title {
+                Text(title)
+                    .font(.system(size: 12, weight: highlighted ? .semibold : .medium))
+                    .lineLimit(1)
             }
+            Spacer()
+            Text(duration)
+                .font(.system(size: 11))
+                .foregroundStyle(highlighted ? Palette.parchment : Palette.muted)
         }
         .padding(.horizontal, 6)
         .padding(.vertical, 5)
@@ -426,12 +469,6 @@ struct SelectionCard: View {
                 .fill(highlighted ? Palette.parchment.opacity(0.12) : Color.clear)
         )
         .contentShape(Rectangle())
-        .help(Self.helpText(details: details))
-    }
-
-    private static func helpText(details: PlaceDetails?) -> String {
-        guard let details else { return "" }
-        return [details.category, details.address].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: "\n")
     }
 
     private func daySummary(_ day: DayRecord) -> String {
@@ -458,54 +495,5 @@ struct SelectionCard: View {
         let rem = minutes % 60
         if rem == 0 { return "\(hours)h" }
         return "\(hours)h \(rem)m"
-    }
-}
-
-struct PlaceBalloon: View {
-    let title: String
-    let details: PlaceDetails?
-    var semantic: String?
-    var compact = false
-
-    var body: some View {
-        if hasContent {
-            VStack(alignment: .leading, spacing: 3) {
-                if let category = details?.category, !category.isEmpty {
-                    Text(category)
-                        .font(.system(size: compact ? 10 : 11, weight: .medium))
-                        .foregroundStyle(Palette.water)
-                }
-                if let address = details?.address, !address.isEmpty, address != title {
-                    Text(address)
-                        .font(.system(size: compact ? 10 : 11))
-                        .foregroundStyle(Palette.muted)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                if let semantic = TimelineParser.semanticTitle(semantic),
-                   let business = details?.title, details?.isBusiness == true, business != semantic {
-                    Text(business)
-                        .font(.system(size: compact ? 10 : 11))
-                        .foregroundStyle(Palette.muted)
-                }
-            }
-            .padding(compact ? 0 : 8)
-            .frame(maxWidth: compact ? .infinity : 220, alignment: .leading)
-            .background {
-                if !compact {
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .fill(.ultraThinMaterial)
-                }
-            }
-        }
-    }
-
-    private var hasContent: Bool {
-        if let category = details?.category, !category.isEmpty { return true }
-        if let address = details?.address, !address.isEmpty, address != title { return true }
-        if let semantic = TimelineParser.semanticTitle(semantic),
-           let business = details?.title, details?.isBusiness == true, business != semantic {
-            return true
-        }
-        return false
     }
 }

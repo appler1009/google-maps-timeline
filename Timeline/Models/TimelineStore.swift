@@ -19,16 +19,18 @@ final class TimelineStore {
     var isLoading = false
     var loadError: String?
     var sourceName: String?
-    var placeDetails: [String: PlaceDetails] = [:]
     var focusRegion = MKCoordinateRegion(
         center: CLLocationCoordinate2D(latitude: 49.25, longitude: -123.12),
         span: MKCoordinateSpan(latitudeDelta: 0.2, longitudeDelta: 0.2)
     )
     var focusGeneration: UInt64 = 0
     var focusAnimated = false
+    var snappedRoutes: [[CLLocationCoordinate2D]] = []
+    var snappedDayID: Date?
+    var routeGeneration: UInt64 = 0
 
-    private let names = PlaceNameCache()
-    private var geocodeTask: Task<Void, Never>?
+    private let snapper = RouteSnapper()
+    private var routeTask: Task<Void, Never>?
     private var daysByID: [Date: DayRecord] = [:]
     private var placesByID: [String: PlaceRecord] = [:]
     private(set) var monthGroups: [(month: Date, days: [DayRecord])] = []
@@ -95,7 +97,6 @@ final class TimelineStore {
         return parsed.places.filter { place in
             displayName(for: place).localizedCaseInsensitiveContains(query)
                 || (place.semanticType?.localizedCaseInsensitiveContains(query) ?? false)
-                || (placeDetails[place.id]?.address?.localizedCaseInsensitiveContains(query) ?? false)
         }
     }
 
@@ -104,31 +105,15 @@ final class TimelineStore {
     }
 
     func displayName(placeKey: String, semanticType: String?) -> String {
-        if let semantic = TimelineParser.semanticTitle(semanticType) {
-            return semantic
-        }
-        if let details = placeDetails[placeKey], !details.title.isEmpty {
-            return details.title
-        }
-        return "Unnamed place"
+        TimelineParser.semanticTitle(semanticType) ?? "Unnamed place"
     }
 
     func subtitle(for place: PlaceRecord) -> String {
-        let visits = "\(place.visitCount) visit\(place.visitCount == 1 ? "" : "s")"
-        if let details = placeDetails[place.id], details.isBusiness,
-           TimelineParser.semanticTitle(place.semanticType) != nil {
-            return "\(details.title) · \(visits)"
-        }
-        return visits
-    }
-
-    func details(for placeKey: String) -> PlaceDetails? {
-        placeDetails[placeKey]
+        "\(place.visitCount) visit\(place.visitCount == 1 ? "" : "s")"
     }
 
     func restoreLastOpenedFile() {
         Task {
-            placeDetails = await names.snapshot()
             if restoreBookmark() { return }
             tryOpenDownloadsExample()
         }
@@ -204,10 +189,11 @@ final class TimelineStore {
         placesByID = Dictionary(uniqueKeysWithValues: parsed.places.map { ($0.id, $0) })
         yearOptions = Set(parsed.days.map { Calendar.current.component(.year, from: $0.day) }).sorted(by: >)
         rebuildDateIndexes()
-        Task { placeDetails = await names.snapshot() }
+        snappedRoutes = []
+        snappedDayID = nil
         if let day = parsed.days.first {
             focus(day: day)
-            resolveDetails(for: day.visits)
+            requestRoutes(for: day)
         }
     }
 
@@ -222,12 +208,7 @@ final class TimelineStore {
         if hoveredVisitID != nil { hoveredVisitID = nil }
         if selectedPlaceID != nil { selectedPlaceID = nil }
         focus(day: day)
-        resolveDetails(for: day.visits)
-    }
-
-    func prefetchPlaceCatalog() {
-        guard let parsed else { return }
-        resolveDetails(for: Array(parsed.places.prefix(50)))
+        requestRoutes(for: day)
     }
 
     func select(place: PlaceRecord) {
@@ -241,7 +222,6 @@ final class TimelineStore {
         if hoveredVisitID != nil { hoveredVisitID = nil }
         if selectedDayID != nil { selectedDayID = nil }
         focus(place: place)
-        resolveDetails(for: [place])
     }
 
     func focus(day: DayRecord) {
@@ -269,36 +249,27 @@ final class TimelineStore {
         focusGeneration &+= 1
     }
 
-    private func resolveDetails(for visits: [TimelineVisit]) {
-        let jobs = visits.compactMap { visit -> (String, CLLocationCoordinate2D)? in
-            guard let coordinate = visit.coordinate else { return nil }
-            return (visit.placeKey, coordinate)
-        }
-        resolveDetails(jobs)
-    }
-
-    private func resolveDetails(for places: [PlaceRecord]) {
-        let jobs = places.compactMap { place -> (String, CLLocationCoordinate2D)? in
-            guard let coordinate = place.coordinate else { return nil }
-            return (place.id, coordinate)
-        }
-        resolveDetails(jobs)
-    }
-
-    private func resolveDetails(_ jobs: [(String, CLLocationCoordinate2D)]) {
-        geocodeTask?.cancel()
-        geocodeTask = Task {
-            var seen = Set<String>()
-            for (key, coordinate) in jobs {
-                if Task.isCancelled { return }
-                if seen.contains(key) { continue }
-                seen.insert(key)
-                if placeDetails[key] != nil { continue }
-                if let details = await names.resolve(key: key, coordinate: coordinate) {
-                    placeDetails[key] = details
+    private func requestRoutes(for day: DayRecord) {
+        if snappedDayID == day.day, !snappedRoutes.isEmpty { return }
+        routeTask?.cancel()
+        let snapper = snapper
+        routeTask = Task {
+            var lines: [[CLLocationCoordinate2D]] = []
+            if !day.paths.isEmpty {
+                for path in day.paths where path.points.count >= 2 {
+                    if Task.isCancelled { return }
+                    lines.append(await snapper.snap(points: path.points, kind: path.kind))
                 }
-                try? await Task.sleep(nanoseconds: 80_000_000)
+            } else {
+                for line in day.activityLines {
+                    if Task.isCancelled { return }
+                    lines.append(await snapper.snap(points: [line.start, line.end], kind: line.kind))
+                }
             }
+            if Task.isCancelled { return }
+            snappedRoutes = lines
+            snappedDayID = day.day
+            routeGeneration &+= 1
         }
     }
 
