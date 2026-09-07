@@ -27,8 +27,8 @@ struct MapCanvasView: View {
                     .safeAreaPadding(.bottom)
                     #else
                     .padding(16)
-                    #endif
                     .id(store.selectedDayID ?? store.selectedPlaceID.map { _ in Date.distantPast })
+                    #endif
                     .transition(.opacity)
             }
         }
@@ -525,7 +525,8 @@ private final class VisitMarkerView: MKAnnotationView {
 struct SelectionCard: View {
     @Environment(TimelineStore.self) private var store
     #if os(iOS)
-    @State private var collapsed = false
+    @State private var collapsed = true
+    @State private var drag: CGFloat = 0
     #endif
 
     var body: some View {
@@ -541,13 +542,21 @@ struct SelectionCard: View {
             }
             .contentShape(Rectangle())
             .gesture(iosCardGesture)
-            if showLegendBody {
-                Divider().overlay(Palette.rule.opacity(0.5))
-                if let day = store.selectedDay {
-                    dayVisits(day)
-                } else if let place = store.selectedPlace {
-                    placeVisits(place)
+            let expansion = sheetExpansion
+            if expansion > 0.01 {
+                Divider()
+                    .overlay(Palette.rule.opacity(0.5))
+                    .opacity(expansion)
+                Group {
+                    if let day = store.selectedDay {
+                        dayVisits(day)
+                    } else if let place = store.selectedPlace {
+                        placeVisits(place)
+                    }
                 }
+                .frame(maxHeight: 280 * expansion, alignment: .top)
+                .opacity(expansion)
+                .clipped()
             }
             #else
             if let day = store.selectedDay {
@@ -576,21 +585,25 @@ struct SelectionCard: View {
         .foregroundStyle(Palette.parchment)
         .onDisappear { store.hoveredVisitID = nil }
         #if os(iOS)
-        .onChange(of: store.selectedDayID) { _, _ in
-            collapsed = false
-        }
-        #endif
-    }
-
-    private var showLegendBody: Bool {
-        #if os(iOS)
-        !collapsed
-        #else
-        true
+        .offset(y: sheetNudge)
         #endif
     }
 
     #if os(iOS)
+    private var sheetExpansion: CGFloat {
+        let range: CGFloat = 220
+        if collapsed {
+            return min(1, max(0, -drag / range))
+        }
+        return min(1, max(0, 1 - max(0, drag) / range))
+    }
+
+    private var sheetNudge: CGFloat {
+        if collapsed, drag > 0 { return min(28, drag * 0.18) }
+        if !collapsed, drag < 0 { return max(-16, drag * 0.12) }
+        return 0
+    }
+
     private var grabber: some View {
         RoundedRectangle(cornerRadius: 2, style: .continuous)
             .fill(Palette.parchment.opacity(0.35))
@@ -598,20 +611,40 @@ struct SelectionCard: View {
             .frame(maxWidth: .infinity)
             .padding(.bottom, 2)
             .accessibilityLabel(collapsed ? "Expand legend" : "Collapse legend")
-            .onTapGesture { collapsed.toggle() }
+            .onTapGesture {
+                withAnimation(.spring(response: 0.34, dampingFraction: 0.86)) {
+                    collapsed.toggle()
+                    drag = 0
+                }
+            }
     }
 
     private var iosCardGesture: some Gesture {
-        DragGesture(minimumDistance: 20, coordinateSpace: .local)
+        DragGesture(minimumDistance: 8, coordinateSpace: .local)
+            .onChanged { value in
+                let dx = value.translation.width
+                let dy = value.translation.height
+                if abs(dx) > abs(dy) + 16 { return }
+                drag = dy
+            }
             .onEnded { value in
                 let dx = value.translation.width
                 let dy = value.translation.height
-                if abs(dx) > abs(dy), abs(dx) > 40, store.selectedDay != nil {
+                let predicted = value.predictedEndTranslation.height
+                if abs(dx) > abs(dy), abs(dx) > 48, store.selectedDay != nil, abs(dy) < 50 {
+                    drag = 0
                     store.stepDay(by: dx < 0 ? 1 : -1)
-                } else if dy > 36 {
-                    collapsed = true
-                } else if dy < -36 {
-                    collapsed = false
+                    return
+                }
+                let collapse: Bool
+                if collapsed {
+                    collapse = predicted > -90 && sheetExpansion < 0.45
+                } else {
+                    collapse = predicted > 90 || sheetExpansion < 0.55
+                }
+                withAnimation(.spring(response: 0.34, dampingFraction: 0.86)) {
+                    collapsed = collapse
+                    drag = 0
                 }
             }
     }
@@ -657,7 +690,7 @@ struct SelectionCard: View {
             .opacity(store.canStepToOlderDay ? 1 : 0.25)
             .accessibilityLabel("Older day")
         }
-        if !collapsed {
+        if sheetExpansion > 0.35 {
             HStack {
                 Spacer(minLength: 0)
                 Button {

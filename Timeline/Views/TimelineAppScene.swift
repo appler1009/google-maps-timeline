@@ -101,7 +101,11 @@ struct TimelineAppScene: View {
 
     #if os(iOS)
     private var compactStack: some View {
-        Group {
+        ZStack {
+            SidebarView(importerPresented: $importerPresented)
+                .opacity(showingCompactMap ? 0 : 1)
+                .allowsHitTesting(!showingCompactMap)
+                .accessibilityHidden(showingCompactMap)
             if showingCompactMap {
                 MapCanvasView()
                     .overlay(alignment: .topLeading) {
@@ -121,8 +125,6 @@ struct TimelineAppScene: View {
                         .safeAreaPadding(.top)
                         .accessibilityLabel("Back to list")
                     }
-            } else {
-                SidebarView(importerPresented: $importerPresented)
             }
         }
         .toolbar(.hidden, for: .navigationBar)
