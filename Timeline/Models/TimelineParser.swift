@@ -103,9 +103,11 @@ enum TimelineParser {
             let lines = bucket.lines
             var coords = visitsSorted.compactMap(\.coordinate)
             for path in pathsSorted { coords.append(contentsOf: path.points) }
-            for line in lines {
-                coords.append(line.start)
-                coords.append(line.end)
+            if coords.isEmpty {
+                for line in lines {
+                    coords.append(line.start)
+                    coords.append(line.end)
+                }
             }
             return DayRecord(
                 day: day,
