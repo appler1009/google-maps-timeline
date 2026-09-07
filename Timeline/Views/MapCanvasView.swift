@@ -542,8 +542,6 @@ struct SelectionCard: View {
             }
             .contentShape(Rectangle())
             .gesture(iosCardGesture)
-            let expansion = sheetExpansion
-            let openHeight: CGFloat = 280
             VStack(alignment: .leading, spacing: 10) {
                 Divider().overlay(Palette.rule.opacity(0.5))
                 if let day = store.selectedDay {
@@ -569,10 +567,8 @@ struct SelectionCard: View {
                     placeVisits(place)
                 }
             }
-            .frame(height: openHeight * expansion, alignment: .top)
+            .frame(height: Self.iosOpenBodyHeight, alignment: .top)
             .clipped()
-            .opacity(min(1, expansion * 1.6))
-            .allowsHitTesting(expansion > 0.4)
             #else
             if let day = store.selectedDay {
                 dayHeader(day)
@@ -588,26 +584,27 @@ struct SelectionCard: View {
         .padding(16)
         #if os(iOS)
         .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Palette.inkLift, in: Self.legendShape)
+        .overlay(Self.legendShape.stroke(Palette.parchment.opacity(0.12), lineWidth: 1))
+        .offset(y: sheetHidden + sheetNudge)
+        .padding(.bottom, -sheetHidden)
+        .shadow(color: .black.opacity(0.4), radius: 12, y: 6)
+        .animation(nil, value: drag)
         #else
         .frame(maxWidth: 320, alignment: .leading)
-        #endif
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .stroke(Palette.parchment.opacity(0.12), lineWidth: 1)
-        )
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .compositingGroup()
+        .background(.ultraThinMaterial, in: Self.legendShape)
+        .overlay(Self.legendShape.stroke(Palette.parchment.opacity(0.12), lineWidth: 1))
         .shadow(color: .black.opacity(0.25), radius: 18, y: 8)
+        #endif
         .foregroundStyle(Palette.parchment)
         .onDisappear { store.hoveredVisitID = nil }
-        #if os(iOS)
-        .offset(y: sheetNudge)
-        .animation(nil, value: drag)
-        #endif
     }
 
+    private static let legendShape = RoundedRectangle(cornerRadius: 16, style: .continuous)
+
     #if os(iOS)
+    private static let iosOpenBodyHeight: CGFloat = 280
+
     private var sheetExpansion: CGFloat {
         let range: CGFloat = 220
         if collapsed {
@@ -616,9 +613,13 @@ struct SelectionCard: View {
         return min(1, max(0, 1 - max(0, drag) / range))
     }
 
+    private var sheetHidden: CGFloat {
+        Self.iosOpenBodyHeight * (1 - sheetExpansion)
+    }
+
     private var sheetNudge: CGFloat {
-        if collapsed, drag > 0 { return min(28, drag * 0.18) }
-        if !collapsed, drag < 0 { return max(-16, drag * 0.12) }
+        if collapsed, drag > 0 { return min(24, drag * 0.16) }
+        if !collapsed, drag < 0 { return max(-12, drag * 0.1) }
         return 0
     }
 
