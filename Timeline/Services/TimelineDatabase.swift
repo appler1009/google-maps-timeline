@@ -30,9 +30,9 @@ actor TimelineDatabase {
             sqlite3_open_v2(":memory:", &handle, flags, nil)
         }
         db = handle
-        try? exec("PRAGMA journal_mode=WAL")
-        try? exec("PRAGMA foreign_keys=ON")
-        try? migrate()
+        try? Self.exec(handle, "PRAGMA journal_mode=WAL")
+        try? Self.exec(handle, "PRAGMA foreign_keys=ON")
+        try? Self.migrate(handle)
     }
 
     deinit {
@@ -134,8 +134,9 @@ actor TimelineDatabase {
         sqlite3_step(statement)
     }
 
-    private func migrate() throws {
+    private static func migrate(_ db: OpaquePointer?) throws {
         try exec(
+            db,
             """
             CREATE TABLE IF NOT EXISTS imports (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -402,7 +403,7 @@ actor TimelineDatabase {
 
     private func bindBlob(_ statement: OpaquePointer?, _ index: Int32, _ data: Data) {
         data.withUnsafeBytes { buffer in
-            sqlite3_bind_blob(statement, index, buffer.baseAddress, Int32(data.count), Self.transient)
+            _ = sqlite3_bind_blob(statement, index, buffer.baseAddress, Int32(data.count), Self.transient)
         }
     }
 
@@ -413,6 +414,12 @@ actor TimelineDatabase {
     }
 
     private func exec(_ sql: String) throws {
+        try Self.exec(db, sql)
+    }
+
+    /// Takes the handle explicitly so `init`, which is nonisolated, can run the
+    /// pragmas and the migration without hopping onto the actor.
+    private static func exec(_ db: OpaquePointer?, _ sql: String) throws {
         guard let db else { throw TimelineDatabaseError.open }
         var error: UnsafeMutablePointer<CChar>?
         let status = sqlite3_exec(db, sql, nil, nil, &error)
@@ -421,7 +428,7 @@ actor TimelineDatabase {
             sqlite3_free(error)
             if status != SQLITE_OK { throw TimelineDatabaseError.execute(message) }
         } else if status != SQLITE_OK {
-            throw TimelineDatabaseError.execute(errmsg())
+            throw TimelineDatabaseError.execute(errmsg(db))
         }
     }
 
@@ -450,6 +457,10 @@ actor TimelineDatabase {
     }
 
     private func errmsg() -> String {
+        Self.errmsg(db)
+    }
+
+    private static func errmsg(_ db: OpaquePointer?) -> String {
         guard let db, let message = sqlite3_errmsg(db) else { return "SQLite error" }
         return String(cString: message)
     }

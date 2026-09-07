@@ -52,6 +52,9 @@ targets:
         ENABLE_HARDENED_RUNTIME[sdk=macosx*]: YES
         INFOPLIST_KEY_NSPrincipalClass[sdk=macosx*]: NSApplication
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        # iPad multitasking requires all four, since the app is not full-screen only.
+        INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone: UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight
+        INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad: UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight
     info:
       path: Timeline/Info.plist
       properties:
