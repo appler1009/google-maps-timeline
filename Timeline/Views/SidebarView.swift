@@ -174,10 +174,11 @@ struct SidebarView: View {
     private var datesList: some View {
         ScrollViewReader { proxy in
             List(selection: $store.selectedDayID) {
+                let scale = store.distanceScaleMeters
                 ForEach(store.daysByMonth, id: \.month) { group in
                     Section {
                         ForEach(group.days) { day in
-                            DayRow(day: day, scaleMeters: store.distanceScaleMeters)
+                            DayRow(day: day, scaleMeters: scale)
                                 .tag(day.day)
                                 .id(day.day)
                                 .listRowBackground(rowBackground(isSelected: store.selectedDayID == day.day))

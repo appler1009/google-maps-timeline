@@ -99,28 +99,20 @@ final class TimelineStore: ObservableObject {
 
     var daysByMonth: [(month: Date, days: [DayRecord])] {
         let calendar = Calendar.current
-        var groups: [(Date, [DayRecord])] = []
-        var current: (Date, [DayRecord])?
+        var groups: [(month: Date, days: [DayRecord])] = []
         for day in filteredDays {
             let month = calendar.date(from: calendar.dateComponents([.year, .month], from: day.day)) ?? day.day
-            if let existing = current, calendar.isDate(existing.0, equalTo: month, toGranularity: .month) {
-                current = (existing.0, existing.1 + [day])
+            if var last = groups.last, calendar.isDate(last.month, equalTo: month, toGranularity: .month) {
+                last.days.append(day)
+                groups[groups.count - 1] = last
             } else {
-                if let existing = current { groups.append(existing) }
-                current = (month, [day])
+                groups.append((month: month, days: [day]))
             }
         }
-        if let existing = current { groups.append(existing) }
-        return groups.map { (month: $0.0, days: $0.1) }
+        return groups
     }
 
-    /// Full bar ≈ 90th percentile of daily travel, so typical days stay readable next to a rare long trip.
-    var distanceScaleMeters: Double {
-        let distances = (parsed?.days ?? []).map(\.travelMeters).filter { $0 > 1 }.sorted()
-        guard !distances.isEmpty else { return 50_000 }
-        let index = Int((Double(distances.count - 1) * 0.90).rounded(.towardZero))
-        return max(distances[index], 10_000)
-    }
+    var distanceScaleMeters: Double = 50_000
 
     var filteredPlaces: [PlaceRecord] {
         guard let parsed else { return [] }
@@ -220,6 +212,7 @@ final class TimelineStore: ObservableObject {
         search = ""
         filterYear = 0
         filterMonth = 0
+        distanceScaleMeters = Self.scale(for: parsed.days)
         geocodeTask?.cancel()
         Task { placeNames = await names.namesSnapshot() }
         if let day = parsed.days.first {
@@ -316,5 +309,12 @@ final class TimelineStore: ObservableObject {
 
     static func monthTitle(_ date: Date) -> String {
         date.formatted(.dateTime.month(.wide).year())
+    }
+
+    private static func scale(for days: [DayRecord]) -> Double {
+        let distances = days.map(\.travelMeters).filter { $0 > 1 }.sorted()
+        guard !distances.isEmpty else { return 50_000 }
+        let index = Int((Double(distances.count - 1) * 0.90).rounded(.towardZero))
+        return max(distances[index], 10_000)
     }
 }
