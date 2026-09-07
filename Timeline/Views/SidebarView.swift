@@ -1,10 +1,11 @@
 import SwiftUI
 
 struct SidebarView: View {
-    @EnvironmentObject private var store: TimelineStore
+    @Environment(TimelineStore.self) private var store
     @Binding var importerPresented: Bool
 
     var body: some View {
+        @Bindable var store = store
         VStack(spacing: 0) {
             header
             tabPicker
@@ -47,7 +48,7 @@ struct SidebarView: View {
     }
 
     private var tabPicker: some View {
-        Picker("Dates or Places", selection: $store.tab) {
+        Picker("Dates or Places", selection: Bindable(store).tab) {
             ForEach(SidebarTab.allCases) { tab in
                 Text(tab.rawValue).tag(tab)
             }
@@ -72,13 +73,13 @@ struct SidebarView: View {
 
     private var dateFilters: some View {
         HStack(spacing: 8) {
-            filterMenu("Year", selection: $store.filterYear) {
+            filterMenu("Year", selection: Bindable(store).filterYear) {
                 Text("All years").tag(0)
                 ForEach(store.availableYears, id: \.self) { year in
                     Text(String(year)).tag(year)
                 }
             }
-            filterMenu("Month", selection: $store.filterMonth) {
+            filterMenu("Month", selection: Bindable(store).filterMonth) {
                 Text("All months").tag(0)
                 ForEach(store.availableMonths, id: \.self) { month in
                     Text(Self.monthName(month)).tag(month)
@@ -99,7 +100,7 @@ struct SidebarView: View {
         HStack(spacing: 6) {
             Image(systemName: "magnifyingglass")
                 .foregroundStyle(Palette.muted)
-            TextField("Find a place", text: $store.search)
+            TextField("Find a place", text: Bindable(store).search)
                 .textFieldStyle(.plain)
                 .foregroundStyle(Palette.parchment)
         }
@@ -173,7 +174,7 @@ struct SidebarView: View {
 
     private var datesList: some View {
         ScrollViewReader { proxy in
-            List(selection: $store.selectedDayID) {
+            List(selection: Bindable(store).selectedDayID) {
                 let scale = store.distanceScaleMeters
                 ForEach(store.daysByMonth, id: \.month) { group in
                     Section {
@@ -208,7 +209,7 @@ struct SidebarView: View {
     }
 
     private var placesList: some View {
-        List(selection: $store.selectedPlaceID) {
+        List(selection: Bindable(store).selectedPlaceID) {
             ForEach(store.filteredPlaces) { place in
                 PlaceRow(place: place, title: store.displayName(for: place), subtitle: store.subtitle(for: place))
                     .tag(place.id)

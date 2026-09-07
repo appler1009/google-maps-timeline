@@ -1,24 +1,26 @@
 import Foundation
 import SwiftUI
 import MapKit
+import Observation
 
+@Observable
 @MainActor
-final class TimelineStore: ObservableObject {
-    @Published var tab: SidebarTab = .dates
-    @Published var search: String = ""
+final class TimelineStore {
+    var tab: SidebarTab = .dates
+    var search: String = ""
     /// 0 means every year.
-    @Published var filterYear: Int = 0
+    var filterYear: Int = 0
     /// 0 means every month.
-    @Published var filterMonth: Int = 0
-    @Published var selectedDayID: Date?
-    @Published var selectedPlaceID: String?
-    @Published var hoveredVisitID: String?
-    @Published var parsed: ParsedTimeline?
-    @Published var isLoading = false
-    @Published var loadError: String?
-    @Published var sourceName: String?
-    @Published var placeNames: [String: String] = [:]
-    @Published var cameraPosition: MapCameraPosition = .region(
+    var filterMonth: Int = 0
+    var selectedDayID: Date?
+    var selectedPlaceID: String?
+    var hoveredVisitID: String?
+    var parsed: ParsedTimeline?
+    var isLoading = false
+    var loadError: String?
+    var sourceName: String?
+    var placeNames: [String: String] = [:]
+    var cameraPosition: MapCameraPosition = .region(
         MKCoordinateRegion(
             center: CLLocationCoordinate2D(latitude: 49.25, longitude: -123.12),
             span: MKCoordinateSpan(latitudeDelta: 0.2, longitudeDelta: 0.2)

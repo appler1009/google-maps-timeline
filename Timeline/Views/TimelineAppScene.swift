@@ -43,7 +43,7 @@ enum Palette {
 }
 
 struct TimelineAppScene: View {
-    @StateObject private var store = TimelineStore()
+    @State private var store = TimelineStore()
     @State private var importerPresented = false
 
     var body: some View {
@@ -54,7 +54,7 @@ struct TimelineAppScene: View {
         } detail: {
             MapCanvasView()
         }
-        .environmentObject(store)
+        .environment(store)
         .background(Palette.ink)
         .navigationTitle("Timeline")
         .navigationSubtitle(store.windowSubtitle)

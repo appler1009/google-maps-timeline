@@ -2,9 +2,10 @@ import SwiftUI
 import MapKit
 
 struct MapCanvasView: View {
-    @EnvironmentObject private var store: TimelineStore
+    @Environment(TimelineStore.self) private var store
 
     var body: some View {
+        @Bindable var store = store
         ZStack(alignment: .bottomLeading) {
             map
             if store.parsed == nil && !store.isLoading {
@@ -19,7 +20,7 @@ struct MapCanvasView: View {
     }
 
     private var map: some View {
-        Map(position: $store.cameraPosition) {
+        Map(position: Bindable(store).cameraPosition) {
             if let day = store.selectedDay {
                 ForEach(Array(day.paths.enumerated()), id: \.element.id) { _, path in
                     MapPolyline(coordinates: path.points)
@@ -160,7 +161,7 @@ struct VisitPin: View {
 }
 
 struct SelectionCard: View {
-    @EnvironmentObject private var store: TimelineStore
+    @Environment(TimelineStore.self) private var store
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
