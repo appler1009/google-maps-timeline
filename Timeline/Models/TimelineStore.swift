@@ -6,6 +6,10 @@ import MapKit
 final class TimelineStore: ObservableObject {
     @Published var tab: SidebarTab = .dates
     @Published var search: String = ""
+    /// 0 means every year.
+    @Published var filterYear: Int = 0
+    /// 0 means every month.
+    @Published var filterMonth: Int = 0
     @Published var selectedDayID: Date?
     @Published var selectedPlaceID: String?
     @Published var hoveredVisitID: String?
@@ -54,11 +58,42 @@ final class TimelineStore: ObservableObject {
 
     var filteredDays: [DayRecord] {
         guard let parsed else { return [] }
-        let query = search.trimmingCharacters(in: .whitespacesAndNewlines)
-        if query.isEmpty { return parsed.days }
+        let calendar = Calendar.current
         return parsed.days.filter { day in
-            Self.dayTitle(day.day).localizedCaseInsensitiveContains(query)
-                || Self.monthTitle(day.day).localizedCaseInsensitiveContains(query)
+            let parts = calendar.dateComponents([.year, .month], from: day.day)
+            if filterYear != 0, parts.year != filterYear { return false }
+            if filterMonth != 0, parts.month != filterMonth { return false }
+            return true
+        }
+    }
+
+    var availableYears: [Int] {
+        let calendar = Calendar.current
+        let years = Set((parsed?.days ?? []).compactMap { calendar.dateComponents([.year], from: $0.day).year })
+        return years.sorted(by: >)
+    }
+
+    var availableMonths: [Int] {
+        let calendar = Calendar.current
+        let months = Set((parsed?.days ?? []).compactMap { day -> Int? in
+            let parts = calendar.dateComponents([.year, .month], from: day.day)
+            if filterYear != 0, parts.year != filterYear { return nil }
+            return parts.month
+        })
+        return months.sorted()
+    }
+
+    func clampDateFilters() {
+        if filterYear != 0, !availableYears.contains(filterYear) {
+            filterYear = 0
+        }
+        if filterMonth != 0, !availableMonths.contains(filterMonth) {
+            filterMonth = 0
+        }
+        if let selected = selectedDay, !filteredDays.contains(where: { $0.day == selected.day }) {
+            if let first = filteredDays.first {
+                select(day: first)
+            }
         }
     }
 
@@ -183,6 +218,8 @@ final class TimelineStore: ObservableObject {
         selectedDayID = parsed.days.first?.day
         tab = .dates
         search = ""
+        filterYear = 0
+        filterMonth = 0
         geocodeTask?.cancel()
         Task { placeNames = await names.namesSnapshot() }
         if let day = parsed.days.first {

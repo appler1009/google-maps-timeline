@@ -8,7 +8,11 @@ struct SidebarView: View {
         VStack(spacing: 0) {
             header
             tabPicker
-            searchField
+            if store.tab == .dates {
+                dateFilters
+            } else {
+                placeSearch
+            }
             Divider().overlay(Palette.rule)
             Group {
                 if store.isLoading {
@@ -43,12 +47,13 @@ struct SidebarView: View {
     }
 
     private var tabPicker: some View {
-        Picker("Sidebar", selection: $store.tab) {
+        Picker("Dates or Places", selection: $store.tab) {
             ForEach(SidebarTab.allCases) { tab in
                 Text(tab.rawValue).tag(tab)
             }
         }
         .pickerStyle(.segmented)
+        .labelsHidden()
         .padding(.horizontal, 16)
         .padding(.bottom, 10)
         .onChange(of: store.tab) { _, newValue in
@@ -65,11 +70,36 @@ struct SidebarView: View {
         }
     }
 
-    private var searchField: some View {
+    private var dateFilters: some View {
+        HStack(spacing: 8) {
+            filterMenu("Year", selection: $store.filterYear) {
+                Text("All years").tag(0)
+                ForEach(store.availableYears, id: \.self) { year in
+                    Text(String(year)).tag(year)
+                }
+            }
+            filterMenu("Month", selection: $store.filterMonth) {
+                Text("All months").tag(0)
+                ForEach(store.availableMonths, id: \.self) { month in
+                    Text(Self.monthName(month)).tag(month)
+                }
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.bottom, 12)
+        .onChange(of: store.filterYear) { _, _ in
+            store.clampDateFilters()
+        }
+        .onChange(of: store.filterMonth) { _, _ in
+            store.clampDateFilters()
+        }
+    }
+
+    private var placeSearch: some View {
         HStack(spacing: 6) {
             Image(systemName: "magnifyingglass")
                 .foregroundStyle(Palette.muted)
-            TextField(store.tab == .dates ? "Find a date" : "Find a place", text: $store.search)
+            TextField("Find a place", text: $store.search)
                 .textFieldStyle(.plain)
                 .foregroundStyle(Palette.parchment)
         }
@@ -78,6 +108,31 @@ struct SidebarView: View {
         .background(Palette.inkLift, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
         .padding(.horizontal, 16)
         .padding(.bottom, 12)
+    }
+
+    private func filterMenu<Content: View>(
+        _ title: String,
+        selection: Binding<Int>,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        Picker(title, selection: selection) {
+            content()
+        }
+        .pickerStyle(.menu)
+        .labelsHidden()
+        .tint(Palette.parchment)
+        .frame(maxWidth: .infinity)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 6)
+        .background(Palette.inkLift, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+
+    private static func monthName(_ month: Int) -> String {
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar.current
+        let names = formatter.monthSymbols ?? []
+        guard month >= 1, month <= names.count else { return "\(month)" }
+        return names[month - 1]
     }
 
     private var loading: some View {
@@ -117,27 +172,36 @@ struct SidebarView: View {
     }
 
     private var datesList: some View {
-        List(selection: $store.selectedDayID) {
-            ForEach(store.daysByMonth, id: \.month) { group in
-                Section {
-                    ForEach(group.days) { day in
-                        DayRow(day: day, scaleMeters: store.distanceScaleMeters)
-                            .tag(day.day)
-                            .listRowBackground(rowBackground(isSelected: store.selectedDayID == day.day))
+        ScrollViewReader { proxy in
+            List(selection: $store.selectedDayID) {
+                ForEach(store.daysByMonth, id: \.month) { group in
+                    Section {
+                        ForEach(group.days) { day in
+                            DayRow(day: day, scaleMeters: store.distanceScaleMeters)
+                                .tag(day.day)
+                                .id(day.day)
+                                .listRowBackground(rowBackground(isSelected: store.selectedDayID == day.day))
+                        }
+                    } header: {
+                        Text(TimelineStore.monthTitle(group.month))
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(Palette.muted)
                     }
-                } header: {
-                    Text(TimelineStore.monthTitle(group.month))
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(Palette.muted)
                 }
             }
-        }
-        .listStyle(.sidebar)
-        .scrollContentBackground(.hidden)
-        .onChange(of: store.selectedDayID) { _, newValue in
-            if let day = store.parsed?.days.first(where: { $0.day == newValue }) {
-                store.focus(day: day)
-                store.selectedPlaceID = nil
+            .listStyle(.sidebar)
+            .scrollContentBackground(.hidden)
+            .onChange(of: store.selectedDayID) { _, newValue in
+                if let day = store.parsed?.days.first(where: { $0.day == newValue }) {
+                    store.focus(day: day)
+                    store.selectedPlaceID = nil
+                }
+            }
+            .onChange(of: store.filterYear) { _, _ in
+                if let id = store.selectedDayID { proxy.scrollTo(id, anchor: .top) }
+            }
+            .onChange(of: store.filterMonth) { _, _ in
+                if let id = store.selectedDayID { proxy.scrollTo(id, anchor: .top) }
             }
         }
     }

@@ -50,6 +50,7 @@ struct TimelineAppScene: View {
         NavigationSplitView {
             SidebarView(importerPresented: $importerPresented)
                 .navigationSplitViewColumnWidth(min: 260, ideal: 300, max: 380)
+                .navigationTitle("")
         } detail: {
             MapCanvasView()
         }
