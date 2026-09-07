@@ -29,22 +29,36 @@ struct SidebarView: View {
         }
         .background(Palette.ink)
         .foregroundStyle(Palette.parchment)
+        .ignoresSafeArea(.container, edges: .top)
     }
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text("Timeline")
-                .font(.system(size: 26, weight: .bold, design: .serif))
-                .foregroundStyle(Palette.parchment)
-            Text(store.sourceName ?? "Open a Timeline.json export")
-                .font(.system(size: 12, weight: .regular, design: .default))
-                .foregroundStyle(Palette.muted)
-                .lineLimit(1)
+        HStack(alignment: .center, spacing: 10) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Timeline")
+                    .font(.system(size: 22, weight: .bold, design: .serif))
+                    .foregroundStyle(Palette.parchment)
+                Text(store.sourceName ?? "Open a Timeline.json export")
+                    .font(.system(size: 11, weight: .regular, design: .default))
+                    .foregroundStyle(Palette.muted)
+                    .lineLimit(1)
+            }
+            Spacer(minLength: 8)
+            Button {
+                importerPresented = true
+            } label: {
+                Image(systemName: "folder")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Palette.parchment)
+                    .frame(width: 28, height: 28)
+                    .background(Palette.inkLift, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+            }
+            .buttonStyle(.plain)
+            .help("Open a Google Maps Timeline JSON export")
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 16)
-        .padding(.top, 18)
-        .padding(.bottom, 12)
+        .padding(.top, 38)
+        .padding(.bottom, 10)
     }
 
     private var tabPicker: some View {

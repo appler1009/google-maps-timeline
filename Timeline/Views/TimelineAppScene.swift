@@ -47,18 +47,17 @@ struct TimelineAppScene: View {
     @State private var importerPresented = false
 
     var body: some View {
-        NavigationSplitView {
+        HSplitView {
             SidebarView(importerPresented: $importerPresented)
-                .navigationSplitViewColumnWidth(min: 260, ideal: 300, max: 380)
-                .navigationTitle("")
-        } detail: {
+                .frame(minWidth: 260, idealWidth: 300, maxWidth: 380)
             MapCanvasView()
+                .frame(minWidth: 480, maxWidth: .infinity, maxHeight: .infinity)
         }
+        .toolbar(.hidden)
+        .ignoresSafeArea(.container, edges: .top)
         .environment(store)
         .background(Palette.ink)
-        .navigationTitle("Timeline")
-        .navigationSubtitle(store.windowSubtitle)
-        .background(WindowTitleSync(subtitle: store.windowSubtitle))
+        .background(WindowChrome())
         .fileImporter(
             isPresented: $importerPresented,
             allowedContentTypes: [.json],
@@ -69,16 +68,6 @@ struct TimelineAppScene: View {
                 if let url = urls.first { store.open(url: url) }
             case .failure(let error):
                 store.loadError = error.localizedDescription
-            }
-        }
-        .toolbar {
-            ToolbarItem(placement: .navigation) {
-                Button {
-                    importerPresented = true
-                } label: {
-                    Label("Open Timeline", systemImage: "folder")
-                }
-                .help("Open a Google Maps Timeline JSON export")
             }
         }
         .onAppear {
@@ -97,25 +86,50 @@ struct TimelineAppScene: View {
     }
 }
 
-private struct WindowTitleSync: NSViewRepresentable {
-    let subtitle: String
-
-    func makeNSView(context: Context) -> NSView {
-        NSView(frame: .zero)
+private struct WindowChrome: NSViewRepresentable {
+    func makeNSView(context: Context) -> WindowChromeView {
+        WindowChromeView()
     }
 
-    func updateNSView(_ nsView: NSView, context: Context) {
-        DispatchQueue.main.async {
-            guard let window = nsView.window else { return }
-            window.title = "Timeline"
-            window.subtitle = subtitle
+    func updateNSView(_ nsView: WindowChromeView, context: Context) {
+        nsView.apply()
+    }
+}
+
+private final class WindowChromeView: NSView {
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        apply()
+        DispatchQueue.main.async { [weak self] in
+            self?.apply()
         }
+    }
+
+    func apply() {
+        guard let window else { return }
+        window.title = "Timeline"
+        window.subtitle = ""
+        window.titleVisibility = .hidden
+        window.titlebarAppearsTransparent = true
+        window.titlebarSeparatorStyle = .none
+        window.styleMask.insert(.fullSizeContentView)
+        window.toolbarStyle = .unifiedCompact
+        window.toolbar = nil
+        window.appearance = NSAppearance(named: .darkAqua)
+        window.backgroundColor = NSColor(srgbRed: 0.07, green: 0.11, blue: 0.16, alpha: 1)
+        window.isOpaque = true
     }
 }
 
 private func bringWindowOnscreen() {
     DispatchQueue.main.async {
         guard let window = NSApp.windows.first(where: { $0.contentView != nil }) else { return }
+        window.titleVisibility = .hidden
+        window.titlebarAppearsTransparent = true
+        window.titlebarSeparatorStyle = .none
+        window.styleMask.insert(.fullSizeContentView)
+        window.toolbar = nil
+        window.appearance = NSAppearance(named: .darkAqua)
         let target = NSScreen.main?.visibleFrame ?? NSRect(x: 80, y: 80, width: 1400, height: 900)
         if window.frame.width > target.width * 0.95 || !target.intersects(window.frame) {
             let width = min(1280, target.width - 40)

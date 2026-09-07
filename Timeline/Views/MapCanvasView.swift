@@ -22,6 +22,7 @@ struct MapCanvasView: View {
             }
         }
         .background(Palette.ink)
+        .ignoresSafeArea(.container, edges: .top)
     }
 
     private var emptyMap: some View {
@@ -43,7 +44,7 @@ private struct TimelineKitMapHost: View {
     @Environment(TimelineStore.self) private var store
 
     var body: some View {
-        TimelineKitMap(
+            TimelineKitMap(
             generation: store.focusGeneration,
             region: store.focusRegion,
             animated: store.focusAnimated,
@@ -58,6 +59,8 @@ private struct TimelineKitMapHost: View {
             visitFocusID: store.selectedVisitID,
             onSelectVisit: { store.focusVisit(id: $0) }
         )
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .ignoresSafeArea(.container, edges: .top)
     }
 }
 

@@ -64,16 +64,6 @@ final class TimelineStore {
         return selectedPlace?.recentVisits.first(where: { $0.id == hoveredVisitID })
     }
 
-    var windowSubtitle: String {
-        if let day = selectedDay {
-            return Self.dayTitle(day.day)
-        }
-        if let place = selectedPlace {
-            return displayName(for: place)
-        }
-        return sourceName ?? ""
-    }
-
     var availableYears: [Int] { yearOptions }
 
     var availableMonths: [Int] { monthOptions }

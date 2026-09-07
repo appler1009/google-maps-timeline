@@ -7,8 +7,8 @@ struct TimelineApp: App {
             TimelineAppScene()
                 .frame(minWidth: 980, minHeight: 640)
         }
-        .windowStyle(.titleBar)
-        .windowToolbarStyle(.unified)
+        .windowStyle(.hiddenTitleBar)
+        .windowToolbarStyle(.unifiedCompact(showsTitle: false))
         .defaultSize(width: 1280, height: 820)
         .defaultPosition(.center)
         .commands {
