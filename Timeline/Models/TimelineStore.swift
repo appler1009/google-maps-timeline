@@ -80,9 +80,13 @@ final class TimelineStore {
         }
         rebuildDateIndexes()
         if let selected = selectedDay, !monthGroups.contains(where: { group in group.days.contains(where: { $0.day == selected.day }) }) {
+            #if os(iOS)
+            selectedDayID = nil
+            #else
             if let first = monthGroups.first?.days.first {
                 select(day: first)
             }
+            #endif
         }
     }
 
@@ -224,7 +228,6 @@ final class TimelineStore {
         isLoading = false
         selectedPlaceID = nil
         selectedVisitID = nil
-        selectedDayID = parsed.days.first?.day
         tab = .dates
         search = ""
         filterYear = parsed.days.first.map { Calendar.current.component(.year, from: $0.day) } ?? 0
@@ -236,10 +239,15 @@ final class TimelineStore {
         rebuildDateIndexes()
         snappedRoutes = []
         snappedDayID = nil
+        #if os(iOS)
+        selectedDayID = nil
+        #else
+        selectedDayID = parsed.days.first?.day
         if let day = parsed.days.first {
             focus(day: day)
             requestRoutes(for: day)
         }
+        #endif
     }
 
     func select(day: DayRecord) {

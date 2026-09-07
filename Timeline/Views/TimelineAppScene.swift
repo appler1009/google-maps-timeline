@@ -108,23 +108,7 @@ struct TimelineAppScene: View {
                     .accessibilityHidden(showingCompactMap)
                 if showingCompactMap {
                     MapCanvasView()
-                        .overlay(alignment: .topLeading) {
-                            Button {
-                                dismissCompactMap()
-                            } label: {
-                                Label("Dates", systemImage: "chevron.backward")
-                                    .labelStyle(.iconOnly)
-                                    .font(.system(size: 16, weight: .semibold))
-                                    .foregroundStyle(Palette.parchment)
-                                    .frame(width: 36, height: 36)
-                                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-                            }
-                            .buttonStyle(.plain)
-                            .padding(.leading, 16)
-                            .padding(.top, 8)
-                            .safeAreaPadding(.top)
-                            .accessibilityLabel("Back to list")
-                        }
+                        .environment(\.compactMapDismiss, dismissCompactMap)
                         .transition(.asymmetric(
                             insertion: .move(edge: .trailing).combined(with: .opacity),
                             removal: .move(edge: .trailing).combined(with: .opacity)

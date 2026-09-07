@@ -79,6 +79,13 @@ struct SidebarView: View {
         .padding(.bottom, 10)
         .onChange(of: store.tab) { _, newValue in
             store.search = ""
+            #if os(iOS)
+            if newValue == .dates, let day = store.selectedDay {
+                store.focus(day: day)
+            } else if newValue == .places, let place = store.selectedPlace {
+                store.focus(place: place)
+            }
+            #else
             if newValue == .dates {
                 if store.selectedDay == nil, let day = store.parsed?.days.first {
                     store.select(day: day)
@@ -92,6 +99,7 @@ struct SidebarView: View {
                     store.focus(place: place)
                 }
             }
+            #endif
         }
     }
 

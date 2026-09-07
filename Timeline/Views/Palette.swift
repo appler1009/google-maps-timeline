@@ -1,5 +1,16 @@
 import SwiftUI
 
+private enum CompactMapDismissKey: EnvironmentKey {
+    static let defaultValue: (() -> Void)? = nil
+}
+
+extension EnvironmentValues {
+    var compactMapDismiss: (() -> Void)? {
+        get { self[CompactMapDismissKey.self] }
+        set { self[CompactMapDismissKey.self] = newValue }
+    }
+}
+
 enum Palette {
     static let ink = Color(red: 0.07, green: 0.11, blue: 0.16)
     static let inkLift = Color(red: 0.11, green: 0.16, blue: 0.22)

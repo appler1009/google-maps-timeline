@@ -7,6 +7,9 @@ import AppKit
 
 struct MapCanvasView: View {
     @Environment(TimelineStore.self) private var store
+    #if os(iOS)
+    @Environment(\.compactMapDismiss) private var compactMapDismiss
+    #endif
 
     var body: some View {
         ZStack(alignment: .bottomLeading) {
@@ -19,19 +22,26 @@ struct MapCanvasView: View {
             } else {
                 emptyMap
             }
+            #if os(macOS)
             if store.selectedDay != nil || store.selectedPlace != nil {
                 SelectionCard()
-                    #if os(iOS)
+                    .padding(16)
+                    .id(store.selectedDayID ?? store.selectedPlaceID.map { _ in Date.distantPast })
+                    .transition(.opacity)
+            }
+            #endif
+        }
+        #if os(iOS)
+        .overlay(alignment: .top) { iosTopChrome }
+        .overlay(alignment: .bottom) {
+            if store.selectedDay != nil || store.selectedPlace != nil {
+                SelectionCard()
                     .padding(.horizontal, 12)
                     .padding(.bottom, 8)
                     .safeAreaPadding(.bottom)
-                    #else
-                    .padding(16)
-                    .id(store.selectedDayID ?? store.selectedPlaceID.map { _ in Date.distantPast })
-                    #endif
-                    .transition(.opacity)
             }
         }
+        #endif
         .background(Palette.ink)
         #if os(macOS)
         .ignoresSafeArea(.container, edges: .top)
@@ -39,6 +49,68 @@ struct MapCanvasView: View {
         .ignoresSafeArea()
         #endif
     }
+
+    #if os(iOS)
+    private var iosTopChrome: some View {
+        HStack(spacing: 8) {
+            if let compactMapDismiss {
+                Button(action: compactMapDismiss) {
+                    Image(systemName: "chevron.backward")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(Palette.parchment)
+                        .frame(width: 36, height: 36)
+                        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Back to list")
+            }
+            if let day = store.selectedDay {
+                Button {
+                    store.stepDay(by: -1)
+                } label: {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 13, weight: .semibold))
+                        .frame(width: 28, height: 36)
+                }
+                .buttonStyle(.plain)
+                .disabled(!store.canStepToNewerDay)
+                .opacity(store.canStepToNewerDay ? 1 : 0.28)
+                .accessibilityLabel("Newer day")
+
+                Text(TimelineStore.dayTitle(day.day))
+                    .font(.system(size: 17, weight: .regular, design: .serif))
+                    .foregroundStyle(Palette.parchment)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
+                    .frame(maxWidth: .infinity)
+
+                Button {
+                    store.stepDay(by: 1)
+                } label: {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 13, weight: .semibold))
+                        .frame(width: 28, height: 36)
+                }
+                .buttonStyle(.plain)
+                .disabled(!store.canStepToOlderDay)
+                .opacity(store.canStepToOlderDay ? 1 : 0.28)
+                .accessibilityLabel("Older day")
+            } else if let place = store.selectedPlace {
+                Text(store.displayName(for: place))
+                    .font(.system(size: 17, weight: .regular, design: .serif))
+                    .foregroundStyle(Palette.parchment)
+                    .lineLimit(1)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            } else {
+                Spacer()
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.top, 8)
+        .safeAreaPadding(.top)
+        .foregroundStyle(Palette.parchment)
+    }
+    #endif
 
     private var emptyMap: some View {
         VStack(spacing: 8) {
@@ -535,40 +607,49 @@ struct SelectionCard: View {
             VStack(alignment: .leading, spacing: 10) {
                 grabber
                 if let day = store.selectedDay {
-                    dayHeader(day)
+                    HStack {
+                        Text(daySummary(day))
+                            .font(.system(size: 12))
+                            .foregroundStyle(Palette.muted)
+                        Spacer(minLength: 8)
+                        if sheetExpansion > 0.35 {
+                            Button {
+                                store.rerouteSelectedDay()
+                            } label: {
+                                if store.isRerouting {
+                                    ProgressView()
+                                        .controlSize(.small)
+                                } else {
+                                    Label("Re-route", systemImage: "arrow.triangle.swap")
+                                        .font(.system(size: 11, weight: .semibold))
+                                }
+                            }
+                            .buttonStyle(.borderless)
+                            .foregroundStyle(Palette.parchment)
+                            .disabled(store.isRerouting || day.visitCount < 2)
+                        }
+                    }
                 } else if let place = store.selectedPlace {
-                    placeHeader(place)
+                    Text(store.subtitle(for: place))
+                        .font(.system(size: 12))
+                        .foregroundStyle(Palette.muted)
                 }
             }
             .contentShape(Rectangle())
             .gesture(iosCardGesture)
-            VStack(alignment: .leading, spacing: 10) {
+            let expansion = sheetExpansion
+            VStack(alignment: .leading, spacing: 8) {
                 Divider().overlay(Palette.rule.opacity(0.5))
                 if let day = store.selectedDay {
-                    HStack {
-                        Spacer(minLength: 0)
-                        Button {
-                            store.rerouteSelectedDay()
-                        } label: {
-                            if store.isRerouting {
-                                ProgressView()
-                                    .controlSize(.small)
-                            } else {
-                                Label("Re-route", systemImage: "arrow.triangle.swap")
-                                    .font(.system(size: 11, weight: .semibold))
-                            }
-                        }
-                        .buttonStyle(.borderless)
-                        .foregroundStyle(Palette.parchment)
-                        .disabled(store.isRerouting || day.visitCount < 2)
-                    }
                     dayVisits(day)
                 } else if let place = store.selectedPlace {
                     placeVisits(place)
                 }
             }
-            .frame(height: Self.iosOpenBodyHeight, alignment: .top)
+            .frame(height: Self.iosOpenBodyHeight * expansion, alignment: .top)
             .clipped()
+            .opacity(expansion)
+            .allowsHitTesting(expansion > 0.35)
             #else
             if let day = store.selectedDay {
                 dayHeader(day)
@@ -586,8 +667,6 @@ struct SelectionCard: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Palette.inkLift, in: Self.legendShape)
         .overlay(Self.legendShape.stroke(Palette.parchment.opacity(0.12), lineWidth: 1))
-        .offset(y: sheetHidden + sheetNudge)
-        .padding(.bottom, -sheetHidden)
         .shadow(color: .black.opacity(0.4), radius: 12, y: 6)
         .animation(nil, value: drag)
         #else
@@ -611,16 +690,6 @@ struct SelectionCard: View {
             return min(1, max(0, -drag / range))
         }
         return min(1, max(0, 1 - max(0, drag) / range))
-    }
-
-    private var sheetHidden: CGFloat {
-        Self.iosOpenBodyHeight * (1 - sheetExpansion)
-    }
-
-    private var sheetNudge: CGFloat {
-        if collapsed, drag > 0 { return min(24, drag * 0.16) }
-        if !collapsed, drag < 0 { return max(-12, drag * 0.1) }
-        return 0
     }
 
     private var grabber: some View {
