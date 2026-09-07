@@ -16,6 +16,10 @@ enum TimelineParseError: LocalizedError {
 
 enum TimelineParser {
     static func parse(data: Data, sourceName: String) throws -> ParsedTimeline {
+        assemble(try extract(data), sourceName: sourceName)
+    }
+
+    static func extract(_ data: Data) throws -> TimelineBatch {
         let object = try JSONSerialization.jsonObject(with: data)
         let segments: [[String: Any]]
         if let array = object as? [[String: Any]] {
@@ -24,68 +28,21 @@ enum TimelineParser {
             if let nested = dict["semanticSegments"] as? [[String: Any]] {
                 segments = nested
             } else if let nested = dict["timelineObjects"] as? [[String: Any]] {
-                return try parseLegacyTimelineObjects(nested, sourceName: sourceName)
+                return collect(segments: try legacySegments(nested))
             } else {
                 throw TimelineParseError.unrecognized
             }
         } else {
             throw TimelineParseError.unrecognized
         }
-
-        return assemble(segments: segments, sourceName: sourceName)
+        let batch = collect(segments: segments)
+        if batch.visits.isEmpty, batch.activities.isEmpty, batch.paths.isEmpty {
+            throw TimelineParseError.unrecognized
+        }
+        return batch
     }
 
-    private static func assemble(segments: [[String: Any]], sourceName: String) -> ParsedTimeline {
-        var visits: [TimelineVisit] = []
-        var activities: [RawActivity] = []
-        var paths: [TimelinePath] = []
-        visits.reserveCapacity(segments.count / 2)
-        activities.reserveCapacity(segments.count / 2)
-
-        for (index, segment) in segments.enumerated() {
-            let start = parseDate(segment["startTime"] as? String)
-            let end = parseDate(segment["endTime"] as? String)
-            guard let start, let end else { continue }
-
-            if let visit = segment["visit"] as? [String: Any] {
-                let candidate = visit["topCandidate"] as? [String: Any]
-                let coord = Geo.coordinate(from: candidate?["placeLocation"] as? String)
-                let placeID = candidate?["placeID"] as? String
-                visits.append(
-                    TimelineVisit(
-                        id: "v\(index)",
-                        start: start,
-                        end: end,
-                        coordinate: coord,
-                        semanticType: candidate?["semanticType"] as? String,
-                        placeKey: Geo.placeKey(id: placeID, coordinate: coord)
-                    )
-                )
-            }
-
-            if let activity = segment["activity"] as? [String: Any] {
-                let type = (activity["topCandidate"] as? [String: Any])?["type"] as? String
-                activities.append(
-                    RawActivity(
-                        id: "a\(index)",
-                        start: start,
-                        distance: doubleValue(activity["distanceMeters"]) ?? 0,
-                        startCoordinate: Geo.coordinate(from: activity["start"] as? String),
-                        endCoordinate: Geo.coordinate(from: activity["end"] as? String),
-                        kind: TravelKind(googleType: type)
-                    )
-                )
-            }
-
-            if let pathPoints = segment["timelinePath"] as? [[String: Any]] {
-                let coords = pathPoints.compactMap { Geo.coordinate(from: $0["point"] as? String) }
-                let simplified = PathSimplifier.simplify(coords, epsilonMeters: 12)
-                if simplified.count >= 2 {
-                    paths.append(TimelinePath(id: "p\(index)", start: start, points: simplified, kind: .automobile))
-                }
-            }
-        }
-
+    static func assemble(_ batch: TimelineBatch, sourceName: String) -> ParsedTimeline {
         let calendar = Calendar.current
         var daysMap: [Date: DayBucket] = [:]
 
@@ -93,27 +50,48 @@ enum TimelineParser {
             calendar.startOfDay(for: date)
         }
 
-        for visit in visits {
-            let key = dayKey(visit.start)
-            var bucket = daysMap[key] ?? DayBucket()
-            bucket.visits.append(visit)
-            daysMap[key] = bucket
+        var typeByPlace: [String: String] = [:]
+        for visit in batch.visits {
+            guard let type = visit.semanticType, !type.isEmpty, type.lowercased() != "unknown" else { continue }
+            let current = typeByPlace[visit.placeKey]
+            if current == nil || type == "Home" || type == "Work" {
+                typeByPlace[visit.placeKey] = type
+            }
         }
-        for activity in activities {
+
+        for visit in batch.visits {
+            let resolved = typeByPlace[visit.placeKey] ?? visit.semanticType
+            var day = dayKey(visit.start)
+            let lastDay = dayKey(visit.end)
+            let lastInclusive: Date
+            if visit.end == lastDay, visit.end > visit.start {
+                lastInclusive = calendar.date(byAdding: .day, value: -1, to: lastDay) ?? day
+            } else {
+                lastInclusive = lastDay
+            }
+            while day <= lastInclusive {
+                var bucket = daysMap[day] ?? DayBucket()
+                bucket.visits.append(visit.appearing(on: day, calendar: calendar, semanticType: resolved))
+                daysMap[day] = bucket
+                guard let next = calendar.date(byAdding: .day, value: 1, to: day) else { break }
+                day = next
+            }
+        }
+        for activity in batch.activities {
             let key = dayKey(activity.start)
             var bucket = daysMap[key] ?? DayBucket()
             bucket.travelMeters += activity.distance
             bucket.kinds.append((activity.start, activity.kind))
             if let startC = activity.startCoordinate, let endC = activity.endCoordinate {
-                bucket.lines.append(ActivityLine(id: activity.id, start: startC, end: endC, kind: activity.kind))
+                bucket.lines.append(ActivityLine(id: activity.id, at: activity.start, start: startC, end: endC, kind: activity.kind))
             }
             daysMap[key] = bucket
         }
-        for path in paths {
+        for path in batch.paths {
             let key = dayKey(path.start)
             var bucket = daysMap[key] ?? DayBucket()
             let kind = nearestKind(path.start, in: bucket.kinds)
-            bucket.paths.append(TimelinePath(id: path.id, start: path.start, points: path.points, kind: kind))
+            bucket.paths.append(TimelinePath(id: path.id, start: path.start, end: path.end, points: path.points, kind: kind))
             daysMap[key] = bucket
         }
 
@@ -122,7 +100,7 @@ enum TimelineParser {
             let bucket = daysMap[day]!
             let visitsSorted = bucket.visits.sorted { $0.start < $1.start }
             let pathsSorted = bucket.paths
-            let lines = pathsSorted.isEmpty ? bucket.lines : []
+            let lines = bucket.lines
             var coords = visitsSorted.compactMap(\.coordinate)
             for path in pathsSorted { coords.append(contentsOf: path.points) }
             for line in lines {
@@ -140,8 +118,8 @@ enum TimelineParser {
         }
 
         var placeMap: [String: [TimelineVisit]] = [:]
-        placeMap.reserveCapacity(min(visits.count, 4096))
-        for visit in visits {
+        placeMap.reserveCapacity(min(batch.visits.count, 4096))
+        for visit in batch.visits {
             var grouped = placeMap[visit.placeKey] ?? []
             grouped.append(visit)
             placeMap[visit.placeKey] = grouped
@@ -169,7 +147,78 @@ enum TimelineParser {
         return ParsedTimeline(sourceName: sourceName, days: days, places: places)
     }
 
-    private static func parseLegacyTimelineObjects(_ objects: [[String: Any]], sourceName: String) throws -> ParsedTimeline {
+    private static func collect(segments: [[String: Any]]) -> TimelineBatch {
+        var visits: [TimelineVisit] = []
+        var activities: [TimelineActivity] = []
+        var paths: [TimelinePath] = []
+        visits.reserveCapacity(segments.count / 2)
+        activities.reserveCapacity(segments.count / 2)
+
+        for segment in segments {
+            let start = parseDate(segment["startTime"] as? String)
+            let end = parseDate(segment["endTime"] as? String)
+            guard let start, let end else { continue }
+
+            if let visit = segment["visit"] as? [String: Any] {
+                let candidate = visit["topCandidate"] as? [String: Any]
+                let coord = Geo.coordinate(from: candidate?["placeLocation"] as? String)
+                let placeID = candidate?["placeID"] as? String
+                let placeKey = Geo.placeKey(id: placeID, coordinate: coord)
+                visits.append(
+                    TimelineVisit(
+                        id: Geo.segmentID("v", Geo.millis(start), Geo.millis(end), placeKey),
+                        start: start,
+                        end: end,
+                        coordinate: coord,
+                        semanticType: candidate?["semanticType"] as? String,
+                        placeKey: placeKey
+                    )
+                )
+            }
+
+            if let activity = segment["activity"] as? [String: Any] {
+                let type = (activity["topCandidate"] as? [String: Any])?["type"] as? String
+                let startC = Geo.coordinate(from: activity["start"] as? String)
+                let endC = Geo.coordinate(from: activity["end"] as? String)
+                activities.append(
+                    TimelineActivity(
+                        id: Geo.segmentID(
+                            "a",
+                            Geo.millis(start),
+                            Geo.millis(end),
+                            startC.map { String(format: "%.7f,%.7f", $0.latitude, $0.longitude) } ?? "",
+                            endC.map { String(format: "%.7f,%.7f", $0.latitude, $0.longitude) } ?? ""
+                        ),
+                        start: start,
+                        end: end,
+                        distance: doubleValue(activity["distanceMeters"]) ?? 0,
+                        startCoordinate: startC,
+                        endCoordinate: endC,
+                        kind: TravelKind(googleType: type)
+                    )
+                )
+            }
+
+            if let pathPoints = segment["timelinePath"] as? [[String: Any]] {
+                let coords = pathPoints.compactMap { Geo.coordinate(from: $0["point"] as? String) }
+                let simplified = PathSimplifier.simplify(coords, epsilonMeters: 12)
+                if simplified.count >= 2 {
+                    paths.append(
+                        TimelinePath(
+                            id: Geo.segmentID("p", Geo.millis(start), Geo.millis(end)),
+                            start: start,
+                            end: end,
+                            points: simplified,
+                            kind: .automobile
+                        )
+                    )
+                }
+            }
+        }
+        return TimelineBatch(visits: visits, activities: activities, paths: paths)
+    }
+
+    private static func legacySegments(_ objects: [[String: Any]]) throws -> [[String: Any]] {
         var segments: [[String: Any]] = []
         for object in objects {
             if let visit = object["placeVisit"] as? [String: Any] {
@@ -218,7 +267,7 @@ enum TimelineParser {
             }
         }
         if segments.isEmpty { throw TimelineParseError.unrecognized }
-        return assemble(segments: segments, sourceName: sourceName)
+        return segments
     }
 
     static func semanticTitle(_ type: String?) -> String? {
@@ -353,15 +402,6 @@ enum TimelineParser {
             )
         )
     }
-}
-
-private struct RawActivity {
-    let id: String
-    let start: Date
-    let distance: Double
-    let startCoordinate: CLLocationCoordinate2D?
-    let endCoordinate: CLLocationCoordinate2D?
-    let kind: TravelKind
 }
 
 private struct DayBucket {

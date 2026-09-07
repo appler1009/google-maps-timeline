@@ -15,6 +15,7 @@ final class TimelineStore {
     var selectedDayID: Date?
     var selectedPlaceID: String?
     var hoveredVisitID: String?
+    var selectedVisitID: String?
     var parsed: ParsedTimeline?
     var isLoading = false
     var loadError: String?
@@ -28,14 +29,22 @@ final class TimelineStore {
     var snappedRoutes: [[CLLocationCoordinate2D]] = []
     var snappedDayID: Date?
     var routeGeneration: UInt64 = 0
+    var isRerouting = false
 
-    private let snapper = RouteSnapper()
+    private let database: TimelineDatabase
+    private let snapper: RouteSnapper
     private var routeTask: Task<Void, Never>?
     private var daysByID: [Date: DayRecord] = [:]
     private var placesByID: [String: PlaceRecord] = [:]
     private(set) var monthGroups: [(month: Date, days: [DayRecord])] = []
     private(set) var yearOptions: [Int] = []
     private(set) var monthOptions: [Int] = []
+
+    init() {
+        let database = TimelineDatabase()
+        self.database = database
+        self.snapper = RouteSnapper(database: database)
+    }
 
     var selectedDay: DayRecord? {
         guard let selectedDayID else { return nil }
@@ -114,6 +123,11 @@ final class TimelineStore {
 
     func restoreLastOpenedFile() {
         Task {
+            if let batch = try? await database.loadBatch() {
+                let name = (try? await database.latestSourceName()) ?? "Library"
+                apply(TimelineParser.assemble(batch, sourceName: name))
+                return
+            }
             if restoreBookmark() { return }
             tryOpenDownloadsExample()
         }
@@ -138,10 +152,13 @@ final class TimelineStore {
                 let data = try Data(contentsOf: url, options: [.mappedIfSafe])
                 saveBookmark(url)
                 let name = url.lastPathComponent
-                let parsed = try await Task.detached {
-                    try TimelineParser.parse(data: data, sourceName: name)
+                let batch = try await Task.detached {
+                    try TimelineParser.extract(data)
                 }.value
-                apply(parsed)
+                try await database.upsert(batch: batch, sourceName: name)
+                let merged = try await database.loadBatch() ?? batch
+                let source = (try? await database.latestSourceName()) ?? name
+                apply(TimelineParser.assemble(merged, sourceName: source))
             } catch {
                 loadError = error.localizedDescription
                 isLoading = false
@@ -179,6 +196,7 @@ final class TimelineStore {
         sourceName = parsed.sourceName
         isLoading = false
         selectedPlaceID = nil
+        selectedVisitID = nil
         selectedDayID = parsed.days.first?.day
         tab = .dates
         search = ""
@@ -206,6 +224,7 @@ final class TimelineStore {
     func handleDaySelectionChange() {
         guard let day = selectedDay else { return }
         if hoveredVisitID != nil { hoveredVisitID = nil }
+        if selectedVisitID != nil { selectedVisitID = nil }
         if selectedPlaceID != nil { selectedPlaceID = nil }
         focus(day: day)
         requestRoutes(for: day)
@@ -220,6 +239,7 @@ final class TimelineStore {
     func handlePlaceSelectionChange() {
         guard let place = selectedPlace else { return }
         if hoveredVisitID != nil { hoveredVisitID = nil }
+        if selectedVisitID != nil { selectedVisitID = nil }
         if selectedDayID != nil { selectedDayID = nil }
         focus(place: place)
     }
@@ -236,8 +256,38 @@ final class TimelineStore {
     }
 
     func focus(visit: TimelineVisit) {
+        selectedVisitID = visit.id
+        hoveredVisitID = visit.id
         guard let coordinate = visit.coordinate else { return }
         focus(coordinate: coordinate)
+    }
+
+    func focusVisit(id: String) {
+        guard let visit = selectedDay?.visits.first(where: { $0.id == id }) else { return }
+        focus(visit: visit)
+    }
+
+    func clearVisitFocus() {
+        if selectedVisitID != nil { selectedVisitID = nil }
+        if hoveredVisitID != nil { hoveredVisitID = nil }
+        if let day = selectedDay {
+            focus(day: day)
+        }
+    }
+
+    var routesForDisplay: [[CLLocationCoordinate2D]] {
+        guard snappedDayID == selectedDayID else { return [] }
+        guard let day = selectedDay, let visitID = selectedVisitID else { return snappedRoutes }
+        let spots = day.visits.filter { $0.coordinate != nil }
+        guard let index = spots.firstIndex(where: { $0.id == visitID }) else { return snappedRoutes }
+        var lines: [[CLLocationCoordinate2D]] = []
+        if index > 0, snappedRoutes.indices.contains(index - 1) {
+            lines.append(snappedRoutes[index - 1])
+        }
+        if index < spots.count - 1, snappedRoutes.indices.contains(index) {
+            lines.append(snappedRoutes[index])
+        }
+        return lines
     }
 
     private func focus(coordinate: CLLocationCoordinate2D) {
@@ -249,21 +299,51 @@ final class TimelineStore {
         focusGeneration &+= 1
     }
 
-    private func requestRoutes(for day: DayRecord) {
-        if snappedDayID == day.day, !snappedRoutes.isEmpty { return }
+    func rerouteSelectedDay() {
+        guard let day = selectedDay else { return }
+        snappedRoutes = []
+        snappedDayID = nil
+        requestRoutes(for: day, fresh: true)
+    }
+
+    private func requestRoutes(for day: DayRecord, fresh: Bool = false) {
+        if !fresh, snappedDayID == day.day, !snappedRoutes.isEmpty { return }
         routeTask?.cancel()
+        isRerouting = fresh
         let snapper = snapper
         routeTask = Task {
+            defer {
+                if !Task.isCancelled { isRerouting = false }
+            }
             var lines: [[CLLocationCoordinate2D]] = []
-            if !day.paths.isEmpty {
+            let spots = day.visits.compactMap { visit -> (TimelineVisit, CLLocationCoordinate2D)? in
+                guard let coordinate = visit.coordinate else { return nil }
+                return (visit, coordinate)
+            }
+            if spots.count >= 2 {
+                for index in 0..<(spots.count - 1) {
+                    if Task.isCancelled { return }
+                    let from = spots[index]
+                    let to = spots[index + 1]
+                    let kind = Self.kind(from: from.0, to: to.0, activities: day.activityLines)
+                    lines.append(
+                        await snapper.snap(
+                            id: "hop:\(from.0.id):\(to.0.id)",
+                            points: [from.1, to.1],
+                            kind: kind,
+                            fresh: fresh
+                        )
+                    )
+                }
+            } else if !day.paths.isEmpty {
                 for path in day.paths where path.points.count >= 2 {
                     if Task.isCancelled { return }
-                    lines.append(await snapper.snap(points: path.points, kind: path.kind))
+                    lines.append(await snapper.snap(id: path.id, points: path.points, kind: path.kind, fresh: fresh))
                 }
             } else {
                 for line in day.activityLines {
                     if Task.isCancelled { return }
-                    lines.append(await snapper.snap(points: [line.start, line.end], kind: line.kind))
+                    lines.append(await snapper.snap(id: line.id, points: [line.start, line.end], kind: line.kind, fresh: fresh))
                 }
             }
             if Task.isCancelled { return }
@@ -271,6 +351,13 @@ final class TimelineStore {
             snappedDayID = day.day
             routeGeneration &+= 1
         }
+    }
+
+    private static func kind(from: TimelineVisit, to: TimelineVisit, activities: [ActivityLine]) -> TravelKind {
+        let midpoint = from.end.addingTimeInterval(to.start.timeIntervalSince(from.end) / 2)
+        return activities.min(by: {
+            abs($0.at.timeIntervalSince(midpoint)) < abs($1.at.timeIntervalSince(midpoint))
+        })?.kind ?? .automobile
     }
 
     private func rebuildDateIndexes() {

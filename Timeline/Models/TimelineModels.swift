@@ -1,6 +1,7 @@
 import Foundation
 import CoreLocation
 import MapKit
+import CryptoKit
 
 enum SidebarTab: String, CaseIterable, Identifiable {
     case dates = "Dates"
@@ -42,6 +43,19 @@ enum Geo {
         guard let coordinate else { return UUID().uuidString }
         return String(format: "%.4f,%.4f", coordinate.latitude, coordinate.longitude)
     }
+
+    static func segmentID(_ parts: String...) -> String {
+        var hasher = SHA256()
+        for part in parts {
+            hasher.update(data: Data(part.utf8))
+            hasher.update(data: Data([0]))
+        }
+        return Data(hasher.finalize()).prefix(16).map { String(format: "%02x", $0) }.joined()
+    }
+
+    static func millis(_ date: Date) -> String {
+        String(Int64((date.timeIntervalSince1970 * 1000).rounded()))
+    }
 }
 
 struct TimelineVisit: Identifiable {
@@ -53,6 +67,28 @@ struct TimelineVisit: Identifiable {
     let placeKey: String
 
     var duration: TimeInterval { end.timeIntervalSince(start) }
+
+    func appearing(on dayStart: Date, calendar: Calendar, semanticType: String?) -> TimelineVisit {
+        let dayEnd = calendar.date(byAdding: .day, value: 1, to: dayStart) ?? dayStart.addingTimeInterval(86_400)
+        return TimelineVisit(
+            id: id,
+            start: max(start, dayStart),
+            end: min(end, dayEnd),
+            coordinate: coordinate,
+            semanticType: semanticType ?? self.semanticType,
+            placeKey: placeKey
+        )
+    }
+}
+
+struct TimelineActivity: Identifiable {
+    let id: String
+    let start: Date
+    let end: Date
+    let distance: Double
+    let startCoordinate: CLLocationCoordinate2D?
+    let endCoordinate: CLLocationCoordinate2D?
+    let kind: TravelKind
 }
 
 enum TravelKind {
@@ -79,17 +115,35 @@ enum TravelKind {
         case .raw: return nil
         }
     }
+
+    var stored: String {
+        switch self {
+        case .automobile: return "automobile"
+        case .walking: return "walking"
+        case .raw: return "raw"
+        }
+    }
+
+    init(stored: String) {
+        switch stored {
+        case "walking": self = .walking
+        case "raw": self = .raw
+        default: self = .automobile
+        }
+    }
 }
 
 struct TimelinePath: Identifiable {
     let id: String
     let start: Date
+    let end: Date
     let points: [CLLocationCoordinate2D]
     let kind: TravelKind
 }
 
 struct ActivityLine: Identifiable {
     let id: String
+    let at: Date
     let start: CLLocationCoordinate2D
     let end: CLLocationCoordinate2D
     let kind: TravelKind
@@ -114,6 +168,12 @@ struct PlaceRecord: Identifiable {
     let firstVisit: Date?
     let lastVisit: Date?
     let recentVisits: [TimelineVisit]
+}
+
+struct TimelineBatch {
+    var visits: [TimelineVisit]
+    var activities: [TimelineActivity]
+    var paths: [TimelinePath]
 }
 
 struct ParsedTimeline {

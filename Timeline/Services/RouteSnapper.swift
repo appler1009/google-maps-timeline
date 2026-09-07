@@ -4,17 +4,29 @@ import MapKit
 
 actor RouteSnapper {
     private var hopCache: [String: [CLLocationCoordinate2D]] = [:]
+    private let database: TimelineDatabase
 
-    func snap(points: [CLLocationCoordinate2D], kind: TravelKind) async -> [CLLocationCoordinate2D] {
+    init(database: TimelineDatabase) {
+        self.database = database
+    }
+
+    func snap(id: String, points: [CLLocationCoordinate2D], kind: TravelKind, fresh: Bool = false) async -> [CLLocationCoordinate2D] {
         guard points.count >= 2 else { return points }
-        guard let transport = kind.directionsType else { return points }
+        let routeID = "\(id)|nt"
+        if !fresh, let saved = try? await database.pathRoute(id: routeID), saved.count >= 2 {
+            return saved
+        }
+        guard let transport = kind.directionsType else {
+            try? await database.savePathRoute(id: routeID, points: points)
+            return points
+        }
         let waypoints = Self.sample(points, maxCount: 8, minMeters: 120)
         guard waypoints.count >= 2 else { return points }
 
         var route: [CLLocationCoordinate2D] = []
         for index in 0..<(waypoints.count - 1) {
             if Task.isCancelled { return points }
-            let hop = await direction(from: waypoints[index], to: waypoints[index + 1], transport: transport)
+            let hop = await direction(from: waypoints[index], to: waypoints[index + 1], transport: transport, fresh: fresh)
             if hop.count >= 2 {
                 if route.isEmpty {
                     route.append(contentsOf: hop)
@@ -26,13 +38,16 @@ actor RouteSnapper {
                 route.append(waypoints[index + 1])
             }
         }
-        return route.count >= 2 ? route : points
+        let result = route.count >= 2 ? route : points
+        try? await database.savePathRoute(id: routeID, points: result)
+        return result
     }
 
     private func direction(
         from start: CLLocationCoordinate2D,
         to end: CLLocationCoordinate2D,
-        transport: MKDirectionsTransportType
+        transport: MKDirectionsTransportType,
+        fresh: Bool
     ) async -> [CLLocationCoordinate2D] {
         let meters = CLLocation(latitude: start.latitude, longitude: start.longitude)
             .distance(from: CLLocation(latitude: end.latitude, longitude: end.longitude))
@@ -40,13 +55,21 @@ actor RouteSnapper {
         if meters > 180_000 { return [start, end] }
 
         let key = Self.cacheKey(from: start, to: end, transport: transport)
-        if let cached = hopCache[key] { return cached }
+        if !fresh, let cached = hopCache[key] { return cached }
+        if !fresh, let disk = try? await database.hop(key: key), disk.count >= 2 {
+            hopCache[key] = disk
+            return disk
+        }
 
         let request = MKDirections.Request()
         request.source = MKMapItem(placemark: MKPlacemark(coordinate: start))
         request.destination = MKMapItem(placemark: MKPlacemark(coordinate: end))
         request.transportType = transport
         request.requestsAlternateRoutes = false
+        request.departureDate = Self.staticDeparture
+        request.arrivalDate = nil
+        request.highwayPreference = .any
+        request.tollPreference = .any
 
         do {
             let response = try await MKDirections(request: request).calculate()
@@ -57,6 +80,7 @@ actor RouteSnapper {
             if valid.count >= 2 {
                 if hopCache.count > 1500 { hopCache.removeAll(keepingCapacity: true) }
                 hopCache[key] = valid
+                try? await database.saveHop(key: key, points: valid)
                 return valid
             }
         } catch {
@@ -65,9 +89,21 @@ actor RouteSnapper {
         return [start, end]
     }
 
-    private static func cacheKey(from start: CLLocationCoordinate2D, to end: CLLocationCoordinate2D, transport: MKDirectionsTransportType) -> String {
+    /// Off-peak Sunday so Apple does not optimize around live congestion.
+    private static let staticDeparture: Date = {
+        var parts = DateComponents()
+        parts.calendar = Calendar(identifier: .gregorian)
+        parts.timeZone = TimeZone(secondsFromGMT: 0)
+        parts.year = 2024
+        parts.month = 1
+        parts.day = 7
+        parts.hour = 4
+        return parts.date ?? Date(timeIntervalSince1970: 1_704_600_000)
+    }()
+
+    static func cacheKey(from start: CLLocationCoordinate2D, to end: CLLocationCoordinate2D, transport: MKDirectionsTransportType) -> String {
         String(
-            format: "%.4f,%.4f-%.4f,%.4f-%u",
+            format: "%.4f,%.4f-%.4f,%.4f-%u-nt",
             start.latitude, start.longitude, end.latitude, end.longitude, transport.rawValue
         )
     }

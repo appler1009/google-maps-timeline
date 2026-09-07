@@ -13,6 +13,8 @@ Exports from Google Maps Timeline (Settings → Location history / Timeline → 
 
 The export stores coordinates, Google place IDs, and labels such as Home or Work — not street or business names.
 
+Opened exports are merged into a local SQLite library (`Application Support/Timeline/library.sqlite`). Later backups from the same device upsert by stable visit, activity, and path keys. Road traces from Apple Directions are stored there too, so they are not requested again.
+
 ## Using the app
 
 The sidebar has **Dates** and **Places**.

@@ -53,8 +53,10 @@ private struct TimelineKitMapHost: View {
             day: store.selectedDay,
             place: store.selectedPlace,
             hovered: store.hoveredVisit,
-            routed: store.snappedDayID == store.selectedDayID ? store.snappedRoutes : [],
-            routeGeneration: store.routeGeneration
+            routed: store.routesForDisplay,
+            routeGeneration: store.routeGeneration,
+            visitFocusID: store.selectedVisitID,
+            onSelectVisit: { store.focusVisit(id: $0) }
         )
     }
 }
@@ -71,6 +73,8 @@ private struct TimelineKitMap: NSViewRepresentable {
     var hovered: TimelineVisit?
     var routed: [[CLLocationCoordinate2D]]
     var routeGeneration: UInt64
+    var visitFocusID: String?
+    var onSelectVisit: (String) -> Void
 
     func makeCoordinator() -> Coordinator {
         Coordinator()
@@ -103,7 +107,9 @@ private struct TimelineKitMap: NSViewRepresentable {
             place: place,
             hovered: hovered,
             routed: routed,
-            routeGeneration: routeGeneration
+            routeGeneration: routeGeneration,
+            visitFocusID: visitFocusID,
+            onSelectVisit: onSelectVisit
         )
     }
 
@@ -115,6 +121,8 @@ private struct TimelineKitMap: NSViewRepresentable {
 
         private var lastHoverID: String?
         private var lastRouteGeneration: UInt64 = 0
+        private var lastVisitFocusID: String?
+        var onSelectVisit: ((String) -> Void)?
 
         func sync(
             map: MKMapView,
@@ -128,16 +136,21 @@ private struct TimelineKitMap: NSViewRepresentable {
             place: PlaceRecord?,
             hovered: TimelineVisit?,
             routed: [[CLLocationCoordinate2D]],
-            routeGeneration: UInt64
+            routeGeneration: UInt64,
+            visitFocusID: String?,
+            onSelectVisit: @escaping (String) -> Void
         ) {
+            self.onSelectVisit = onSelectVisit
             if dayID != lastDayID || placeID != lastPlaceID {
                 lastDayID = dayID
                 lastPlaceID = placeID
                 lastRouteGeneration = routed.isEmpty ? 0 : routeGeneration
+                lastVisitFocusID = visitFocusID
                 rebuild(map: map, day: day, place: place, routed: routed)
                 lastHoverID = nil
-            } else if routeGeneration != lastRouteGeneration {
+            } else if routeGeneration != lastRouteGeneration || visitFocusID != lastVisitFocusID {
                 lastRouteGeneration = routeGeneration
+                lastVisitFocusID = visitFocusID
                 replacePaths(map: map, day: day, routed: routed)
             }
             if generation != lastGeneration {
@@ -172,6 +185,7 @@ private struct TimelineKitMap: NSViewRepresentable {
                     pin.coordinate = coordinate
                     pin.title = TimelineParser.semanticTitle(visit.semanticType) ?? "Place"
                     pin.semantic = visit.semanticType
+                    pin.visitID = visit.id
                     map.addAnnotation(pin)
                 }
             } else if let place, let coordinate = place.coordinate {
@@ -262,6 +276,10 @@ private struct TimelineKitMap: NSViewRepresentable {
 
         func mapView(_ mapView: MKMapView, didSelect view: MKAnnotationView) {
             mapView.deselectAnnotation(view.annotation, animated: false)
+            if let visitID = (view.annotation as? VisitAnnotation)?.visitID {
+                onSelectVisit?(visitID)
+                return
+            }
             guard let coordinate = view.annotation?.coordinate else { return }
             mapView.setRegion(
                 MKCoordinateRegion(
@@ -279,6 +297,7 @@ private final class DashPolyline: MKPolyline {}
 
 private final class VisitAnnotation: MKPointAnnotation {
     var semantic: String?
+    var visitID: String?
 }
 
 private final class VisitMarkerView: MKAnnotationView {
@@ -361,9 +380,29 @@ struct SelectionCard: View {
             if let day = store.selectedDay {
                 Text(TimelineStore.dayTitle(day.day))
                     .font(.system(size: 20, weight: .regular, design: .serif))
-                Text(daySummary(day))
-                    .font(.system(size: 12))
-                    .foregroundStyle(Palette.muted)
+                    .onTapGesture { store.clearVisitFocus() }
+                    .help("Show the full day’s routes")
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text(daySummary(day))
+                        .font(.system(size: 12))
+                        .foregroundStyle(Palette.muted)
+                    Spacer(minLength: 8)
+                    Button {
+                        store.rerouteSelectedDay()
+                    } label: {
+                        if store.isRerouting {
+                            ProgressView()
+                                .controlSize(.small)
+                        } else {
+                            Label("Re-route", systemImage: "arrow.triangle.swap")
+                                .font(.system(size: 11, weight: .semibold))
+                        }
+                    }
+                    .buttonStyle(.borderless)
+                    .foregroundStyle(Palette.parchment)
+                    .disabled(store.isRerouting || day.visitCount < 2)
+                    .help("Ask Apple Maps again for road traces between this day’s stays")
+                }
                 Divider().overlay(Palette.rule.opacity(0.5))
                 VStack(alignment: .leading, spacing: 2) {
                     ForEach(day.visits) { visit in
@@ -371,7 +410,7 @@ struct SelectionCard: View {
                             time: visit.start.formatted(date: .omitted, time: .shortened),
                             title: placeTitle(visit),
                             duration: Self.duration(visit.duration),
-                            highlighted: store.hoveredVisitID == visit.id,
+                            highlighted: store.hoveredVisitID == visit.id || store.selectedVisitID == visit.id,
                             symbol: TimelineParser.symbolName(visit.semanticType)
                         )
                         .onHover { hovering in
