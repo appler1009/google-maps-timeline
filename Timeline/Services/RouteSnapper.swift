@@ -12,7 +12,7 @@ actor RouteSnapper {
 
     func snap(id: String, points: [CLLocationCoordinate2D], kind: TravelKind, fresh: Bool = false) async -> [CLLocationCoordinate2D] {
         guard points.count >= 2 else { return points }
-        let routeID = "\(id)|nt"
+        let routeID = "\(id)|nt|\(kind.stored)"
         if !fresh, let saved = try? await database.pathRoute(id: routeID), saved.count >= 2 {
             return saved
         }

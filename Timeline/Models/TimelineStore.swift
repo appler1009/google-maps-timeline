@@ -26,7 +26,7 @@ final class TimelineStore {
     )
     var focusGeneration: UInt64 = 0
     var focusAnimated = false
-    var snappedRoutes: [[CLLocationCoordinate2D]] = []
+    var snappedRoutes: [RoutedHop] = []
     var snappedDayID: Date?
     var routeGeneration: UInt64 = 0
     var isRerouting = false
@@ -265,12 +265,12 @@ final class TimelineStore {
         }
     }
 
-    var routesForDisplay: [[CLLocationCoordinate2D]] {
+    var routesForDisplay: [RoutedHop] {
         guard snappedDayID == selectedDayID else { return [] }
         guard let day = selectedDay, let visitID = selectedVisitID else { return snappedRoutes }
         let spots = day.visits.filter { $0.coordinate != nil }
         guard let index = spots.firstIndex(where: { $0.id == visitID }) else { return snappedRoutes }
-        var lines: [[CLLocationCoordinate2D]] = []
+        var lines: [RoutedHop] = []
         if index > 0, snappedRoutes.indices.contains(index - 1) {
             lines.append(snappedRoutes[index - 1])
         }
@@ -305,7 +305,7 @@ final class TimelineStore {
             defer {
                 if !Task.isCancelled { isRerouting = false }
             }
-            var lines: [[CLLocationCoordinate2D]] = []
+            var lines: [RoutedHop] = []
             let spots = day.visits.compactMap { visit -> (TimelineVisit, CLLocationCoordinate2D)? in
                 guard let coordinate = visit.coordinate else { return nil }
                 return (visit, coordinate)
@@ -316,24 +316,25 @@ final class TimelineStore {
                     let from = spots[index]
                     let to = spots[index + 1]
                     let kind = Self.kind(from: from.0, to: to.0, activities: day.activityLines)
-                    lines.append(
-                        await snapper.snap(
-                            id: "hop:\(from.0.id):\(to.0.id)",
-                            points: [from.1, to.1],
-                            kind: kind,
-                            fresh: fresh
-                        )
+                    let points = await snapper.snap(
+                        id: "hop:\(from.0.id):\(to.0.id)",
+                        points: [from.1, to.1],
+                        kind: kind,
+                        fresh: fresh
                     )
+                    lines.append(RoutedHop(id: "hop:\(from.0.id):\(to.0.id):\(kind.stored)", points: points, kind: kind))
                 }
             } else if !day.paths.isEmpty {
                 for path in day.paths where path.points.count >= 2 {
                     if Task.isCancelled { return }
-                    lines.append(await snapper.snap(id: path.id, points: path.points, kind: path.kind, fresh: fresh))
+                    let points = await snapper.snap(id: path.id, points: path.points, kind: path.kind, fresh: fresh)
+                    lines.append(RoutedHop(id: path.id, points: points, kind: path.kind))
                 }
             } else {
                 for line in day.activityLines {
                     if Task.isCancelled { return }
-                    lines.append(await snapper.snap(id: line.id, points: [line.start, line.end], kind: line.kind, fresh: fresh))
+                    let points = await snapper.snap(id: line.id, points: [line.start, line.end], kind: line.kind, fresh: fresh)
+                    lines.append(RoutedHop(id: line.id, points: points, kind: line.kind))
                 }
             }
             if Task.isCancelled { return }
@@ -344,10 +345,32 @@ final class TimelineStore {
     }
 
     private static func kind(from: TimelineVisit, to: TimelineVisit, activities: [ActivityLine]) -> TravelKind {
-        let midpoint = from.end.addingTimeInterval(to.start.timeIntervalSince(from.end) / 2)
-        return activities.min(by: {
-            abs($0.at.timeIntervalSince(midpoint)) < abs($1.at.timeIntervalSince(midpoint))
-        })?.kind ?? .automobile
+        let gapStart = from.end
+        let gapEnd = to.start > gapStart ? to.start : gapStart.addingTimeInterval(1)
+        let overlapping = activities.filter { $0.at < gapEnd && $0.until > gapStart }
+        let inferred = inferredKind(from: from, to: to)
+        if let match = overlapping.max(by: { lhs, rhs in
+            overlap(lhs, gapStart: gapStart, gapEnd: gapEnd) < overlap(rhs, gapStart: gapStart, gapEnd: gapEnd)
+        }) {
+            if match.kind == .automobile, inferred == .walking {
+                return .walking
+            }
+            return match.kind
+        }
+        return inferred
+    }
+
+    private static func overlap(_ activity: ActivityLine, gapStart: Date, gapEnd: Date) -> TimeInterval {
+        min(activity.until, gapEnd).timeIntervalSince(max(activity.at, gapStart))
+    }
+
+    private static func inferredKind(from: TimelineVisit, to: TimelineVisit) -> TravelKind {
+        guard let start = from.coordinate, let end = to.coordinate else { return .automobile }
+        let meters = CLLocation(latitude: start.latitude, longitude: start.longitude)
+            .distance(from: CLLocation(latitude: end.latitude, longitude: end.longitude))
+        let seconds = max(to.start.timeIntervalSince(from.end), 1)
+        if meters / seconds < 2.6 { return .walking }
+        return .automobile
     }
 
     private func rebuildDateIndexes() {

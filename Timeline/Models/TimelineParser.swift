@@ -83,7 +83,7 @@ enum TimelineParser {
             bucket.travelMeters += activity.distance
             bucket.kinds.append((activity.start, activity.kind))
             if let startC = activity.startCoordinate, let endC = activity.endCoordinate {
-                bucket.lines.append(ActivityLine(id: activity.id, at: activity.start, start: startC, end: endC, kind: activity.kind))
+                bucket.lines.append(ActivityLine(id: activity.id, at: activity.start, until: activity.end, start: startC, end: endC, kind: activity.kind))
             }
             daysMap[key] = bucket
         }

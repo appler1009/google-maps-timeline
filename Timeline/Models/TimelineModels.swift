@@ -94,12 +94,15 @@ struct TimelineActivity: Identifiable {
 enum TravelKind {
     case automobile
     case walking
+    case cycling
     case raw
 
     init(googleType: String?) {
         let type = googleType?.lowercased() ?? ""
-        if type.contains("walk") || type.contains("run") || type.contains("hik") || type.contains("cycl") || type.contains("bik") {
+        if type.contains("walk") || type.contains("run") || type.contains("hik") || type.contains("foot") {
             self = .walking
+        } else if type.contains("cycl") || type.contains("bik") {
+            self = .cycling
         } else if type.contains("fly") || type.contains("air") || type.contains("train") || type.contains("subway")
                     || type.contains("tram") || type.contains("metro") || type.contains("ferry") || type.contains("boat") {
             self = .raw
@@ -112,6 +115,7 @@ enum TravelKind {
         switch self {
         case .automobile: return .automobile
         case .walking: return .walking
+        case .cycling: return .cycling
         case .raw: return nil
         }
     }
@@ -120,6 +124,7 @@ enum TravelKind {
         switch self {
         case .automobile: return "automobile"
         case .walking: return "walking"
+        case .cycling: return "cycling"
         case .raw: return "raw"
         }
     }
@@ -127,6 +132,7 @@ enum TravelKind {
     init(stored: String) {
         switch stored {
         case "walking": self = .walking
+        case "cycling": self = .cycling
         case "raw": self = .raw
         default: self = .automobile
         }
@@ -144,8 +150,15 @@ struct TimelinePath: Identifiable {
 struct ActivityLine: Identifiable {
     let id: String
     let at: Date
+    let until: Date
     let start: CLLocationCoordinate2D
     let end: CLLocationCoordinate2D
+    let kind: TravelKind
+}
+
+struct RoutedHop: Identifiable {
+    let id: String
+    let points: [CLLocationCoordinate2D]
     let kind: TravelKind
 }
 

@@ -77,7 +77,7 @@ private struct TimelineKitMap: NSViewRepresentable {
     var day: DayRecord?
     var place: PlaceRecord?
     var hovered: TimelineVisit?
-    var routed: [[CLLocationCoordinate2D]]
+    var routed: [RoutedHop]
     var routeGeneration: UInt64
     var visitFocusID: String?
     var onSelectVisit: (String) -> Void
@@ -135,7 +135,7 @@ private struct TimelineKitMap: NSViewRepresentable {
         private var contentInFlight = false
         private var latestDay: DayRecord?
         private var latestPlace: PlaceRecord?
-        private var latestRouted: [[CLLocationCoordinate2D]] = []
+        private var latestRouted: [RoutedHop] = []
         private var latestRouteGeneration: UInt64 = 0
         private var latestVisitFocusID: String?
         var onSelectVisit: ((String) -> Void)?
@@ -151,7 +151,7 @@ private struct TimelineKitMap: NSViewRepresentable {
             day: DayRecord?,
             place: PlaceRecord?,
             hovered: TimelineVisit?,
-            routed: [[CLLocationCoordinate2D]],
+            routed: [RoutedHop],
             routeGeneration: UInt64,
             visitFocusID: String?,
             onSelectVisit: @escaping (String) -> Void
@@ -226,17 +226,17 @@ private struct TimelineKitMap: NSViewRepresentable {
             fadeMap(map, to: 0, duration: 0.18, token: tick, completion: install)
         }
 
-        private func crossfadePaths(map: MKMapView, day: DayRecord?, routed: [[CLLocationCoordinate2D]]) {
+        private func crossfadePaths(map: MKMapView, day: DayRecord?, routed: [RoutedHop]) {
             pathTick &+= 1
             let tick = pathTick
-            let stale = map.overlays.filter { $0 is PathPolyline || $0 is DashPolyline }
+            let stale = map.overlays.filter { $0 is KindPolyline }
             fadeOverlays(stale, to: 0, duration: 0.16, stillCurrent: { tick == self.pathTick }) {
                 guard tick == self.pathTick else { return }
                 map.removeOverlays(stale)
                 stale.forEach { self.overlayRenderers.removeValue(forKey: ObjectIdentifier($0)) }
                 guard let day = self.latestDay else { return }
                 self.addDayPaths(map: map, day: day, routed: self.latestRouted)
-                let fresh = map.overlays.filter { $0 is PathPolyline || $0 is DashPolyline }
+                let fresh = map.overlays.filter { $0 is KindPolyline }
                 fresh.forEach { self.overlayRenderers[ObjectIdentifier($0)]?.alpha = 0 }
                 self.fadeOverlays(fresh, to: 1, duration: 0.28, stillCurrent: { tick == self.pathTick })
             }
@@ -286,7 +286,7 @@ private struct TimelineKitMap: NSViewRepresentable {
             frame()
         }
 
-        private func rebuild(map: MKMapView, day: DayRecord?, place: PlaceRecord?, routed: [[CLLocationCoordinate2D]]) {
+        private func rebuild(map: MKMapView, day: DayRecord?, place: PlaceRecord?, routed: [RoutedHop]) {
             overlayRenderers.removeAll(keepingCapacity: true)
             map.removeOverlays(map.overlays)
             map.removeAnnotations(map.annotations)
@@ -312,26 +312,25 @@ private struct TimelineKitMap: NSViewRepresentable {
             }
         }
 
-        private func addDayPaths(map: MKMapView, day: DayRecord, routed: [[CLLocationCoordinate2D]]) {
+        private func addDayPaths(map: MKMapView, day: DayRecord, routed: [RoutedHop]) {
             if !routed.isEmpty {
-                for line in routed where line.count >= 2 {
-                    addPolyline(map: map, points: line, dashed: false)
+                for hop in routed where hop.points.count >= 2 {
+                    addPolyline(map: map, points: hop.points, kind: hop.kind)
                 }
                 return
             }
             for path in day.paths where path.points.count >= 2 {
-                addPolyline(map: map, points: path.points, dashed: false)
+                addPolyline(map: map, points: path.points, kind: path.kind)
             }
             for line in day.activityLines {
-                addPolyline(map: map, points: [line.start, line.end], dashed: true)
+                addPolyline(map: map, points: [line.start, line.end], kind: line.kind)
             }
         }
 
-        private func addPolyline(map: MKMapView, points: [CLLocationCoordinate2D], dashed: Bool) {
+        private func addPolyline(map: MKMapView, points: [CLLocationCoordinate2D], kind: TravelKind) {
             var coords = points
-            let overlay: MKPolyline = dashed
-                ? DashPolyline(coordinates: &coords, count: coords.count)
-                : PathPolyline(coordinates: &coords, count: coords.count)
+            let overlay = KindPolyline(coordinates: &coords, count: coords.count)
+            overlay.kind = kind
             map.addOverlay(overlay, level: .aboveRoads)
         }
 
@@ -355,19 +354,31 @@ private struct TimelineKitMap: NSViewRepresentable {
                 circleRenderer.strokeColor = NSColor(red: 0.93, green: 0.89, blue: 0.82, alpha: 0.85)
                 circleRenderer.lineWidth = 1.5
                 renderer = circleRenderer
-            } else if let polyline = overlay as? MKPolyline {
-                let line = MKPolylineRenderer(polyline: polyline)
-                if overlay is DashPolyline {
-                    line.strokeColor = NSColor(red: 0.16, green: 0.45, blue: 0.42, alpha: 0.55)
-                    line.lineWidth = 2
-                    line.lineDashPattern = [5, 5]
-                } else {
-                    line.strokeColor = NSColor(red: 0.78, green: 0.36, blue: 0.22, alpha: 1)
-                    line.lineWidth = 3.5
-                    line.lineCap = .round
-                    line.lineJoin = .round
+            } else if let line = overlay as? KindPolyline {
+                let polylineRenderer = MKPolylineRenderer(polyline: line)
+                switch line.kind {
+                case .walking:
+                    polylineRenderer.strokeColor = NSColor(red: 0.16, green: 0.45, blue: 0.42, alpha: 0.95)
+                    polylineRenderer.lineWidth = 2.5
+                    polylineRenderer.lineCap = .round
+                    polylineRenderer.lineJoin = .round
+                case .cycling:
+                    polylineRenderer.strokeColor = NSColor(red: 0.16, green: 0.45, blue: 0.42, alpha: 0.9)
+                    polylineRenderer.lineWidth = 2.6
+                    polylineRenderer.lineDashPattern = [9, 5]
+                    polylineRenderer.lineCap = .round
+                    polylineRenderer.lineJoin = .round
+                case .raw:
+                    polylineRenderer.strokeColor = NSColor(red: 0.16, green: 0.45, blue: 0.42, alpha: 0.55)
+                    polylineRenderer.lineWidth = 2
+                    polylineRenderer.lineDashPattern = [5, 5]
+                case .automobile:
+                    polylineRenderer.strokeColor = NSColor(red: 0.78, green: 0.36, blue: 0.22, alpha: 1)
+                    polylineRenderer.lineWidth = 3.5
+                    polylineRenderer.lineCap = .round
+                    polylineRenderer.lineJoin = .round
                 }
-                renderer = line
+                renderer = polylineRenderer
             } else {
                 renderer = MKOverlayRenderer(overlay: overlay)
             }
@@ -414,8 +425,9 @@ private struct TimelineKitMap: NSViewRepresentable {
     }
 }
 
-private final class PathPolyline: MKPolyline {}
-private final class DashPolyline: MKPolyline {}
+private final class KindPolyline: MKPolyline {
+    var kind: TravelKind = .automobile
+}
 
 private final class VisitAnnotation: MKPointAnnotation {
     var semantic: String?
