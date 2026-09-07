@@ -49,18 +49,16 @@ struct TimelineAppScene: View {
             }
             #if os(iOS)
             .onChange(of: store.mapRevealGeneration) { _, _ in
-                if horizontalSizeClass == .compact {
-                    showingCompactMap = true
-                }
+                presentCompactMap()
             }
             .onChange(of: store.selectedDayID) { oldValue, newValue in
-                if horizontalSizeClass == .compact, newValue != nil, newValue != oldValue {
-                    showingCompactMap = true
+                if newValue != nil, newValue != oldValue {
+                    presentCompactMap()
                 }
             }
             .onChange(of: store.selectedPlaceID) { oldValue, newValue in
-                if horizontalSizeClass == .compact, newValue != nil, newValue != oldValue {
-                    showingCompactMap = true
+                if newValue != nil, newValue != oldValue {
+                    presentCompactMap()
                 }
             }
             #endif
@@ -101,33 +99,53 @@ struct TimelineAppScene: View {
 
     #if os(iOS)
     private var compactStack: some View {
-        ZStack {
-            SidebarView(importerPresented: $importerPresented)
-                .opacity(showingCompactMap ? 0 : 1)
-                .allowsHitTesting(!showingCompactMap)
-                .accessibilityHidden(showingCompactMap)
-            if showingCompactMap {
-                MapCanvasView()
-                    .overlay(alignment: .topLeading) {
-                        Button {
-                            showingCompactMap = false
-                        } label: {
-                            Label("Dates", systemImage: "chevron.backward")
-                                .labelStyle(.iconOnly)
-                                .font(.system(size: 16, weight: .semibold))
-                                .foregroundStyle(Palette.parchment)
-                                .frame(width: 36, height: 36)
-                                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        GeometryReader { geo in
+            ZStack {
+                SidebarView(importerPresented: $importerPresented)
+                    .offset(x: showingCompactMap ? -geo.size.width * 0.22 : 0)
+                    .opacity(showingCompactMap ? 0 : 1)
+                    .allowsHitTesting(!showingCompactMap)
+                    .accessibilityHidden(showingCompactMap)
+                if showingCompactMap {
+                    MapCanvasView()
+                        .overlay(alignment: .topLeading) {
+                            Button {
+                                dismissCompactMap()
+                            } label: {
+                                Label("Dates", systemImage: "chevron.backward")
+                                    .labelStyle(.iconOnly)
+                                    .font(.system(size: 16, weight: .semibold))
+                                    .foregroundStyle(Palette.parchment)
+                                    .frame(width: 36, height: 36)
+                                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                            }
+                            .buttonStyle(.plain)
+                            .padding(.leading, 16)
+                            .padding(.top, 8)
+                            .safeAreaPadding(.top)
+                            .accessibilityLabel("Back to list")
                         }
-                        .buttonStyle(.plain)
-                        .padding(.leading, 16)
-                        .padding(.top, 8)
-                        .safeAreaPadding(.top)
-                        .accessibilityLabel("Back to list")
-                    }
+                        .transition(.asymmetric(
+                            insertion: .move(edge: .trailing).combined(with: .opacity),
+                            removal: .move(edge: .trailing).combined(with: .opacity)
+                        ))
+                }
             }
         }
         .toolbar(.hidden, for: .navigationBar)
+    }
+
+    private func presentCompactMap() {
+        guard horizontalSizeClass == .compact, !showingCompactMap else { return }
+        withAnimation(.easeInOut(duration: 0.32)) {
+            showingCompactMap = true
+        }
+    }
+
+    private func dismissCompactMap() {
+        withAnimation(.easeInOut(duration: 0.32)) {
+            showingCompactMap = false
+        }
     }
     #endif
 }

@@ -543,21 +543,36 @@ struct SelectionCard: View {
             .contentShape(Rectangle())
             .gesture(iosCardGesture)
             let expansion = sheetExpansion
-            if expansion > 0.01 {
-                Divider()
-                    .overlay(Palette.rule.opacity(0.5))
-                    .opacity(expansion)
-                Group {
-                    if let day = store.selectedDay {
-                        dayVisits(day)
-                    } else if let place = store.selectedPlace {
-                        placeVisits(place)
+            let openHeight: CGFloat = 280
+            VStack(alignment: .leading, spacing: 10) {
+                Divider().overlay(Palette.rule.opacity(0.5))
+                if let day = store.selectedDay {
+                    HStack {
+                        Spacer(minLength: 0)
+                        Button {
+                            store.rerouteSelectedDay()
+                        } label: {
+                            if store.isRerouting {
+                                ProgressView()
+                                    .controlSize(.small)
+                            } else {
+                                Label("Re-route", systemImage: "arrow.triangle.swap")
+                                    .font(.system(size: 11, weight: .semibold))
+                            }
+                        }
+                        .buttonStyle(.borderless)
+                        .foregroundStyle(Palette.parchment)
+                        .disabled(store.isRerouting || day.visitCount < 2)
                     }
+                    dayVisits(day)
+                } else if let place = store.selectedPlace {
+                    placeVisits(place)
                 }
-                .frame(maxHeight: 280 * expansion, alignment: .top)
-                .opacity(expansion)
-                .clipped()
             }
+            .frame(height: openHeight * expansion, alignment: .top)
+            .clipped()
+            .opacity(min(1, expansion * 1.6))
+            .allowsHitTesting(expansion > 0.4)
             #else
             if let day = store.selectedDay {
                 dayHeader(day)
@@ -581,11 +596,14 @@ struct SelectionCard: View {
             RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .stroke(Palette.parchment.opacity(0.12), lineWidth: 1)
         )
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .compositingGroup()
         .shadow(color: .black.opacity(0.25), radius: 18, y: 8)
         .foregroundStyle(Palette.parchment)
         .onDisappear { store.hoveredVisitID = nil }
         #if os(iOS)
         .offset(y: sheetNudge)
+        .animation(nil, value: drag)
         #endif
     }
 
@@ -690,25 +708,6 @@ struct SelectionCard: View {
             .opacity(store.canStepToOlderDay ? 1 : 0.25)
             .accessibilityLabel("Older day")
         }
-        if sheetExpansion > 0.35 {
-            HStack {
-                Spacer(minLength: 0)
-                Button {
-                    store.rerouteSelectedDay()
-                } label: {
-                    if store.isRerouting {
-                        ProgressView()
-                            .controlSize(.small)
-                    } else {
-                        Label("Re-route", systemImage: "arrow.triangle.swap")
-                            .font(.system(size: 11, weight: .semibold))
-                    }
-                }
-                .buttonStyle(.borderless)
-                .foregroundStyle(Palette.parchment)
-                .disabled(store.isRerouting || day.visitCount < 2)
-            }
-        }
         #else
         Text(TimelineStore.dayTitle(day.day))
             .font(.system(size: 20, weight: .regular, design: .serif))
@@ -762,7 +761,6 @@ struct SelectionCard: View {
                 rows
             }
         }
-        .frame(maxHeight: 280)
         .scrollIndicators(.visible)
         #else
         VStack(alignment: .leading, spacing: 2) {
@@ -822,7 +820,6 @@ struct SelectionCard: View {
                 rows
             }
         }
-        .frame(maxHeight: 280)
         .scrollIndicators(.visible)
         #else
         VStack(alignment: .leading, spacing: 2) {
