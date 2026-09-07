@@ -22,16 +22,18 @@ struct MapCanvasView: View {
     private var map: some View {
         Map(position: Bindable(store).cameraPosition) {
             if let day = store.selectedDay {
-                ForEach(Array(day.paths.enumerated()), id: \.element.id) { _, path in
+                ForEach(day.paths) { path in
                     MapPolyline(coordinates: path.points)
                         .stroke(Palette.path, style: StrokeStyle(lineWidth: 3.5, lineCap: .round, lineJoin: .round))
                 }
-                ForEach(day.activities.filter { activity in
-                    activity.startCoordinate != nil && activity.endCoordinate != nil
-                }) { activity in
-                    if let start = activity.startCoordinate, let end = activity.endCoordinate {
-                        MapPolyline(coordinates: [start, end])
-                            .stroke(Palette.water.opacity(0.55), style: StrokeStyle(lineWidth: 2, lineCap: .round, dash: [5, 5]))
+                if day.paths.isEmpty {
+                    ForEach(day.activities.filter { activity in
+                        activity.startCoordinate != nil && activity.endCoordinate != nil
+                    }) { activity in
+                        if let start = activity.startCoordinate, let end = activity.endCoordinate {
+                            MapPolyline(coordinates: [start, end])
+                                .stroke(Palette.water.opacity(0.55), style: StrokeStyle(lineWidth: 2, lineCap: .round, dash: [5, 5]))
+                        }
                     }
                 }
                 ForEach(day.visits) { visit in

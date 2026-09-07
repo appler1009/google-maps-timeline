@@ -128,12 +128,11 @@ struct SidebarView: View {
         .background(Palette.inkLift, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 
+    private static let monthNames = DateFormatter().monthSymbols ?? []
+
     private static func monthName(_ month: Int) -> String {
-        let formatter = DateFormatter()
-        formatter.calendar = Calendar.current
-        let names = formatter.monthSymbols ?? []
-        guard month >= 1, month <= names.count else { return "\(month)" }
-        return names[month - 1]
+        guard month >= 1, month <= monthNames.count else { return "\(month)" }
+        return monthNames[month - 1]
     }
 
     private var loading: some View {
