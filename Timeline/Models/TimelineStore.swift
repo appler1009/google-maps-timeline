@@ -32,6 +32,9 @@ final class TimelineStore {
     var isRerouting = false
     /// Bumped when the user picks a day or place so compact iOS can show the map.
     var mapRevealGeneration: UInt64 = 0
+    /// Points of map the iOS legend sheet hides at the bottom, so the map can
+    /// frame a day inside the part that is still visible.
+    var legendCoverage: CGFloat = 0
 
     private let database: TimelineDatabase
     private let snapper: RouteSnapper

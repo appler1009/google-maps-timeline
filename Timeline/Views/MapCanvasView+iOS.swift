@@ -18,6 +18,8 @@ struct TimelineKitMap: UIViewRepresentable {
     var routeGeneration: UInt64
     var visitFocusID: String?
     var onSelectVisit: (String) -> Void
+    /// Points of map the legend sheet covers at the bottom.
+    var legendCoverage: CGFloat
 
     func makeCoordinator() -> Coordinator {
         Coordinator()
@@ -51,7 +53,8 @@ struct TimelineKitMap: UIViewRepresentable {
             routed: routed,
             routeGeneration: routeGeneration,
             visitFocusID: visitFocusID,
-            onSelectVisit: onSelectVisit
+            onSelectVisit: onSelectVisit,
+            legendCoverage: legendCoverage
         )
     }
 
@@ -64,6 +67,12 @@ struct TimelineKitMap: UIViewRepresentable {
         private var lastHoverID: String?
         private var lastRouteGeneration: UInt64 = 0
         private var lastVisitFocusID: String?
+        private var lastRegion: MKCoordinateRegion?
+        private var lastLegendCoverage: CGFloat = -1
+        /// Set once the user pans or zooms by hand: from then on the map is
+        /// theirs until the next deliberate focus.
+        private var userAdjusted = false
+        private var programmaticChanges = 0
         private var overlayRenderers: [ObjectIdentifier: MKOverlayRenderer] = [:]
         private var contentTick: UInt64 = 0
         private var pathTick: UInt64 = 0
@@ -90,7 +99,8 @@ struct TimelineKitMap: UIViewRepresentable {
             routed: [RoutedHop],
             routeGeneration: UInt64,
             visitFocusID: String?,
-            onSelectVisit: @escaping (String) -> Void
+            onSelectVisit: @escaping (String) -> Void,
+            legendCoverage: CGFloat
         ) {
             self.onSelectVisit = onSelectVisit
             latestDay = day
@@ -123,7 +133,16 @@ struct TimelineKitMap: UIViewRepresentable {
             }
             if generation != lastGeneration {
                 lastGeneration = generation
+                lastRegion = region
+                userAdjusted = false
+                lastLegendCoverage = legendCoverage
                 applyRegion(map: map, region: region, animated: animated)
+            } else if legendCoverage != lastLegendCoverage {
+                let first = lastLegendCoverage < 0
+                lastLegendCoverage = legendCoverage
+                if !first, !userAdjusted, let region = lastRegion {
+                    applyRegion(map: map, region: region, animated: true)
+                }
             }
             if hoverID != lastHoverID {
                 lastHoverID = hoverID
@@ -132,12 +151,60 @@ struct TimelineKitMap: UIViewRepresentable {
         }
 
         private func applyRegion(map: MKMapView, region: MKCoordinateRegion, animated: Bool) {
-            let apply = { map.setRegion(region, animated: animated) }
+            let apply = { [weak self] in
+                guard let self else { return }
+                self.programmaticChanges += 1
+                map.setVisibleMapRect(
+                    Self.mapRect(for: region),
+                    edgePadding: self.edgePadding(for: map),
+                    animated: animated
+                )
+                DispatchQueue.main.asyncAfter(deadline: .now() + (animated ? 0.45 : 0.05)) {
+                    self.programmaticChanges = max(0, self.programmaticChanges - 1)
+                }
+            }
             if map.bounds.width < 8 {
                 DispatchQueue.main.async(execute: apply)
             } else {
                 apply()
             }
+        }
+
+        /// Keep the day clear of the top chrome and the legend sheet, so it is
+        /// centred in the part of the map you can actually see.
+        private func edgePadding(for map: MKMapView) -> UIEdgeInsets {
+            let bottom = min(lastLegendCoverage, map.bounds.height * 0.6)
+            return UIEdgeInsets(
+                top: map.safeAreaInsets.top + 56,
+                left: 24,
+                bottom: max(map.safeAreaInsets.bottom, bottom),
+                right: 24
+            )
+        }
+
+        private static func mapRect(for region: MKCoordinateRegion) -> MKMapRect {
+            let a = MKMapPoint(CLLocationCoordinate2D(
+                latitude: region.center.latitude + region.span.latitudeDelta / 2,
+                longitude: region.center.longitude - region.span.longitudeDelta / 2
+            ))
+            let b = MKMapPoint(CLLocationCoordinate2D(
+                latitude: region.center.latitude - region.span.latitudeDelta / 2,
+                longitude: region.center.longitude + region.span.longitudeDelta / 2
+            ))
+            return MKMapRect(
+                x: min(a.x, b.x),
+                y: min(a.y, b.y),
+                width: abs(a.x - b.x),
+                height: abs(a.y - b.y)
+            )
+        }
+
+        func mapView(_ mapView: MKMapView, regionWillChangeAnimated animated: Bool) {
+            guard programmaticChanges == 0 else { return }
+            let touching = mapView.subviews.first?.gestureRecognizers?.contains {
+                $0.state == .began || $0.state == .changed || $0.state == .ended
+            }
+            if touching == true { userAdjusted = true }
         }
 
         private func crossfade(map: MKMapView, rebuild: @escaping () -> Void) {

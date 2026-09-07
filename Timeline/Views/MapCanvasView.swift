@@ -62,53 +62,67 @@ struct MapCanvasView: View {
             }
 
             if let day = store.selectedDay {
-                Text(TimelineStore.dayTitle(day.day))
-                    .font(.system(size: 17, weight: .regular, design: .serif))
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.75)
-                    .padding(.horizontal, 12)
-                    .frame(height: 36)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .chromePlate()
+                Button {
+                    store.clearVisitFocus()
+                } label: {
+                    Text(TimelineStore.dayTitle(day.day))
+                        .font(.system(size: 17, weight: .regular, design: .serif))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.75)
+                        .padding(.horizontal, 12)
+                        .frame(height: 36)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityHint("Recentre the map on this day")
+                .chromePlate()
 
                 HStack(spacing: 0) {
                     Button {
-                        store.stepDay(by: -1)
+                        store.stepDay(by: 1)
                     } label: {
                         Image(systemName: "chevron.left")
                             .font(.system(size: 13, weight: .semibold))
                             .frame(width: 34, height: 36)
                     }
                     .buttonStyle(.plain)
-                    .disabled(!store.canStepToNewerDay)
-                    .opacity(store.canStepToNewerDay ? 1 : 0.28)
-                    .accessibilityLabel("Newer day")
+                    .disabled(!store.canStepToOlderDay)
+                    .opacity(store.canStepToOlderDay ? 1 : 0.28)
+                    .accessibilityLabel("Previous day")
 
                     Rectangle()
                         .fill(Palette.parchment.opacity(0.14))
                         .frame(width: 1, height: 20)
 
                     Button {
-                        store.stepDay(by: 1)
+                        store.stepDay(by: -1)
                     } label: {
                         Image(systemName: "chevron.right")
                             .font(.system(size: 13, weight: .semibold))
                             .frame(width: 34, height: 36)
                     }
                     .buttonStyle(.plain)
-                    .disabled(!store.canStepToOlderDay)
-                    .opacity(store.canStepToOlderDay ? 1 : 0.28)
-                    .accessibilityLabel("Older day")
+                    .disabled(!store.canStepToNewerDay)
+                    .opacity(store.canStepToNewerDay ? 1 : 0.28)
+                    .accessibilityLabel("Next day")
                 }
                 .chromePlate()
             } else if let place = store.selectedPlace {
-                Text(store.displayName(for: place))
-                    .font(.system(size: 17, weight: .regular, design: .serif))
-                    .lineLimit(1)
-                    .padding(.horizontal, 12)
-                    .frame(height: 36)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .chromePlate()
+                Button {
+                    store.focus(place: place)
+                } label: {
+                    Text(store.displayName(for: place))
+                        .font(.system(size: 17, weight: .regular, design: .serif))
+                        .lineLimit(1)
+                        .padding(.horizontal, 12)
+                        .frame(height: 36)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityHint("Recentre the map on this place")
+                .chromePlate()
             } else {
                 Spacer()
             }
@@ -161,7 +175,8 @@ private struct TimelineKitMapHost: View {
             routed: store.routesForDisplay,
             routeGeneration: store.routeGeneration,
             visitFocusID: store.selectedVisitID,
-            onSelectVisit: { store.focusVisit(id: $0) }
+            onSelectVisit: { store.focusVisit(id: $0) },
+            legendCoverage: store.legendCoverage
         )
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         #if os(iOS)
@@ -187,6 +202,8 @@ struct TimelineKitMap: NSViewRepresentable {
     var routeGeneration: UInt64
     var visitFocusID: String?
     var onSelectVisit: (String) -> Void
+    /// Unused on macOS, where the legend sits beside the map rather than over it.
+    var legendCoverage: CGFloat
 
     func makeCoordinator() -> Coordinator {
         Coordinator()
@@ -620,6 +637,7 @@ struct SelectionCard: View {
     #if os(iOS)
     @State private var collapsed = true
     @State private var drag: CGFloat = 0
+    @State private var headerHeight: CGFloat = 0
     #endif
 
     var body: some View {
@@ -656,6 +674,7 @@ struct SelectionCard: View {
                         .foregroundStyle(Palette.muted)
                 }
             }
+            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { headerHeight = $0 }
             .contentShape(Rectangle())
             .gesture(iosCardGesture)
             VStack(alignment: .leading, spacing: 8) {
@@ -689,6 +708,10 @@ struct SelectionCard: View {
         .shadow(color: .black.opacity(0.4), radius: 12, y: 6)
         .offset(y: Self.iosOpenBodyHeight * (1 - sheetExpansion))
         .animation(nil, value: drag)
+        .onAppear { publishCoverage() }
+        .onChange(of: collapsed) { _, _ in publishCoverage() }
+        .onChange(of: headerHeight) { _, _ in publishCoverage() }
+        .onDisappear { store.legendCoverage = 0 }
         #else
         .frame(maxWidth: 320, alignment: .leading)
         .background(.ultraThinMaterial, in: Self.legendShape)
@@ -703,6 +726,15 @@ struct SelectionCard: View {
 
     #if os(iOS)
     private static let iosOpenBodyHeight: CGFloat = 280
+    private static let iosCardPadding: CGFloat = 16
+    private static let iosCardSpacing: CGFloat = 10
+    /// Distance from the bottom of the map to the top of the card, for the
+    /// settled state only — the map must not chase the sheet mid-drag.
+    private func publishCoverage() {
+        let body = collapsed ? 0 : Self.iosOpenBodyHeight
+        let visible = Self.iosCardPadding * 2 + headerHeight + Self.iosCardSpacing + body
+        store.legendCoverage = visible + 8
+    }
 
     private var sheetExpansion: CGFloat {
         let range = Self.iosOpenBodyHeight
@@ -741,7 +773,7 @@ struct SelectionCard: View {
                 let predicted = value.predictedEndTranslation.height
                 if abs(dx) > abs(dy), abs(dx) > 48, store.selectedDay != nil, abs(dy) < 50 {
                     drag = 0
-                    store.stepDay(by: dx < 0 ? 1 : -1)
+                    store.stepDay(by: dx < 0 ? -1 : 1)
                     return
                 }
                 let collapse: Bool
