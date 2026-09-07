@@ -211,23 +211,91 @@ enum TimelineParser {
     }
 
     private static func parseDate(_ string: String?) -> Date? {
-        guard let string, !string.isEmpty else { return nil }
-        if let date = fractionalISO8601.date(from: string) { return date }
-        if let date = iso8601.date(from: string) { return date }
+        guard let string, string.count >= 19 else {
+            if let string, let ms = Double(string) { return Date(timeIntervalSince1970: ms / 1000) }
+            return nil
+        }
+        if let date = parseCivilISO8601(string) { return date }
         if let ms = Double(string) { return Date(timeIntervalSince1970: ms / 1000) }
         return nil
     }
 
-    private static let fractionalISO8601: ISO8601DateFormatter = {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return formatter
-    }()
+    /// Parses `2024-11-19T11:50:02.112-08:00` / `...Z` without ISO8601DateFormatter.
+    private static func parseCivilISO8601(_ string: String) -> Date? {
+        let utf8 = string.utf8
+        let count = utf8.count
+        guard count >= 19 else { return nil }
+        func int(_ start: Int, _ length: Int) -> Int? {
+            var value = 0
+            var i = utf8.index(utf8.startIndex, offsetBy: start)
+            for _ in 0..<length {
+                guard i < utf8.endIndex else { return nil }
+                let c = utf8[i]
+                guard c >= 48, c <= 57 else { return nil }
+                value = value * 10 + Int(c - 48)
+                i = utf8.index(after: i)
+            }
+            return value
+        }
+        guard let year = int(0, 4), let month = int(5, 2), let day = int(8, 2),
+              let hour = int(11, 2), let minute = int(14, 2), let second = int(17, 2)
+        else { return nil }
 
-    private static let iso8601: ISO8601DateFormatter = {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime]
-        return formatter
+        var offset = 19
+        var nanosecond = 0
+        if offset < count {
+            let fracIndex = utf8.index(utf8.startIndex, offsetBy: offset)
+            if utf8[fracIndex] == 46 { // '.'
+                offset += 1
+                var frac = 0
+                var digits = 0
+                while offset < count {
+                    let c = utf8[utf8.index(utf8.startIndex, offsetBy: offset)]
+                    guard c >= 48, c <= 57 else { break }
+                    if digits < 9 {
+                        frac = frac * 10 + Int(c - 48)
+                        digits += 1
+                    }
+                    offset += 1
+                }
+                while digits < 9 {
+                    frac *= 10
+                    digits += 1
+                }
+                nanosecond = frac
+            }
+        }
+
+        var secondsFromGMT = 0
+        if offset < count {
+            let tzIndex = utf8.index(utf8.startIndex, offsetBy: offset)
+            let tz = utf8[tzIndex]
+            if tz == 90 { // Z
+                secondsFromGMT = 0
+            } else if tz == 43 || tz == 45 { // + or -
+                guard let tzHour = int(offset + 1, 2), let tzMinute = int(offset + 4, 2) else { return nil }
+                let sign = tz == 43 ? 1 : -1
+                secondsFromGMT = sign * (tzHour * 3600 + tzMinute * 60)
+            }
+        }
+
+        var components = DateComponents()
+        components.calendar = gregorian
+        components.timeZone = TimeZone(secondsFromGMT: secondsFromGMT)
+        components.year = year
+        components.month = month
+        components.day = day
+        components.hour = hour
+        components.minute = minute
+        components.second = second
+        components.nanosecond = nanosecond
+        return components.date
+    }
+
+    private static let gregorian: Calendar = {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        return calendar
     }()
 
     private static func doubleValue(_ value: Any?) -> Double? {
