@@ -1,7 +1,9 @@
 import SwiftUI
 import MapKit
-import AppKit
 import QuartzCore
+#if os(macOS)
+import AppKit
+#endif
 
 struct MapCanvasView: View {
     @Environment(TimelineStore.self) private var store
@@ -19,13 +21,23 @@ struct MapCanvasView: View {
             }
             if store.selectedDay != nil || store.selectedPlace != nil {
                 SelectionCard()
-                    .padding(20)
-                    .id(store.selectedDayID)
+                    #if os(iOS)
+                    .padding(.horizontal, 12)
+                    .padding(.bottom, 8)
+                    .safeAreaPadding(.bottom)
+                    #else
+                    .padding(16)
+                    #endif
+                    .id(store.selectedDayID ?? store.selectedPlaceID.map { _ in Date.distantPast })
                     .transition(.opacity)
             }
         }
         .background(Palette.ink)
+        #if os(macOS)
         .ignoresSafeArea(.container, edges: .top)
+        #else
+        .ignoresSafeArea()
+        #endif
     }
 
     private var emptyMap: some View {
@@ -67,7 +79,8 @@ private struct TimelineKitMapHost: View {
     }
 }
 
-private struct TimelineKitMap: NSViewRepresentable {
+#if os(macOS)
+struct TimelineKitMap: NSViewRepresentable {
     var generation: UInt64
     var region: MKCoordinateRegion
     var animated: Bool
@@ -424,16 +437,18 @@ private struct TimelineKitMap: NSViewRepresentable {
         }
     }
 }
+#endif
 
-private final class KindPolyline: MKPolyline {
+final class KindPolyline: MKPolyline {
     var kind: TravelKind = .automobile
 }
 
-private final class VisitAnnotation: MKPointAnnotation {
+final class VisitAnnotation: MKPointAnnotation {
     var semantic: String?
     var visitID: String?
 }
 
+#if os(macOS)
 private final class VisitMarkerView: MKAnnotationView {
     private let dot = NSView()
     private let glyph = NSImageView()
@@ -505,105 +520,53 @@ private final class VisitMarkerView: MKAnnotationView {
         centerOffset = CGPoint(x: 0, y: -8)
     }
 }
+#endif
 
 struct SelectionCard: View {
     @Environment(TimelineStore.self) private var store
+    #if os(iOS)
+    @State private var collapsed = false
+    #endif
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            if let day = store.selectedDay {
-                Text(TimelineStore.dayTitle(day.day))
-                    .font(.system(size: 20, weight: .regular, design: .serif))
-                    .onTapGesture { store.clearVisitFocus() }
-                    .help("Show the full day’s routes")
-                HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    Text(daySummary(day))
-                        .font(.system(size: 12))
-                        .foregroundStyle(Palette.muted)
-                    Spacer(minLength: 8)
-                    Button {
-                        store.rerouteSelectedDay()
-                    } label: {
-                        if store.isRerouting {
-                            ProgressView()
-                                .controlSize(.small)
-                        } else {
-                            Label("Re-route", systemImage: "arrow.triangle.swap")
-                                .font(.system(size: 11, weight: .semibold))
-                        }
-                    }
-                    .buttonStyle(.borderless)
-                    .foregroundStyle(Palette.parchment)
-                    .disabled(store.isRerouting || day.visitCount < 2)
-                    .help("Ask Apple Maps again for road traces between this day’s stays")
-                }
-                Divider().overlay(Palette.rule.opacity(0.5))
-                VStack(alignment: .leading, spacing: 2) {
-                    ForEach(day.visits) { visit in
-                        legendRow(
-                            time: visit.start.formatted(date: .omitted, time: .shortened),
-                            title: placeTitle(visit),
-                            duration: Self.duration(visit.duration),
-                            highlighted: store.hoveredVisitID == visit.id || store.selectedVisitID == visit.id,
-                            symbol: TimelineParser.symbolName(visit.semanticType)
-                        )
-                        .onHover { hovering in
-                            store.hoveredVisitID = hovering ? visit.id : nil
-                        }
-                        .onTapGesture {
-                            store.hoveredVisitID = visit.id
-                            store.focus(visit: visit)
-                        }
-                    }
-                }
-                .onHover { hovering in
-                    if !hovering { store.hoveredVisitID = nil }
-                }
-            } else if let place = store.selectedPlace {
-                Text(store.displayName(for: place))
-                    .font(.system(size: 20, weight: .regular, design: .serif))
-                Text(store.subtitle(for: place))
-                    .font(.system(size: 12))
-                    .foregroundStyle(Palette.muted)
-                if let first = place.firstVisit, let last = place.lastVisit {
-                    Text("From \(first.formatted(date: .abbreviated, time: .omitted)) to \(last.formatted(date: .abbreviated, time: .omitted))")
-                        .font(.system(size: 12))
-                        .foregroundStyle(Palette.muted)
-                }
-                Divider().overlay(Palette.rule.opacity(0.5))
-                VStack(alignment: .leading, spacing: 2) {
-                    ForEach(place.recentVisits) { visit in
-                        legendRow(
-                            time: visit.start.formatted(date: .abbreviated, time: .shortened),
-                            title: nil,
-                            duration: Self.duration(visit.duration),
-                            highlighted: store.hoveredVisitID == visit.id
-                        )
-                        .onHover { hovering in
-                            store.hoveredVisitID = hovering ? visit.id : nil
-                        }
-                        .onTapGesture {
-                            let key = Calendar.current.startOfDay(for: visit.start)
-                            if let day = store.day(for: key) {
-                                store.select(day: day)
-                            }
-                        }
-                    }
-                    if place.visitCount > place.recentVisits.count {
-                        Text("\(place.visitCount - place.recentVisits.count) older visits")
-                            .font(.system(size: 11))
-                            .foregroundStyle(Palette.muted)
-                            .padding(.horizontal, 6)
-                            .padding(.top, 4)
-                    }
-                }
-                .onHover { hovering in
-                    if !hovering { store.hoveredVisitID = nil }
+            #if os(iOS)
+            VStack(alignment: .leading, spacing: 10) {
+                grabber
+                if let day = store.selectedDay {
+                    dayHeader(day)
+                } else if let place = store.selectedPlace {
+                    placeHeader(place)
                 }
             }
+            .contentShape(Rectangle())
+            .gesture(iosCardGesture)
+            if showLegendBody {
+                Divider().overlay(Palette.rule.opacity(0.5))
+                if let day = store.selectedDay {
+                    dayVisits(day)
+                } else if let place = store.selectedPlace {
+                    placeVisits(place)
+                }
+            }
+            #else
+            if let day = store.selectedDay {
+                dayHeader(day)
+                Divider().overlay(Palette.rule.opacity(0.5))
+                dayVisits(day)
+            } else if let place = store.selectedPlace {
+                placeHeader(place)
+                Divider().overlay(Palette.rule.opacity(0.5))
+                placeVisits(place)
+            }
+            #endif
         }
         .padding(16)
-        .frame(width: 320, alignment: .leading)
+        #if os(iOS)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        #else
+        .frame(maxWidth: 320, alignment: .leading)
+        #endif
         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 16, style: .continuous)
@@ -612,6 +575,230 @@ struct SelectionCard: View {
         .shadow(color: .black.opacity(0.25), radius: 18, y: 8)
         .foregroundStyle(Palette.parchment)
         .onDisappear { store.hoveredVisitID = nil }
+        #if os(iOS)
+        .onChange(of: store.selectedDayID) { _, _ in
+            collapsed = false
+        }
+        #endif
+    }
+
+    private var showLegendBody: Bool {
+        #if os(iOS)
+        !collapsed
+        #else
+        true
+        #endif
+    }
+
+    #if os(iOS)
+    private var grabber: some View {
+        RoundedRectangle(cornerRadius: 2, style: .continuous)
+            .fill(Palette.parchment.opacity(0.35))
+            .frame(width: 36, height: 5)
+            .frame(maxWidth: .infinity)
+            .padding(.bottom, 2)
+            .accessibilityLabel(collapsed ? "Expand legend" : "Collapse legend")
+            .onTapGesture { collapsed.toggle() }
+    }
+
+    private var iosCardGesture: some Gesture {
+        DragGesture(minimumDistance: 20, coordinateSpace: .local)
+            .onEnded { value in
+                let dx = value.translation.width
+                let dy = value.translation.height
+                if abs(dx) > abs(dy), abs(dx) > 40, store.selectedDay != nil {
+                    store.stepDay(by: dx < 0 ? 1 : -1)
+                } else if dy > 36 {
+                    collapsed = true
+                } else if dy < -36 {
+                    collapsed = false
+                }
+            }
+    }
+    #endif
+
+    @ViewBuilder
+    private func dayHeader(_ day: DayRecord) -> some View {
+        #if os(iOS)
+        HStack(spacing: 8) {
+            Button {
+                store.stepDay(by: -1)
+            } label: {
+                Image(systemName: "chevron.left")
+                    .font(.system(size: 14, weight: .semibold))
+                    .frame(width: 28, height: 28)
+            }
+            .buttonStyle(.plain)
+            .disabled(!store.canStepToNewerDay)
+            .opacity(store.canStepToNewerDay ? 1 : 0.25)
+            .accessibilityLabel("Newer day")
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(TimelineStore.dayTitle(day.day))
+                    .font(.system(size: 18, weight: .regular, design: .serif))
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.85)
+                    .onTapGesture { store.clearVisitFocus() }
+                Text(daySummary(day))
+                    .font(.system(size: 12))
+                    .foregroundStyle(Palette.muted)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            Button {
+                store.stepDay(by: 1)
+            } label: {
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 14, weight: .semibold))
+                    .frame(width: 28, height: 28)
+            }
+            .buttonStyle(.plain)
+            .disabled(!store.canStepToOlderDay)
+            .opacity(store.canStepToOlderDay ? 1 : 0.25)
+            .accessibilityLabel("Older day")
+        }
+        if !collapsed {
+            HStack {
+                Spacer(minLength: 0)
+                Button {
+                    store.rerouteSelectedDay()
+                } label: {
+                    if store.isRerouting {
+                        ProgressView()
+                            .controlSize(.small)
+                    } else {
+                        Label("Re-route", systemImage: "arrow.triangle.swap")
+                            .font(.system(size: 11, weight: .semibold))
+                    }
+                }
+                .buttonStyle(.borderless)
+                .foregroundStyle(Palette.parchment)
+                .disabled(store.isRerouting || day.visitCount < 2)
+            }
+        }
+        #else
+        Text(TimelineStore.dayTitle(day.day))
+            .font(.system(size: 20, weight: .regular, design: .serif))
+            .onTapGesture { store.clearVisitFocus() }
+            .help("Show the full day’s routes")
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text(daySummary(day))
+                .font(.system(size: 12))
+                .foregroundStyle(Palette.muted)
+            Spacer(minLength: 8)
+            Button {
+                store.rerouteSelectedDay()
+            } label: {
+                if store.isRerouting {
+                    ProgressView()
+                        .controlSize(.small)
+                } else {
+                    Label("Re-route", systemImage: "arrow.triangle.swap")
+                        .font(.system(size: 11, weight: .semibold))
+                }
+            }
+            .buttonStyle(.borderless)
+            .foregroundStyle(Palette.parchment)
+            .disabled(store.isRerouting || day.visitCount < 2)
+            .help("Ask Apple Maps again for road traces between this day’s stays")
+        }
+        #endif
+    }
+
+    @ViewBuilder
+    private func dayVisits(_ day: DayRecord) -> some View {
+        let rows = ForEach(day.visits) { visit in
+            legendRow(
+                time: visit.start.formatted(date: .omitted, time: .shortened),
+                title: placeTitle(visit),
+                duration: Self.duration(visit.duration),
+                highlighted: store.hoveredVisitID == visit.id || store.selectedVisitID == visit.id,
+                symbol: TimelineParser.symbolName(visit.semanticType)
+            )
+            .onHover { hovering in
+                store.hoveredVisitID = hovering ? visit.id : nil
+            }
+            .onTapGesture {
+                store.hoveredVisitID = visit.id
+                store.focus(visit: visit)
+            }
+        }
+        #if os(iOS)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 2) {
+                rows
+            }
+        }
+        .frame(maxHeight: 280)
+        .scrollIndicators(.visible)
+        #else
+        VStack(alignment: .leading, spacing: 2) {
+            rows
+        }
+        .onHover { hovering in
+            if !hovering { store.hoveredVisitID = nil }
+        }
+        #endif
+    }
+
+    @ViewBuilder
+    private func placeHeader(_ place: PlaceRecord) -> some View {
+        Text(store.displayName(for: place))
+            .font(.system(size: 20, weight: .regular, design: .serif))
+        Text(store.subtitle(for: place))
+            .font(.system(size: 12))
+            .foregroundStyle(Palette.muted)
+        if let first = place.firstVisit, let last = place.lastVisit {
+            Text("From \(first.formatted(date: .abbreviated, time: .omitted)) to \(last.formatted(date: .abbreviated, time: .omitted))")
+                .font(.system(size: 12))
+                .foregroundStyle(Palette.muted)
+        }
+    }
+
+    @ViewBuilder
+    private func placeVisits(_ place: PlaceRecord) -> some View {
+        let rows = Group {
+            ForEach(place.recentVisits) { visit in
+                legendRow(
+                    time: visit.start.formatted(date: .abbreviated, time: .shortened),
+                    title: nil,
+                    duration: Self.duration(visit.duration),
+                    highlighted: store.hoveredVisitID == visit.id
+                )
+                .onHover { hovering in
+                    store.hoveredVisitID = hovering ? visit.id : nil
+                }
+                .onTapGesture {
+                    let key = Calendar.current.startOfDay(for: visit.start)
+                    if let day = store.day(for: key) {
+                        store.select(day: day)
+                    }
+                }
+            }
+            if place.visitCount > place.recentVisits.count {
+                Text("\(place.visitCount - place.recentVisits.count) older visits")
+                    .font(.system(size: 11))
+                    .foregroundStyle(Palette.muted)
+                    .padding(.horizontal, 6)
+                    .padding(.top, 4)
+            }
+        }
+        #if os(iOS)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 2) {
+                rows
+            }
+        }
+        .frame(maxHeight: 280)
+        .scrollIndicators(.visible)
+        #else
+        VStack(alignment: .leading, spacing: 2) {
+            rows
+        }
+        .onHover { hovering in
+            if !hovering { store.hoveredVisitID = nil }
+        }
+        #endif
     }
 
     private func legendRow(time: String, title: String?, duration: String, highlighted: Bool, symbol: String? = nil) -> some View {

@@ -1,90 +1,137 @@
 import SwiftUI
-import AppKit
-
-enum Palette {
-    static let ink = Color(red: 0.07, green: 0.11, blue: 0.16)
-    static let inkLift = Color(red: 0.11, green: 0.16, blue: 0.22)
-    static let rule = Color(red: 0.22, green: 0.30, blue: 0.36)
-    static let parchment = Color(red: 0.93, green: 0.89, blue: 0.82)
-    static let muted = Color(red: 0.62, green: 0.66, blue: 0.68)
-    static let copper = Color(red: 0.72, green: 0.42, blue: 0.22)
-    static let water = Color(red: 0.16, green: 0.45, blue: 0.42)
-    static let path = Color(red: 0.78, green: 0.36, blue: 0.22)
-
-    static func distance(meters: Double) -> Color {
-        let km = max(0, meters / 1000)
-        let stops: [(Double, (Double, Double, Double))] = [
-            (0, (0.22, 0.48, 0.46)),
-            (15, (0.32, 0.52, 0.40)),
-            (35, (0.58, 0.50, 0.28)),
-            (60, (0.72, 0.42, 0.22)),
-            (90, (0.80, 0.32, 0.18)),
-            (160, (0.86, 0.22, 0.16)),
-        ]
-        if km <= stops[0].0 {
-            let c = stops[0].1
-            return Color(red: c.0, green: c.1, blue: c.2)
-        }
-        for index in 1..<stops.count {
-            let (hi, hc) = stops[index]
-            let (lo, lc) = stops[index - 1]
-            if km <= hi {
-                let u = (km - lo) / (hi - lo)
-                return Color(
-                    red: lc.0 + (hc.0 - lc.0) * u,
-                    green: lc.1 + (hc.1 - lc.1) * u,
-                    blue: lc.2 + (hc.2 - lc.2) * u
-                )
-            }
-        }
-        let c = stops[stops.count - 1].1
-        return Color(red: c.0, green: c.1, blue: c.2)
-    }
-}
 
 struct TimelineAppScene: View {
     @State private var store = TimelineStore()
     @State private var importerPresented = false
+    @State private var columnVisibility: NavigationSplitViewVisibility = .all
+    #if os(iOS)
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @State private var showingCompactMap = false
+    #endif
 
     var body: some View {
-        HSplitView {
-            SidebarView(importerPresented: $importerPresented)
-                .frame(minWidth: 260, idealWidth: 300, maxWidth: 380)
-            MapCanvasView()
-                .frame(minWidth: 480, maxWidth: .infinity, maxHeight: .infinity)
-        }
-        .toolbar(.hidden)
-        .ignoresSafeArea(.container, edges: .top)
-        .environment(store)
-        .background(Palette.ink)
-        .background(WindowChrome())
-        .fileImporter(
-            isPresented: $importerPresented,
-            allowedContentTypes: [.json],
-            allowsMultipleSelection: false
-        ) { result in
-            switch result {
-            case .success(let urls):
-                if let url = urls.first { store.open(url: url) }
-            case .failure(let error):
-                store.loadError = error.localizedDescription
-            }
-        }
-        .onAppear {
-            NSApp.setActivationPolicy(.regular)
-            bringWindowOnscreen()
-            Task { @MainActor in
-                await Task.yield()
-                if store.parsed == nil {
-                    store.restoreLastOpenedFile()
+        layout
+            .environment(store)
+            .background(Palette.ink)
+            #if os(macOS)
+            .background(WindowChrome())
+            #endif
+            .preferredColorScheme(.dark)
+            .fileImporter(
+                isPresented: $importerPresented,
+                allowedContentTypes: [.json],
+                allowsMultipleSelection: false
+            ) { result in
+                switch result {
+                case .success(let urls):
+                    if let url = urls.first { store.open(url: url) }
+                case .failure(let error):
+                    store.loadError = error.localizedDescription
                 }
             }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .openTimelineRequested)) { _ in
-            importerPresented = true
-        }
+            .onAppear {
+                #if os(macOS)
+                NSApp.setActivationPolicy(.regular)
+                bringWindowOnscreen()
+                #endif
+                Task { @MainActor in
+                    await Task.yield()
+                    if store.parsed == nil {
+                        store.restoreLastOpenedFile()
+                    }
+                }
+            }
+            .onOpenURL { url in
+                store.open(url: url)
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .openTimelineRequested)) { _ in
+                importerPresented = true
+            }
+            #if os(iOS)
+            .onChange(of: store.mapRevealGeneration) { _, _ in
+                if horizontalSizeClass == .compact {
+                    showingCompactMap = true
+                }
+            }
+            .onChange(of: store.selectedDayID) { oldValue, newValue in
+                if horizontalSizeClass == .compact, newValue != nil, newValue != oldValue {
+                    showingCompactMap = true
+                }
+            }
+            .onChange(of: store.selectedPlaceID) { oldValue, newValue in
+                if horizontalSizeClass == .compact, newValue != nil, newValue != oldValue {
+                    showingCompactMap = true
+                }
+            }
+            #endif
     }
+
+    @ViewBuilder
+    private var layout: some View {
+        #if os(iOS)
+        if horizontalSizeClass == .compact {
+            compactStack
+        } else {
+            splitView
+        }
+        #else
+        splitView
+        #endif
+    }
+
+    private var splitView: some View {
+        NavigationSplitView(columnVisibility: $columnVisibility) {
+            SidebarView(importerPresented: $importerPresented)
+                .navigationSplitViewColumnWidth(min: 260, ideal: 300, max: 380)
+                #if os(iOS)
+                .toolbar(.hidden, for: .navigationBar)
+                #endif
+        } detail: {
+            MapCanvasView()
+                #if os(iOS)
+                .toolbar(.hidden, for: .navigationBar)
+                #endif
+        }
+        .navigationSplitViewStyle(.balanced)
+        #if os(macOS)
+        .toolbar(.hidden)
+        .ignoresSafeArea(.container, edges: .top)
+        #endif
+    }
+
+    #if os(iOS)
+    private var compactStack: some View {
+        Group {
+            if showingCompactMap {
+                MapCanvasView()
+                    .overlay(alignment: .topLeading) {
+                        Button {
+                            showingCompactMap = false
+                        } label: {
+                            Label("Dates", systemImage: "chevron.backward")
+                                .labelStyle(.iconOnly)
+                                .font(.system(size: 16, weight: .semibold))
+                                .foregroundStyle(Palette.parchment)
+                                .frame(width: 36, height: 36)
+                                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                        }
+                        .buttonStyle(.plain)
+                        .padding(.leading, 16)
+                        .padding(.top, 8)
+                        .safeAreaPadding(.top)
+                        .accessibilityLabel("Back to list")
+                    }
+            } else {
+                SidebarView(importerPresented: $importerPresented)
+            }
+        }
+        .toolbar(.hidden, for: .navigationBar)
+    }
+    #endif
 }
+
+#if os(macOS)
+import AppKit
 
 private struct WindowChrome: NSViewRepresentable {
     func makeNSView(context: Context) -> WindowChromeView {
@@ -144,3 +191,4 @@ private func bringWindowOnscreen() {
         NSApp.activate(ignoringOtherApps: true)
     }
 }
+#endif

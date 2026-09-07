@@ -4,16 +4,20 @@ options:
   createIntermediateGroups: true
   deploymentTarget:
     macOS: "14.0"
+    iOS: "17.0"
 settings:
   base:
     SWIFT_VERSION: "5.0"
     MACOSX_DEPLOYMENT_TARGET: "14.0"
+    IPHONEOS_DEPLOYMENT_TARGET: "17.0"
 targets:
   Timeline:
     type: application
-    platform: macOS
+    platform: [iOS, macOS]
     sources:
       - path: Timeline
+        excludes:
+          - "*.entitlements"
     dependencies:
       - sdk: libsqlite3.tbd
     settings:
@@ -26,24 +30,37 @@ targets:
         INFOPLIST_KEY_CFBundleDisplayName: Timeline
         INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.travel
         INFOPLIST_KEY_NSHumanReadableCopyright: ""
-        INFOPLIST_KEY_NSPrincipalClass: NSApplication
         COMBINE_HIDPI_IMAGES: YES
-        CODE_SIGN_ENTITLEMENTS: Timeline/Timeline.entitlements
         CODE_SIGN_STYLE: Automatic
         CODE_SIGN_IDENTITY: Apple Development
         DEVELOPMENT_TEAM: TN2RQ5P647
-        ENABLE_HARDENED_RUNTIME: YES
         ENABLE_PREVIEWS: YES
         SWIFT_EMIT_LOC_STRINGS: YES
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        TARGETED_DEVICE_FAMILY: "1,2"
+        SUPPORTS_MACCATALYST: NO
+        CODE_SIGN_ENTITLEMENTS[sdk=macosx*]: Timeline/Timeline.entitlements
+        CODE_SIGN_ENTITLEMENTS[sdk=iphoneos*]: Timeline/Timeline-iOS.entitlements
+        CODE_SIGN_ENTITLEMENTS[sdk=iphonesimulator*]: Timeline/Timeline-iOS.entitlements
+        ENABLE_HARDENED_RUNTIME[sdk=macosx*]: YES
+        INFOPLIST_KEY_NSPrincipalClass[sdk=macosx*]: NSApplication
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
     info:
       path: Timeline/Info.plist
       properties:
         CFBundleDisplayName: Timeline
         LSMinimumSystemVersion: "14.0"
         NSHighResolutionCapable: true
+        UILaunchScreen: {}
         NSDownloadsFolderUsageDescription: Timeline reads a Timeline.json export from Downloads when you open it.
+        NSDocumentsFolderUsageDescription: Timeline opens a Google Maps Timeline JSON export that you choose.
+        LSSupportsOpeningDocumentsInPlace: false
+        CFBundleDocumentTypes:
+          - CFBundleTypeName: Google Maps Timeline JSON
+            CFBundleTypeRole: Viewer
+            LSHandlerRank: Alternate
+            LSItemContentTypes: [public.json]
         UTImportedTypeDeclarations:
           - UTTypeIdentifier: public.json
             UTTypeConformsTo: [public.text]

@@ -10,6 +10,14 @@ actor RouteSnapper {
         self.database = database
     }
 
+    func cached(id: String, kind: TravelKind) async -> [CLLocationCoordinate2D]? {
+        let routeID = "\(id)|nt|\(kind.stored)"
+        if let saved = try? await database.pathRoute(id: routeID), saved.count >= 2 {
+            return saved
+        }
+        return nil
+    }
+
     func snap(id: String, points: [CLLocationCoordinate2D], kind: TravelKind, fresh: Bool = false) async -> [CLLocationCoordinate2D] {
         guard points.count >= 2 else { return points }
         let routeID = "\(id)|nt|\(kind.stored)"

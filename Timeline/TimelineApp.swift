@@ -5,8 +5,11 @@ struct TimelineApp: App {
     var body: some Scene {
         WindowGroup {
             TimelineAppScene()
+                #if os(macOS)
                 .frame(minWidth: 980, minHeight: 640)
+                #endif
         }
+        #if os(macOS)
         .windowStyle(.hiddenTitleBar)
         .windowToolbarStyle(.unifiedCompact(showsTitle: false))
         .defaultSize(width: 1280, height: 820)
@@ -19,6 +22,7 @@ struct TimelineApp: App {
                 .keyboardShortcut("o", modifiers: [.command])
             }
         }
+        #endif
     }
 }
 

@@ -22,10 +22,31 @@
 	<string>1</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>14.0</string>
+	<key>CFBundleDocumentTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeName</key>
+			<string>Google Maps Timeline JSON</string>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>LSHandlerRank</key>
+			<string>Alternate</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>public.json</string>
+			</array>
+		</dict>
+	</array>
+	<key>LSSupportsOpeningDocumentsInPlace</key>
+	<false/>
+	<key>NSDocumentsFolderUsageDescription</key>
+	<string>Timeline opens a Google Maps Timeline JSON export that you choose.</string>
 	<key>NSDownloadsFolderUsageDescription</key>
 	<string>Timeline reads a Timeline.json export from Downloads when you open it.</string>
 	<key>NSHighResolutionCapable</key>
 	<true/>
+	<key>UILaunchScreen</key>
+	<dict/>
 	<key>UTImportedTypeDeclarations</key>
 	<array>
 		<dict>

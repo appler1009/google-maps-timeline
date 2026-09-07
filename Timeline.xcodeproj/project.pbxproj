@@ -7,42 +7,67 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		0F204A09F57B6BFD331620F8 /* SidebarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E27C0E12EC51D3A3D0B395AC /* SidebarView.swift */; };
-		0FB780EDDE5B20D702565E5E /* TimelineDatabase.swift in Sources */ = {isa = PBXBuildFile; fileRef = A6C2E6A823AF58F47F778B43 /* TimelineDatabase.swift */; };
-		1CD3E01255B7DB2F10F2877A /* TimelineModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A498B0C8D72090AC4BAF657 /* TimelineModels.swift */; };
-		1F871A670ACA865C3799C580 /* TimelineStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 55715F8BD5815481AB80CCAE /* TimelineStore.swift */; };
-		493D9C070A371BADBE884EB4 /* TimelineAppScene.swift in Sources */ = {isa = PBXBuildFile; fileRef = 82ECD6098781D0E441C5CEE4 /* TimelineAppScene.swift */; };
-		558C9EE220B4208A1F4FAEF8 /* RouteSnapper.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD3B7EEBCFA7764518D9E18E /* RouteSnapper.swift */; };
-		5D3FF653B980461CE85050C1 /* TimelineParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 30475295489F71438FC87FC3 /* TimelineParser.swift */; };
-		997A4B7BCB96BC4A579248F2 /* libsqlite3.tbd in Frameworks */ = {isa = PBXBuildFile; fileRef = AAFD7CBAD5210FAA2FDF9FFA /* libsqlite3.tbd */; };
-		B9042DFCF179AFD7E99CDEBF /* TimelineApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 27A603B8D2E85569C4F2AC40 /* TimelineApp.swift */; };
-		C3BEF453066BD0B1AF4598BE /* MapCanvasView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C84392A4A35D3A0FF607D83 /* MapCanvasView.swift */; };
-		FEA9531547A7545401BDC325 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = F38FDE28A77697434B262F4C /* Assets.xcassets */; };
+		10EA88841A4ED1F827A9CD4F /* Palette.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9E1B28FC5BF045913929FD4 /* Palette.swift */; };
+		39F8A3A67F10E9AB7E293028 /* libsqlite3.tbd in Frameworks */ = {isa = PBXBuildFile; fileRef = AAFD7CBAD5210FAA2FDF9FFA /* libsqlite3.tbd */; };
+		440BDDFA36C5E534D7EA8F21 /* TimelineModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A498B0C8D72090AC4BAF657 /* TimelineModels.swift */; };
+		45AB66324806BAD817122ABC /* SidebarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E27C0E12EC51D3A3D0B395AC /* SidebarView.swift */; };
+		4EDBBF8CCA6D77BC993A4BCC /* SidebarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E27C0E12EC51D3A3D0B395AC /* SidebarView.swift */; };
+		4FD3FDCDF9FF9D477C311B5F /* MapCanvasView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C84392A4A35D3A0FF607D83 /* MapCanvasView.swift */; };
+		557DEBB2DFDC88D8C1285ACE /* TimelineDatabase.swift in Sources */ = {isa = PBXBuildFile; fileRef = A6C2E6A823AF58F47F778B43 /* TimelineDatabase.swift */; };
+		5B404FEF0895D6CF64249ADF /* TimelineStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 55715F8BD5815481AB80CCAE /* TimelineStore.swift */; };
+		61E057B94A0331DDD5FB506B /* TimelineApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 27A603B8D2E85569C4F2AC40 /* TimelineApp.swift */; };
+		680588BE2CA48256095862A7 /* TimelineAppScene.swift in Sources */ = {isa = PBXBuildFile; fileRef = 82ECD6098781D0E441C5CEE4 /* TimelineAppScene.swift */; };
+		6FF2F358C44A36A7DC05B478 /* TimelineDatabase.swift in Sources */ = {isa = PBXBuildFile; fileRef = A6C2E6A823AF58F47F778B43 /* TimelineDatabase.swift */; };
+		7EE7764734BB4F10B52D60C8 /* MapCanvasView+iOS.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8EF9167F835586F0B2E5C8F5 /* MapCanvasView+iOS.swift */; };
+		96B59CD15DADADC9520920A8 /* libsqlite3.tbd in Frameworks */ = {isa = PBXBuildFile; fileRef = AAFD7CBAD5210FAA2FDF9FFA /* libsqlite3.tbd */; };
+		983E0828BD8950C6868F85C9 /* TimelineApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 27A603B8D2E85569C4F2AC40 /* TimelineApp.swift */; };
+		A12779692ABD1AF058D60516 /* MapCanvasView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C84392A4A35D3A0FF607D83 /* MapCanvasView.swift */; };
+		AB4BA78FE075A27C51398F99 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = F38FDE28A77697434B262F4C /* Assets.xcassets */; };
+		AFFE5021B10D3A2EB4C0568F /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = F38FDE28A77697434B262F4C /* Assets.xcassets */; };
+		BE5A3265749B32A8E4661A68 /* MapCanvasView+iOS.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8EF9167F835586F0B2E5C8F5 /* MapCanvasView+iOS.swift */; };
+		BE71455F71F539A0E487FA4D /* Palette.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9E1B28FC5BF045913929FD4 /* Palette.swift */; };
+		C7A96D4167ED6038915F5C02 /* TimelineParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 30475295489F71438FC87FC3 /* TimelineParser.swift */; };
+		D043A1DCB7AAD23D56E7DA4D /* TimelineStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 55715F8BD5815481AB80CCAE /* TimelineStore.swift */; };
+		D6A7FF8397BE356AD52900B5 /* RouteSnapper.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD3B7EEBCFA7764518D9E18E /* RouteSnapper.swift */; };
+		EE77B27F0E6DF16DDF11864E /* RouteSnapper.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD3B7EEBCFA7764518D9E18E /* RouteSnapper.swift */; };
+		F6EB15E5E9A0246EE425675B /* TimelineAppScene.swift in Sources */ = {isa = PBXBuildFile; fileRef = 82ECD6098781D0E441C5CEE4 /* TimelineAppScene.swift */; };
+		F9C703A7EFE5B97ADD61970B /* TimelineParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 30475295489F71438FC87FC3 /* TimelineParser.swift */; };
+		FDE6839E49CA511377389692 /* TimelineModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A498B0C8D72090AC4BAF657 /* TimelineModels.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
 		27A603B8D2E85569C4F2AC40 /* TimelineApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimelineApp.swift; sourceTree = "<group>"; };
-		2A1C345092BAA813196EF800 /* Timeline.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Timeline.entitlements; sourceTree = "<group>"; };
 		30475295489F71438FC87FC3 /* TimelineParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimelineParser.swift; sourceTree = "<group>"; };
 		3E8F64E885AEB7D4A4EEA4D4 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		4C84392A4A35D3A0FF607D83 /* MapCanvasView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MapCanvasView.swift; sourceTree = "<group>"; };
 		55715F8BD5815481AB80CCAE /* TimelineStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimelineStore.swift; sourceTree = "<group>"; };
+		5CA4D65EE9994C83850722CB /* Timeline.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Timeline.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		6A498B0C8D72090AC4BAF657 /* TimelineModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimelineModels.swift; sourceTree = "<group>"; };
 		82ECD6098781D0E441C5CEE4 /* TimelineAppScene.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimelineAppScene.swift; sourceTree = "<group>"; };
+		8EF9167F835586F0B2E5C8F5 /* MapCanvasView+iOS.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MapCanvasView+iOS.swift"; sourceTree = "<group>"; };
 		A6C2E6A823AF58F47F778B43 /* TimelineDatabase.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimelineDatabase.swift; sourceTree = "<group>"; };
 		AAFD7CBAD5210FAA2FDF9FFA /* libsqlite3.tbd */ = {isa = PBXFileReference; lastKnownFileType = "sourcecode.text-based-dylib-definition"; name = libsqlite3.tbd; path = usr/lib/libsqlite3.tbd; sourceTree = SDKROOT; };
 		AD3B7EEBCFA7764518D9E18E /* RouteSnapper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RouteSnapper.swift; sourceTree = "<group>"; };
+		C5F2A5746D23CC00A54DFE5F /* Timeline.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = Timeline.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		C9E1B28FC5BF045913929FD4 /* Palette.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Palette.swift; sourceTree = "<group>"; };
 		E27C0E12EC51D3A3D0B395AC /* SidebarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarView.swift; sourceTree = "<group>"; };
-		E9FD67E5B4CED0700ACC3F75 /* Timeline.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Timeline.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		F38FDE28A77697434B262F4C /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
-		C2844CDCF8C35CA6C61452B9 /* Frameworks */ = {
+		960FD4C87318F9F5DA4F9159 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				997A4B7BCB96BC4A579248F2 /* libsqlite3.tbd in Frameworks */,
+				39F8A3A67F10E9AB7E293028 /* libsqlite3.tbd in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A7C0EE27AB02B995CEB61843 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				96B59CD15DADADC9520920A8 /* libsqlite3.tbd in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -53,6 +78,8 @@
 			isa = PBXGroup;
 			children = (
 				4C84392A4A35D3A0FF607D83 /* MapCanvasView.swift */,
+				8EF9167F835586F0B2E5C8F5 /* MapCanvasView+iOS.swift */,
+				C9E1B28FC5BF045913929FD4 /* Palette.swift */,
 				E27C0E12EC51D3A3D0B395AC /* SidebarView.swift */,
 				82ECD6098781D0E441C5CEE4 /* TimelineAppScene.swift */,
 			);
@@ -62,7 +89,8 @@
 		2CAD0800C2A5170A509B4CB6 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				E9FD67E5B4CED0700ACC3F75 /* Timeline.app */,
+				C5F2A5746D23CC00A54DFE5F /* Timeline.app */,
+				5CA4D65EE9994C83850722CB /* Timeline.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -108,7 +136,6 @@
 			children = (
 				F38FDE28A77697434B262F4C /* Assets.xcassets */,
 				3E8F64E885AEB7D4A4EEA4D4 /* Info.plist */,
-				2A1C345092BAA813196EF800 /* Timeline.entitlements */,
 				27A603B8D2E85569C4F2AC40 /* TimelineApp.swift */,
 				58E202DBD845B6E0207497FE /* Models */,
 				B298A13FC9D6E9CE95AB0671 /* Services */,
@@ -120,23 +147,42 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		AE6469304449F68A8E8DB5C7 /* Timeline */ = {
+		1FE3DEE2E76993A55C7A0F96 /* Timeline_macOS */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = 6077D53C56978A1738445955 /* Build configuration list for PBXNativeTarget "Timeline" */;
+			buildConfigurationList = 43115B787653AE88C3695CFB /* Build configuration list for PBXNativeTarget "Timeline_macOS" */;
 			buildPhases = (
-				50C3038E97A1CA4F8C1813DF /* Sources */,
-				F3629D8E4F555260D1CDEFE3 /* Resources */,
-				C2844CDCF8C35CA6C61452B9 /* Frameworks */,
+				3C33BC89F15681F934358C2F /* Sources */,
+				23A38FF1E471C4BF8862B436 /* Resources */,
+				A7C0EE27AB02B995CEB61843 /* Frameworks */,
 			);
 			buildRules = (
 			);
 			dependencies = (
 			);
-			name = Timeline;
+			name = Timeline_macOS;
 			packageProductDependencies = (
 			);
-			productName = Timeline;
-			productReference = E9FD67E5B4CED0700ACC3F75 /* Timeline.app */;
+			productName = Timeline_macOS;
+			productReference = 5CA4D65EE9994C83850722CB /* Timeline.app */;
+			productType = "com.apple.product-type.application";
+		};
+		95E51891E504D1A4FDEC89B6 /* Timeline_iOS */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 0B2A0FFFAB77800E788AC452 /* Build configuration list for PBXNativeTarget "Timeline_iOS" */;
+			buildPhases = (
+				5AE91E17CFEB40B23EDF128A /* Sources */,
+				2F29495A172DE4B25876BE24 /* Resources */,
+				960FD4C87318F9F5DA4F9159 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = Timeline_iOS;
+			packageProductDependencies = (
+			);
+			productName = Timeline_iOS;
+			productReference = C5F2A5746D23CC00A54DFE5F /* Timeline.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
@@ -148,7 +194,11 @@
 				BuildIndependentTargetsInParallel = YES;
 				LastUpgradeCheck = 1430;
 				TargetAttributes = {
-					AE6469304449F68A8E8DB5C7 = {
+					1FE3DEE2E76993A55C7A0F96 = {
+						DevelopmentTeam = TN2RQ5P647;
+						ProvisioningStyle = Automatic;
+					};
+					95E51891E504D1A4FDEC89B6 = {
 						DevelopmentTeam = TN2RQ5P647;
 						ProvisioningStyle = Automatic;
 					};
@@ -168,42 +218,107 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				AE6469304449F68A8E8DB5C7 /* Timeline */,
+				95E51891E504D1A4FDEC89B6 /* Timeline_iOS */,
+				1FE3DEE2E76993A55C7A0F96 /* Timeline_macOS */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
-		F3629D8E4F555260D1CDEFE3 /* Resources */ = {
+		23A38FF1E471C4BF8862B436 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				FEA9531547A7545401BDC325 /* Assets.xcassets in Resources */,
+				AB4BA78FE075A27C51398F99 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		2F29495A172DE4B25876BE24 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				AFFE5021B10D3A2EB4C0568F /* Assets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
-		50C3038E97A1CA4F8C1813DF /* Sources */ = {
+		3C33BC89F15681F934358C2F /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				C3BEF453066BD0B1AF4598BE /* MapCanvasView.swift in Sources */,
-				558C9EE220B4208A1F4FAEF8 /* RouteSnapper.swift in Sources */,
-				0F204A09F57B6BFD331620F8 /* SidebarView.swift in Sources */,
-				B9042DFCF179AFD7E99CDEBF /* TimelineApp.swift in Sources */,
-				493D9C070A371BADBE884EB4 /* TimelineAppScene.swift in Sources */,
-				0FB780EDDE5B20D702565E5E /* TimelineDatabase.swift in Sources */,
-				1CD3E01255B7DB2F10F2877A /* TimelineModels.swift in Sources */,
-				5D3FF653B980461CE85050C1 /* TimelineParser.swift in Sources */,
-				1F871A670ACA865C3799C580 /* TimelineStore.swift in Sources */,
+				7EE7764734BB4F10B52D60C8 /* MapCanvasView+iOS.swift in Sources */,
+				4FD3FDCDF9FF9D477C311B5F /* MapCanvasView.swift in Sources */,
+				10EA88841A4ED1F827A9CD4F /* Palette.swift in Sources */,
+				D6A7FF8397BE356AD52900B5 /* RouteSnapper.swift in Sources */,
+				4EDBBF8CCA6D77BC993A4BCC /* SidebarView.swift in Sources */,
+				983E0828BD8950C6868F85C9 /* TimelineApp.swift in Sources */,
+				680588BE2CA48256095862A7 /* TimelineAppScene.swift in Sources */,
+				6FF2F358C44A36A7DC05B478 /* TimelineDatabase.swift in Sources */,
+				440BDDFA36C5E534D7EA8F21 /* TimelineModels.swift in Sources */,
+				C7A96D4167ED6038915F5C02 /* TimelineParser.swift in Sources */,
+				D043A1DCB7AAD23D56E7DA4D /* TimelineStore.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		5AE91E17CFEB40B23EDF128A /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				BE5A3265749B32A8E4661A68 /* MapCanvasView+iOS.swift in Sources */,
+				A12779692ABD1AF058D60516 /* MapCanvasView.swift in Sources */,
+				BE71455F71F539A0E487FA4D /* Palette.swift in Sources */,
+				EE77B27F0E6DF16DDF11864E /* RouteSnapper.swift in Sources */,
+				45AB66324806BAD817122ABC /* SidebarView.swift in Sources */,
+				61E057B94A0331DDD5FB506B /* TimelineApp.swift in Sources */,
+				F6EB15E5E9A0246EE425675B /* TimelineAppScene.swift in Sources */,
+				557DEBB2DFDC88D8C1285ACE /* TimelineDatabase.swift in Sources */,
+				FDE6839E49CA511377389692 /* TimelineModels.swift in Sources */,
+				F9C703A7EFE5B97ADD61970B /* TimelineParser.swift in Sources */,
+				5B404FEF0895D6CF64249ADF /* TimelineStore.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin XCBuildConfiguration section */
+		14F29140C8E489721B550139 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				"CODE_SIGN_ENTITLEMENTS[sdk=iphoneos*]" = "Timeline/Timeline-iOS.entitlements";
+				"CODE_SIGN_ENTITLEMENTS[sdk=iphonesimulator*]" = "Timeline/Timeline-iOS.entitlements";
+				"CODE_SIGN_ENTITLEMENTS[sdk=macosx*]" = Timeline/Timeline.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = TN2RQ5P647;
+				"ENABLE_HARDENED_RUNTIME[sdk=macosx*]" = YES;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Timeline/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Timeline;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.travel";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				"INFOPLIST_KEY_NSPrincipalClass[sdk=macosx*]" = NSApplication;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.appler.Timeline;
+				PRODUCT_NAME = Timeline;
+				SDKROOT = iphoneos;
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
 		4BCA08914B7F7B60ACD72B96 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -255,68 +370,76 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";
-				SDKROOT = macosx;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_VERSION = 5.0;
 			};
 			name = Debug;
 		};
-		552A598583A8EDCF1B60F591 /* Debug */ = {
+		697146A0AAF3DB2FE7515F63 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CODE_SIGN_ENTITLEMENTS = Timeline/Timeline.entitlements;
+				"CODE_SIGN_ENTITLEMENTS[sdk=iphoneos*]" = "Timeline/Timeline-iOS.entitlements";
+				"CODE_SIGN_ENTITLEMENTS[sdk=iphonesimulator*]" = "Timeline/Timeline-iOS.entitlements";
+				"CODE_SIGN_ENTITLEMENTS[sdk=macosx*]" = Timeline/Timeline.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = TN2RQ5P647;
-				ENABLE_HARDENED_RUNTIME = YES;
+				"ENABLE_HARDENED_RUNTIME[sdk=macosx*]" = YES;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Timeline/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = Timeline;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.travel";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
-				INFOPLIST_KEY_NSPrincipalClass = NSApplication;
+				"INFOPLIST_KEY_NSPrincipalClass[sdk=macosx*]" = NSApplication;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
-					"@executable_path/../Frameworks",
+					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.appler.Timeline;
 				PRODUCT_NAME = Timeline;
-				SDKROOT = macosx;
+				SDKROOT = iphoneos;
+				SUPPORTS_MACCATALYST = NO;
 				SWIFT_EMIT_LOC_STRINGS = YES;
+				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Debug;
 		};
-		844DC4745B23072B76E16C4E /* Release */ = {
+		7F638F1BF9354729589B7739 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CODE_SIGN_ENTITLEMENTS = Timeline/Timeline.entitlements;
+				"CODE_SIGN_ENTITLEMENTS[sdk=iphoneos*]" = "Timeline/Timeline-iOS.entitlements";
+				"CODE_SIGN_ENTITLEMENTS[sdk=iphonesimulator*]" = "Timeline/Timeline-iOS.entitlements";
+				"CODE_SIGN_ENTITLEMENTS[sdk=macosx*]" = Timeline/Timeline.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = TN2RQ5P647;
-				ENABLE_HARDENED_RUNTIME = YES;
+				"ENABLE_HARDENED_RUNTIME[sdk=macosx*]" = YES;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Timeline/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = Timeline;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.travel";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
-				INFOPLIST_KEY_NSPrincipalClass = NSApplication;
+				"INFOPLIST_KEY_NSPrincipalClass[sdk=macosx*]" = NSApplication;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
@@ -325,9 +448,47 @@
 				PRODUCT_BUNDLE_IDENTIFIER = com.appler.Timeline;
 				PRODUCT_NAME = Timeline;
 				SDKROOT = macosx;
+				SUPPORTS_MACCATALYST = NO;
 				SWIFT_EMIT_LOC_STRINGS = YES;
+				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Release;
+		};
+		833B61C2B55E0EAF3AEEF23E /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				"CODE_SIGN_ENTITLEMENTS[sdk=iphoneos*]" = "Timeline/Timeline-iOS.entitlements";
+				"CODE_SIGN_ENTITLEMENTS[sdk=iphonesimulator*]" = "Timeline/Timeline-iOS.entitlements";
+				"CODE_SIGN_ENTITLEMENTS[sdk=macosx*]" = Timeline/Timeline.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = TN2RQ5P647;
+				"ENABLE_HARDENED_RUNTIME[sdk=macosx*]" = YES;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Timeline/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Timeline;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.travel";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				"INFOPLIST_KEY_NSPrincipalClass[sdk=macosx*]" = NSApplication;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.appler.Timeline;
+				PRODUCT_NAME = Timeline;
+				SDKROOT = macosx;
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
 		};
 		9D8E0928822654C7421F28E1 /* Release */ = {
 			isa = XCBuildConfiguration;
@@ -374,11 +535,11 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";
-				SDKROOT = macosx;
 				SWIFT_COMPILATION_MODE = wholemodule;
 				SWIFT_OPTIMIZATION_LEVEL = "-O";
 				SWIFT_VERSION = 5.0;
@@ -388,11 +549,20 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		6077D53C56978A1738445955 /* Build configuration list for PBXNativeTarget "Timeline" */ = {
+		0B2A0FFFAB77800E788AC452 /* Build configuration list for PBXNativeTarget "Timeline_iOS" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				552A598583A8EDCF1B60F591 /* Debug */,
-				844DC4745B23072B76E16C4E /* Release */,
+				697146A0AAF3DB2FE7515F63 /* Debug */,
+				14F29140C8E489721B550139 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		43115B787653AE88C3695CFB /* Build configuration list for PBXNativeTarget "Timeline_macOS" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				833B61C2B55E0EAF3AEEF23E /* Debug */,
+				7F638F1BF9354729589B7739 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;

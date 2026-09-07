@@ -30,6 +30,8 @@ final class TimelineStore {
     var snappedDayID: Date?
     var routeGeneration: UInt64 = 0
     var isRerouting = false
+    /// Bumped when the user picks a day or place so compact iOS can show the map.
+    var mapRevealGeneration: UInt64 = 0
 
     private let database: TimelineDatabase
     private let snapper: RouteSnapper
@@ -87,6 +89,29 @@ final class TimelineStore {
     func day(for id: Date) -> DayRecord? { daysByID[id] }
     func place(for id: String) -> PlaceRecord? { placesByID[id] }
 
+    var filteredDays: [DayRecord] {
+        monthGroups.flatMap(\.days)
+    }
+
+    /// Newest-first list order: positive offset is older, negative is newer.
+    func stepDay(by offset: Int) {
+        let days = filteredDays
+        guard let id = selectedDayID, let index = days.firstIndex(where: { $0.day == id }) else { return }
+        let next = index + offset
+        guard days.indices.contains(next) else { return }
+        select(day: days[next])
+    }
+
+    var canStepToNewerDay: Bool {
+        guard let id = selectedDayID, let index = filteredDays.firstIndex(where: { $0.day == id }) else { return false }
+        return index > 0
+    }
+
+    var canStepToOlderDay: Bool {
+        guard let id = selectedDayID, let index = filteredDays.firstIndex(where: { $0.day == id }) else { return false }
+        return index + 1 < filteredDays.count
+    }
+
     var distanceScaleMeters: Double = 50_000
 
     var filteredPlaces: [PlaceRecord] {
@@ -113,7 +138,9 @@ final class TimelineStore {
 
     func restoreLastOpenedFile() {
         Task {
+            if isLoading { return }
             if let batch = try? await database.loadBatch() {
+                if isLoading { return }
                 let name = (try? await database.latestSourceName()) ?? "Library"
                 apply(TimelineParser.assemble(batch, sourceName: name))
                 return
@@ -159,8 +186,13 @@ final class TimelineStore {
     private static let bookmarkKey = "lastTimelineBookmark"
 
     private func saveBookmark(_ url: URL) {
+        #if os(macOS)
+        let options: URL.BookmarkCreationOptions = .withSecurityScope
+        #else
+        let options: URL.BookmarkCreationOptions = []
+        #endif
         guard let data = try? url.bookmarkData(
-            options: .withSecurityScope,
+            options: options,
             includingResourceValuesForKeys: nil,
             relativeTo: nil
         ) else { return }
@@ -170,9 +202,14 @@ final class TimelineStore {
     private func restoreBookmark() -> Bool {
         guard let data = UserDefaults.standard.data(forKey: Self.bookmarkKey) else { return false }
         var isStale = false
+        #if os(macOS)
+        let options: URL.BookmarkResolutionOptions = [.withSecurityScope]
+        #else
+        let options: URL.BookmarkResolutionOptions = []
+        #endif
         guard let url = try? URL(
             resolvingBookmarkData: data,
-            options: [.withSecurityScope],
+            options: options,
             relativeTo: nil,
             bookmarkDataIsStale: &isStale
         ) else { return false }
@@ -216,6 +253,7 @@ final class TimelineStore {
         if hoveredVisitID != nil { hoveredVisitID = nil }
         if selectedVisitID != nil { selectedVisitID = nil }
         if selectedPlaceID != nil { selectedPlaceID = nil }
+        mapRevealGeneration &+= 1
         focus(day: day)
         requestRoutes(for: day)
     }
@@ -231,6 +269,7 @@ final class TimelineStore {
         if hoveredVisitID != nil { hoveredVisitID = nil }
         if selectedVisitID != nil { selectedVisitID = nil }
         if selectedDayID != nil { selectedDayID = nil }
+        mapRevealGeneration &+= 1
         focus(place: place)
     }
 
@@ -300,47 +339,69 @@ final class TimelineStore {
         if !fresh, snappedDayID == day.day, !snappedRoutes.isEmpty { return }
         routeTask?.cancel()
         isRerouting = fresh
+        if snappedDayID != day.day {
+            snappedRoutes = []
+            snappedDayID = nil
+        }
         let snapper = snapper
+        let hops = Self.plannedHops(for: day)
         routeTask = Task {
             defer {
                 if !Task.isCancelled { isRerouting = false }
             }
-            var lines: [RoutedHop] = []
-            let spots = day.visits.compactMap { visit -> (TimelineVisit, CLLocationCoordinate2D)? in
-                guard let coordinate = visit.coordinate else { return nil }
-                return (visit, coordinate)
+            if !fresh, !hops.isEmpty {
+                var cached: [RoutedHop] = []
+                cached.reserveCapacity(hops.count)
+                var complete = true
+                for hop in hops {
+                    if Task.isCancelled { return }
+                    guard let points = await snapper.cached(id: hop.id, kind: hop.kind) else {
+                        complete = false
+                        break
+                    }
+                    cached.append(RoutedHop(id: "\(hop.id):\(hop.kind.stored)", points: points, kind: hop.kind))
+                }
+                if complete, !Task.isCancelled {
+                    snappedRoutes = cached
+                    snappedDayID = day.day
+                    routeGeneration &+= 1
+                    return
+                }
             }
-            if spots.count >= 2 {
-                for index in 0..<(spots.count - 1) {
-                    if Task.isCancelled { return }
-                    let from = spots[index]
-                    let to = spots[index + 1]
-                    let kind = Self.kind(from: from.0, to: to.0, activities: day.activityLines)
-                    let points = await snapper.snap(
-                        id: "hop:\(from.0.id):\(to.0.id)",
-                        points: [from.1, to.1],
-                        kind: kind,
-                        fresh: fresh
-                    )
-                    lines.append(RoutedHop(id: "hop:\(from.0.id):\(to.0.id):\(kind.stored)", points: points, kind: kind))
-                }
-            } else if !day.paths.isEmpty {
-                for path in day.paths where path.points.count >= 2 {
-                    if Task.isCancelled { return }
-                    let points = await snapper.snap(id: path.id, points: path.points, kind: path.kind, fresh: fresh)
-                    lines.append(RoutedHop(id: path.id, points: points, kind: path.kind))
-                }
-            } else {
-                for line in day.activityLines {
-                    if Task.isCancelled { return }
-                    let points = await snapper.snap(id: line.id, points: [line.start, line.end], kind: line.kind, fresh: fresh)
-                    lines.append(RoutedHop(id: line.id, points: points, kind: line.kind))
-                }
+            var lines: [RoutedHop] = []
+            lines.reserveCapacity(hops.count)
+            for hop in hops {
+                if Task.isCancelled { return }
+                let points = await snapper.snap(id: hop.id, points: hop.points, kind: hop.kind, fresh: fresh)
+                lines.append(RoutedHop(id: "\(hop.id):\(hop.kind.stored)", points: points, kind: hop.kind))
             }
             if Task.isCancelled { return }
             snappedRoutes = lines
             snappedDayID = day.day
             routeGeneration &+= 1
+        }
+    }
+
+    private static func plannedHops(for day: DayRecord) -> [(id: String, points: [CLLocationCoordinate2D], kind: TravelKind)] {
+        let spots = day.visits.compactMap { visit -> (TimelineVisit, CLLocationCoordinate2D)? in
+            guard let coordinate = visit.coordinate else { return nil }
+            return (visit, coordinate)
+        }
+        if spots.count >= 2 {
+            return (0..<(spots.count - 1)).map { index in
+                let from = spots[index]
+                let to = spots[index + 1]
+                let kind = kind(from: from.0, to: to.0, activities: day.activityLines)
+                return (id: "hop:\(from.0.id):\(to.0.id)", points: [from.1, to.1], kind: kind)
+            }
+        }
+        if !day.paths.isEmpty {
+            return day.paths.filter { $0.points.count >= 2 }.map { path in
+                (id: path.id, points: path.points, kind: path.kind)
+            }
+        }
+        return day.activityLines.map { line in
+            (id: line.id, points: [line.start, line.end], kind: line.kind)
         }
     }
 

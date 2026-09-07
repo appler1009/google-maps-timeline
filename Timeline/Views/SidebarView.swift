@@ -29,7 +29,9 @@ struct SidebarView: View {
         }
         .background(Palette.ink)
         .foregroundStyle(Palette.parchment)
+        #if os(macOS)
         .ignoresSafeArea(.container, edges: .top)
+        #endif
     }
 
     private var header: some View {
@@ -57,7 +59,11 @@ struct SidebarView: View {
             .help("Open a Google Maps Timeline JSON export")
         }
         .padding(.horizontal, 16)
+        #if os(macOS)
         .padding(.top, 38)
+        #else
+        .padding(.top, 16)
+        #endif
         .padding(.bottom, 10)
     }
 
@@ -134,6 +140,32 @@ struct SidebarView: View {
         selection: Binding<Int>,
         @ViewBuilder content: () -> Content
     ) -> some View {
+        #if os(iOS)
+        Menu {
+            Picker(title, selection: selection) {
+                content()
+            }
+        } label: {
+            HStack(spacing: 6) {
+                Text(filterCaption(title, selection.wrappedValue))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+                    .allowsTightening(true)
+                Spacer(minLength: 4)
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(Palette.muted)
+            }
+            .font(.system(size: 15, weight: .medium))
+            .foregroundStyle(Palette.parchment)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+            .frame(maxWidth: .infinity, minHeight: 36, alignment: .leading)
+            .background(Palette.inkLift, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .frame(maxWidth: .infinity)
+        #else
         Picker(title, selection: selection) {
             content()
         }
@@ -144,6 +176,14 @@ struct SidebarView: View {
         .padding(.horizontal, 8)
         .padding(.vertical, 6)
         .background(Palette.inkLift, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        #endif
+    }
+
+    private func filterCaption(_ title: String, _ value: Int) -> String {
+        if title == "Year" {
+            return value == 0 ? "All years" : String(value)
+        }
+        return value == 0 ? "All months" : Self.monthName(value)
     }
 
     private static let monthNames = DateFormatter().monthSymbols ?? []
@@ -174,11 +214,13 @@ struct SidebarView: View {
             }
             .buttonStyle(.borderedProminent)
             .tint(Palette.water)
+            #if os(macOS)
             Button("Open Downloads/Timeline.json") {
                 store.tryOpenDownloadsExample()
             }
             .buttonStyle(.plain)
             .foregroundStyle(Palette.parchment.opacity(0.85))
+            #endif
             if let error = store.loadError {
                 Text(error)
                     .font(.caption)
@@ -225,6 +267,10 @@ struct SidebarView: View {
             .tag(day.day)
             .id(day.day)
             .listRowBackground(rowBackground(isSelected: store.selectedDayID == day.day))
+            .contentShape(Rectangle())
+            .onTapGesture {
+                store.select(day: day)
+            }
     }
 
     private var placesList: some View {
@@ -237,6 +283,10 @@ struct SidebarView: View {
                 )
                     .tag(place.id)
                     .listRowBackground(rowBackground(isSelected: store.selectedPlaceID == place.id))
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        store.select(place: place)
+                    }
             }
         }
         .listStyle(.sidebar)
