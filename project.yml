@@ -55,7 +55,7 @@ targets:
         UILaunchScreen: {}
         NSDownloadsFolderUsageDescription: Timeline reads a Timeline.json export from Downloads when you open it.
         NSDocumentsFolderUsageDescription: Timeline opens a Google Maps Timeline JSON export that you choose.
-        LSSupportsOpeningDocumentsInPlace: false
+        LSSupportsOpeningDocumentsInPlace: true
         CFBundleDocumentTypes:
           - CFBundleTypeName: Google Maps Timeline JSON
             CFBundleTypeRole: Viewer

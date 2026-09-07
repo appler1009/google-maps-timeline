@@ -38,7 +38,7 @@
 		</dict>
 	</array>
 	<key>LSSupportsOpeningDocumentsInPlace</key>
-	<false/>
+	<true/>
 	<key>NSDocumentsFolderUsageDescription</key>
 	<string>Timeline opens a Google Maps Timeline JSON export that you choose.</string>
 	<key>NSDownloadsFolderUsageDescription</key>
