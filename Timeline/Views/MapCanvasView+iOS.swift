@@ -215,6 +215,9 @@ struct TimelineKitMap: UIViewRepresentable {
                 guard tick == self.contentTick else { return }
                 self.annotationFadeIn = true
                 rebuild()
+                for annotation in map.annotations {
+                    map.view(for: annotation)?.alpha = 1
+                }
                 for overlay in map.overlays {
                     self.overlayRenderers[ObjectIdentifier(overlay)]?.alpha = 0
                 }
@@ -244,11 +247,6 @@ struct TimelineKitMap: UIViewRepresentable {
         }
 
         private func fadeMap(_ map: MKMapView, to alpha: CGFloat, duration: TimeInterval, token: UInt64, completion: (() -> Void)? = nil) {
-            UIView.animate(withDuration: duration, delay: 0, options: .curveEaseInOut) {
-                for annotation in map.annotations {
-                    map.view(for: annotation)?.alpha = alpha
-                }
-            }
             fadeOverlays(map.overlays, to: alpha, duration: duration, stillCurrent: { token == self.contentTick }, completion: completion)
         }
 
@@ -392,6 +390,7 @@ struct TimelineKitMap: UIViewRepresentable {
             let view = mapView.dequeueReusableAnnotationView(withIdentifier: id) as? VisitMarkerView
                 ?? VisitMarkerView(annotation: annotation, reuseIdentifier: id)
             view.annotation = annotation
+            view.alpha = 1
             view.apply(annotation as? VisitAnnotation)
             return view
         }
@@ -435,9 +434,11 @@ private final class VisitMarkerView: MKAnnotationView {
         label.layer.cornerRadius = 8
         label.layer.masksToBounds = true
         label.textAlignment = .center
+        clipsToBounds = false
         addSubview(dot)
         addSubview(glyph)
         addSubview(label)
+        bounds.size = CGSize(width: 12, height: 12)
     }
 
     required init?(coder: NSCoder) {
@@ -468,23 +469,20 @@ private final class VisitMarkerView: MKAnnotationView {
     override func layoutSubviews() {
         super.layoutSubviews()
         let pin: CGFloat = glyph.isHidden ? 12 : 16
+        bounds.size = CGSize(width: pin, height: pin)
+        let pinFrame = CGRect(x: 0, y: 0, width: pin, height: pin)
+        dot.frame = pinFrame
+        glyph.frame = pinFrame
         let labelSize = label.intrinsicContentSize
         let labelWidth = labelSize.width + 8
         let labelHeight = labelSize.height + 2
-        let width = max(pin, labelWidth)
-        let height = pin + 4 + labelHeight
-        bounds.size = CGSize(width: width, height: height)
-        let pinFrame = CGRect(x: (width - pin) / 2, y: 0, width: pin, height: pin)
-        dot.frame = pinFrame
-        glyph.frame = pinFrame
         label.frame = CGRect(
-            x: (width - labelWidth) / 2,
+            x: (pin - labelWidth) / 2,
             y: pin + 4,
             width: labelWidth,
             height: labelHeight
         )
-        // MapKit places the view's center on the coordinate; shift so the pin sits on it.
-        centerOffset = CGPoint(x: 0, y: bounds.midY - pin / 2)
+        centerOffset = .zero
     }
 }
 #endif

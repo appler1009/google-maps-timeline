@@ -337,6 +337,9 @@ struct TimelineKitMap: NSViewRepresentable {
                 guard tick == self.contentTick else { return }
                 self.annotationFadeIn = true
                 rebuild()
+                for annotation in map.annotations {
+                    map.view(for: annotation)?.alphaValue = 1
+                }
                 for overlay in map.overlays {
                     self.overlayRenderers[ObjectIdentifier(overlay)]?.alpha = 0
                 }
@@ -366,13 +369,6 @@ struct TimelineKitMap: NSViewRepresentable {
         }
 
         private func fadeMap(_ map: MKMapView, to alpha: CGFloat, duration: TimeInterval, token: UInt64, completion: (() -> Void)? = nil) {
-            NSAnimationContext.runAnimationGroup { context in
-                context.duration = duration
-                context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-                for annotation in map.annotations {
-                    map.view(for: annotation)?.animator().alphaValue = alpha
-                }
-            }
             fadeOverlays(map.overlays, to: alpha, duration: duration, stillCurrent: { token == self.contentTick }, completion: completion)
         }
 
@@ -518,6 +514,7 @@ struct TimelineKitMap: NSViewRepresentable {
             let view = mapView.dequeueReusableAnnotationView(withIdentifier: id) as? VisitMarkerView
                 ?? VisitMarkerView(annotation: annotation, reuseIdentifier: id)
             view.annotation = annotation
+            view.alphaValue = 1
             view.apply(annotation as? VisitAnnotation)
             return view
         }
@@ -577,12 +574,14 @@ private final class VisitMarkerView: MKAnnotationView {
         addSubview(dot)
         addSubview(glyph)
         addSubview(label)
-        frame = CGRect(x: 0, y: 0, width: 120, height: 40)
+        bounds.size = CGSize(width: 12, height: 12)
     }
 
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
     }
+
+    override var isFlipped: Bool { true }
 
     func apply(_ annotation: VisitAnnotation?) {
         label.stringValue = annotation?.title ?? "Place"
@@ -608,18 +607,21 @@ private final class VisitMarkerView: MKAnnotationView {
     override func layout() {
         super.layout()
         let pin: CGFloat = glyph.isHidden ? 12 : 16
-        let pinFrame = CGRect(x: (bounds.width - pin) / 2, y: 18, width: pin, height: pin)
+        bounds.size = CGSize(width: pin, height: pin)
+        let pinFrame = CGRect(x: 0, y: 0, width: pin, height: pin)
         dot.frame = pinFrame
         glyph.frame = pinFrame
         label.sizeToFit()
         let labelSize = label.frame.size
+        let labelWidth = labelSize.width + 8
+        let labelHeight = labelSize.height + 2
         label.frame = CGRect(
-            x: (bounds.width - labelSize.width) / 2 - 4,
-            y: 0,
-            width: labelSize.width + 8,
-            height: labelSize.height + 2
+            x: (pin - labelWidth) / 2,
+            y: -labelHeight - 4,
+            width: labelWidth,
+            height: labelHeight
         )
-        centerOffset = CGPoint(x: 0, y: -8)
+        centerOffset = .zero
     }
 }
 #endif
