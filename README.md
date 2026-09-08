@@ -6,7 +6,7 @@ Requires macOS 14 or iOS 17. Open `Timeline.xcodeproj` in Xcode and run the **Ti
 
 ## Open an export
 
-On Mac, **⌘O** or the folder button in the toolbar. On first launch, `~/Downloads/Timeline.json` is opened if it is present.
+On Mac, **⌘O** or the folder button in the toolbar.
 
 Export from Google Maps Timeline (location history). Current semantic-segment JSON and older Takeout `timelineObjects` files both work. The file has coordinates and labels such as Home or Work, not street names.
 
