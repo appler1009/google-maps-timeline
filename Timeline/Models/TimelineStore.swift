@@ -39,6 +39,7 @@ final class TimelineStore {
     private let database: TimelineDatabase
     private let snapper: RouteSnapper
     private var routeTask: Task<Void, Never>?
+    private var routesByDay: [Date: [RoutedHop]] = [:]
     private var daysByID: [Date: DayRecord] = [:]
     private var placesByID: [String: PlaceRecord] = [:]
     private(set) var monthGroups: [(month: Date, days: [DayRecord])] = []
@@ -242,6 +243,7 @@ final class TimelineStore {
         rebuildDateIndexes()
         snappedRoutes = []
         snappedDayID = nil
+        routesByDay = [:]
         #if os(iOS)
         selectedDayID = nil
         #else
@@ -317,17 +319,12 @@ final class TimelineStore {
 
     var routesForDisplay: [RoutedHop] {
         guard snappedDayID == selectedDayID else { return [] }
-        guard let day = selectedDay, let visitID = selectedVisitID else { return snappedRoutes }
-        let spots = day.visits.filter { $0.coordinate != nil }
-        guard let index = spots.firstIndex(where: { $0.id == visitID }) else { return snappedRoutes }
-        var lines: [RoutedHop] = []
-        if index > 0, snappedRoutes.indices.contains(index - 1) {
-            lines.append(snappedRoutes[index - 1])
+        guard let visitID = selectedVisitID, let visit = selectedDay?.visits.first(where: { $0.id == visitID }) else {
+            return snappedRoutes
         }
-        if index < spots.count - 1, snappedRoutes.indices.contains(index) {
-            lines.append(snappedRoutes[index])
+        return snappedRoutes.filter { hop in
+            hop.until >= visit.start && hop.at <= visit.end
         }
-        return lines
     }
 
     private func focus(coordinate: CLLocationCoordinate2D) {
@@ -341,6 +338,7 @@ final class TimelineStore {
 
     func rerouteSelectedDay() {
         guard let day = selectedDay else { return }
+        routesByDay[day.day] = nil
         snappedRoutes = []
         snappedDayID = nil
         requestRoutes(for: day, fresh: true)
@@ -348,6 +346,12 @@ final class TimelineStore {
 
     private func requestRoutes(for day: DayRecord, fresh: Bool = false) {
         if !fresh, snappedDayID == day.day, !snappedRoutes.isEmpty { return }
+        if !fresh, let ready = routesByDay[day.day], !ready.isEmpty {
+            snappedRoutes = ready
+            snappedDayID = day.day
+            routeGeneration &+= 1
+            return
+        }
         routeTask?.cancel()
         isRerouting = fresh
         if snappedDayID != day.day {
@@ -366,13 +370,14 @@ final class TimelineStore {
                 var complete = true
                 for hop in hops {
                     if Task.isCancelled { return }
-                    guard let points = await snapper.cached(id: hop.id, kind: hop.kind) else {
+                    guard let points = await snapper.cached(id: hop.id, kind: hop.kind, points: hop.points) else {
                         complete = false
                         break
                     }
-                    cached.append(RoutedHop(id: "\(hop.id):\(hop.kind.stored)", points: points, kind: hop.kind))
+                    cached.append(RoutedHop(id: "\(hop.id):\(hop.kind.stored)", points: points, kind: hop.kind, at: hop.at, until: hop.until))
                 }
                 if complete, !Task.isCancelled {
+                    routesByDay[day.day] = cached
                     snappedRoutes = cached
                     snappedDayID = day.day
                     routeGeneration &+= 1
@@ -384,16 +389,23 @@ final class TimelineStore {
             for hop in hops {
                 if Task.isCancelled { return }
                 let points = await snapper.snap(id: hop.id, points: hop.points, kind: hop.kind, fresh: fresh)
-                lines.append(RoutedHop(id: "\(hop.id):\(hop.kind.stored)", points: points, kind: hop.kind))
+                lines.append(RoutedHop(id: "\(hop.id):\(hop.kind.stored)", points: points, kind: hop.kind, at: hop.at, until: hop.until))
             }
             if Task.isCancelled { return }
+            routesByDay[day.day] = lines
             snappedRoutes = lines
             snappedDayID = day.day
             routeGeneration &+= 1
         }
     }
 
-    private static func plannedHops(for day: DayRecord) -> [(id: String, points: [CLLocationCoordinate2D], kind: TravelKind)] {
+    private static func plannedHops(for day: DayRecord) -> [(id: String, points: [CLLocationCoordinate2D], kind: TravelKind, at: Date, until: Date)] {
+        let lines = day.activityLines.filter { $0.until > $0.at }.sorted { $0.at < $1.at }
+        if !lines.isEmpty {
+            return lines.map { line in
+                (id: line.id, points: [line.start, line.end], kind: line.kind, at: line.at, until: line.until)
+            }
+        }
         let spots = day.visits.compactMap { visit -> (TimelineVisit, CLLocationCoordinate2D)? in
             guard let coordinate = visit.coordinate else { return nil }
             return (visit, coordinate)
@@ -403,16 +415,11 @@ final class TimelineStore {
                 let from = spots[index]
                 let to = spots[index + 1]
                 let kind = kind(from: from.0, to: to.0, activities: day.activityLines)
-                return (id: "hop:\(from.0.id):\(to.0.id)", points: [from.1, to.1], kind: kind)
+                return (id: "hop:\(from.0.id):\(to.0.id)", points: [from.1, to.1], kind: kind, at: from.0.end, until: to.0.start)
             }
         }
-        if !day.paths.isEmpty {
-            return day.paths.filter { $0.points.count >= 2 }.map { path in
-                (id: path.id, points: path.points, kind: path.kind)
-            }
-        }
-        return day.activityLines.map { line in
-            (id: line.id, points: [line.start, line.end], kind: line.kind)
+        return day.paths.filter { $0.points.count >= 2 }.map { path in
+            (id: path.id, points: path.points, kind: path.kind, at: path.start, until: path.end)
         }
     }
 

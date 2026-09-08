@@ -160,6 +160,8 @@ struct RoutedHop: Identifiable {
     let id: String
     let points: [CLLocationCoordinate2D]
     let kind: TravelKind
+    let at: Date
+    let until: Date
 }
 
 struct DayRecord: Identifiable {

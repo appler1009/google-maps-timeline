@@ -435,18 +435,9 @@ struct TimelineKitMap: NSViewRepresentable {
             }
         }
 
-        private func addDayPaths(map: MKMapView, day: DayRecord, routed: [RoutedHop]) {
-            if !routed.isEmpty {
-                for hop in routed where hop.points.count >= 2 {
-                    addPolyline(map: map, points: hop.points, kind: hop.kind)
-                }
-                return
-            }
-            for path in day.paths where path.points.count >= 2 {
-                addPolyline(map: map, points: path.points, kind: path.kind)
-            }
-            for line in day.activityLines {
-                addPolyline(map: map, points: [line.start, line.end], kind: line.kind)
+        private func addDayPaths(map: MKMapView, day _: DayRecord, routed: [RoutedHop]) {
+            for hop in routed where hop.points.count >= 2 {
+                addPolyline(map: map, points: hop.points, kind: hop.kind)
             }
         }
 
@@ -481,8 +472,9 @@ struct TimelineKitMap: NSViewRepresentable {
                 let polylineRenderer = MKPolylineRenderer(polyline: line)
                 switch line.kind {
                 case .walking:
-                    polylineRenderer.strokeColor = NSColor(red: 0.16, green: 0.45, blue: 0.42, alpha: 0.95)
-                    polylineRenderer.lineWidth = 2.5
+                    polylineRenderer.strokeColor = NSColor(red: 0.55, green: 0.82, blue: 0.74, alpha: 1)
+                    polylineRenderer.lineWidth = 3
+                    polylineRenderer.lineDashPattern = [7, 5]
                     polylineRenderer.lineCap = .round
                     polylineRenderer.lineJoin = .round
                 case .cycling:

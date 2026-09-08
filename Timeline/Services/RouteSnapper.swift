@@ -10,12 +10,46 @@ actor RouteSnapper {
         self.database = database
     }
 
-    func cached(id: String, kind: TravelKind) async -> [CLLocationCoordinate2D]? {
+    func cached(id: String, kind: TravelKind, points: [CLLocationCoordinate2D] = []) async -> [CLLocationCoordinate2D]? {
         let routeID = "\(id)|nt|\(kind.stored)"
         if let saved = try? await database.pathRoute(id: routeID), saved.count >= 2 {
             return saved
         }
-        return nil
+        guard points.count >= 2 else { return nil }
+        guard let transport = kind.directionsType else {
+            return points
+        }
+        let waypoints = Self.sample(points, maxCount: 8, minMeters: 120)
+        guard waypoints.count >= 2 else { return nil }
+        var route: [CLLocationCoordinate2D] = []
+        for index in 0..<(waypoints.count - 1) {
+            let start = waypoints[index]
+            let end = waypoints[index + 1]
+            let meters = CLLocation(latitude: start.latitude, longitude: start.longitude)
+                .distance(from: CLLocation(latitude: end.latitude, longitude: end.longitude))
+            let hop: [CLLocationCoordinate2D]
+            if meters < 50 || meters > 180_000 {
+                hop = [start, end]
+            } else {
+                let key = Self.cacheKey(from: start, to: end, transport: transport)
+                if let memory = hopCache[key], memory.count >= 2 {
+                    hop = memory
+                } else if let disk = try? await database.hop(key: key), disk.count >= 2 {
+                    hopCache[key] = disk
+                    hop = disk
+                } else {
+                    return nil
+                }
+            }
+            if route.isEmpty {
+                route.append(contentsOf: hop)
+            } else {
+                route.append(contentsOf: hop.dropFirst())
+            }
+        }
+        guard route.count >= 2 else { return nil }
+        try? await database.savePathRoute(id: routeID, points: route)
+        return route
     }
 
     func snap(id: String, points: [CLLocationCoordinate2D], kind: TravelKind, fresh: Bool = false) async -> [CLLocationCoordinate2D] {

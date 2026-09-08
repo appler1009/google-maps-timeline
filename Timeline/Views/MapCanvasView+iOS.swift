@@ -311,8 +311,7 @@ struct TimelineKitMap: UIViewRepresentable {
             }
         }
 
-        private func addDayPaths(map: MKMapView, day: DayRecord, routed: [RoutedHop]) {
-            guard !routed.isEmpty else { return }
+        private func addDayPaths(map: MKMapView, day _: DayRecord, routed: [RoutedHop]) {
             for hop in routed where hop.points.count >= 2 {
                 addPolyline(map: map, points: hop.points, kind: hop.kind)
             }
@@ -349,8 +348,9 @@ struct TimelineKitMap: UIViewRepresentable {
                 let polylineRenderer = MKPolylineRenderer(polyline: line)
                 switch line.kind {
                 case .walking:
-                    polylineRenderer.strokeColor = UIColor(red: 0.16, green: 0.45, blue: 0.42, alpha: 0.95)
-                    polylineRenderer.lineWidth = 2.5
+                    polylineRenderer.strokeColor = UIColor(red: 0.55, green: 0.82, blue: 0.74, alpha: 1)
+                    polylineRenderer.lineWidth = 3
+                    polylineRenderer.lineDashPattern = [7, 5]
                     polylineRenderer.lineCap = .round
                     polylineRenderer.lineJoin = .round
                 case .cycling:
@@ -438,7 +438,6 @@ private final class VisitMarkerView: MKAnnotationView {
         addSubview(dot)
         addSubview(glyph)
         addSubview(label)
-        frame = CGRect(x: 0, y: 0, width: 120, height: 40)
     }
 
     required init?(coder: NSCoder) {
@@ -469,18 +468,23 @@ private final class VisitMarkerView: MKAnnotationView {
     override func layoutSubviews() {
         super.layoutSubviews()
         let pin: CGFloat = glyph.isHidden ? 12 : 16
-        let pinFrame = CGRect(x: (bounds.width - pin) / 2, y: 0, width: pin, height: pin)
+        let labelSize = label.intrinsicContentSize
+        let labelWidth = labelSize.width + 8
+        let labelHeight = labelSize.height + 2
+        let width = max(pin, labelWidth)
+        let height = pin + 4 + labelHeight
+        bounds.size = CGSize(width: width, height: height)
+        let pinFrame = CGRect(x: (width - pin) / 2, y: 0, width: pin, height: pin)
         dot.frame = pinFrame
         glyph.frame = pinFrame
-        label.sizeToFit()
-        let labelSize = label.intrinsicContentSize
         label.frame = CGRect(
-            x: (bounds.width - labelSize.width) / 2 - 4,
+            x: (width - labelWidth) / 2,
             y: pin + 4,
-            width: labelSize.width + 8,
-            height: labelSize.height + 2
+            width: labelWidth,
+            height: labelHeight
         )
-        centerOffset = CGPoint(x: 0, y: -((pin + 4 + labelSize.height) / 2))
+        // MapKit places the view's center on the coordinate; shift so the pin sits on it.
+        centerOffset = CGPoint(x: 0, y: bounds.midY - pin / 2)
     }
 }
 #endif
