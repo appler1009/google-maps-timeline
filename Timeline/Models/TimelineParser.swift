@@ -77,15 +77,24 @@ enum TimelineParser {
                 day = next
             }
         }
-        for activity in batch.activities {
-            let key = dayKey(activity.start)
-            var bucket = daysMap[key] ?? DayBucket()
-            bucket.travelMeters += activity.distance
-            bucket.kinds.append((activity.start, activity.kind))
-            if let startC = activity.startCoordinate, let endC = activity.endCoordinate {
-                bucket.lines.append(ActivityLine(id: activity.id, at: activity.start, until: activity.end, start: startC, end: endC, kind: activity.kind))
+        for activity in deduplicated(batch.activities) {
+            let meters = effectiveDistance(activity)
+            let span = max(activity.end.timeIntervalSince(activity.start), 1)
+            var cursor = activity.start
+            while cursor < activity.end {
+                let key = dayKey(cursor)
+                let nextDay = calendar.date(byAdding: .day, value: 1, to: key) ?? activity.end
+                let sliceEnd = min(activity.end, nextDay)
+                let fraction = sliceEnd.timeIntervalSince(cursor) / span
+                var bucket = daysMap[key] ?? DayBucket()
+                bucket.travelMeters += meters * fraction
+                bucket.kinds.append((activity.start, activity.kind))
+                if let startC = activity.startCoordinate, let endC = activity.endCoordinate {
+                    bucket.lines.append(ActivityLine(id: activity.id, at: activity.start, until: activity.end, start: startC, end: endC, kind: activity.kind))
+                }
+                daysMap[key] = bucket
+                cursor = sliceEnd
             }
-            daysMap[key] = bucket
         }
         for path in batch.paths {
             let key = dayKey(path.start)
@@ -375,6 +384,61 @@ enum TimelineParser {
         if let number = value as? NSNumber { return number.doubleValue }
         if let string = value as? String { return Double(string) }
         return nil
+    }
+
+    /// Google exports (and merged backups) overlap: a 1-minute stub with the full
+    /// trip distance, a later 0 m rewrite of the same hop, a long idle wrapper.
+    /// Keep one plausible segment per overlap so day totals are not double-counted.
+    private static func deduplicated(_ activities: [TimelineActivity]) -> [TimelineActivity] {
+        let sorted = activities.sorted { lhs, rhs in
+            if lhs.start != rhs.start { return lhs.start < rhs.start }
+            return lhs.end > rhs.end
+        }
+        var kept: [TimelineActivity] = []
+        kept.reserveCapacity(sorted.count)
+        for activity in sorted {
+            let meters = effectiveDistance(activity)
+            let duration = activity.end.timeIntervalSince(activity.start)
+            if duration <= 0 { continue }
+            if meters > 1, meters / duration > 80 { continue }
+            if let index = kept.firstIndex(where: { overlaps($0, activity) }) {
+                if better(activity, than: kept[index]) {
+                    kept[index] = activity
+                }
+                continue
+            }
+            kept.append(activity)
+        }
+        return kept
+    }
+
+    private static func overlaps(_ a: TimelineActivity, _ b: TimelineActivity) -> Bool {
+        let overlap = min(a.end, b.end).timeIntervalSince(max(a.start, b.start))
+        guard overlap > 0 else { return false }
+        let shorter = min(a.end.timeIntervalSince(a.start), b.end.timeIntervalSince(b.start))
+        return overlap / max(shorter, 1) >= 0.5
+    }
+
+    private static func better(_ candidate: TimelineActivity, than existing: TimelineActivity) -> Bool {
+        let candidateDuration = candidate.end.timeIntervalSince(candidate.start)
+        let existingDuration = existing.end.timeIntervalSince(existing.start)
+        let candidateSpeed = effectiveDistance(candidate) / max(candidateDuration, 1)
+        let existingSpeed = effectiveDistance(existing) / max(existingDuration, 1)
+        let candidateIdle = candidateSpeed < 1.5
+        let existingIdle = existingSpeed < 1.5
+        if candidateIdle != existingIdle { return existingIdle }
+        if abs(candidateDuration - existingDuration) > 1 {
+            if candidateIdle, existingIdle { return candidateDuration < existingDuration }
+            return candidateDuration > existingDuration
+        }
+        return effectiveDistance(candidate) > effectiveDistance(existing)
+    }
+
+    private static func effectiveDistance(_ activity: TimelineActivity) -> Double {
+        if activity.distance > 1 { return activity.distance }
+        guard let start = activity.startCoordinate, let end = activity.endCoordinate else { return 0 }
+        return CLLocation(latitude: start.latitude, longitude: start.longitude)
+            .distance(from: CLLocation(latitude: end.latitude, longitude: end.longitude))
     }
 
     private static func nearestKind(_ date: Date, in kinds: [(Date, TravelKind)]) -> TravelKind {
