@@ -214,12 +214,11 @@ struct TimelineKitMap: NSViewRepresentable {
         map.delegate = context.coordinator
         map.isPitchEnabled = false
         map.isRotateEnabled = false
-        map.showsTraffic = false
         map.showsCompass = true
         map.showsZoomControls = true
         map.showsScale = true
-        map.pointOfInterestFilter = .excludingAll
         map.appearance = NSAppearance(named: .darkAqua)
+        TimelineMapChrome.apply(to: map)
         return map
     }
 
@@ -545,6 +544,17 @@ final class KindPolyline: MKPolyline {
 final class VisitAnnotation: MKPointAnnotation {
     var semantic: String?
     var visitID: String?
+}
+
+enum TimelineMapChrome {
+    static func apply(to map: MKMapView) {
+        map.showsTraffic = false
+        map.pointOfInterestFilter = .excludingAll
+        let config = MKHybridMapConfiguration(elevationStyle: .realistic)
+        config.pointOfInterestFilter = .excludingAll
+        config.showsTraffic = false
+        map.preferredConfiguration = config
+    }
 }
 
 #if os(macOS)

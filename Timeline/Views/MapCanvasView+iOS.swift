@@ -30,11 +30,10 @@ struct TimelineKitMap: UIViewRepresentable {
         map.delegate = context.coordinator
         map.isPitchEnabled = false
         map.isRotateEnabled = false
-        map.showsTraffic = false
         map.showsCompass = true
         map.showsScale = true
-        map.pointOfInterestFilter = .excludingAll
         map.overrideUserInterfaceStyle = .dark
+        TimelineMapChrome.apply(to: map)
         return map
     }
 
