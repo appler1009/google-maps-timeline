@@ -10,7 +10,7 @@ On Mac, **⌘O** or the folder button in the toolbar.
 
 Export from Google Maps Timeline (location history). Current semantic-segment JSON and older Takeout `timelineObjects` files both work. The file has coordinates and labels such as Home or Work, not street names.
 
-Exports merge into a local library on the device. Later backups upsert; snapped road traces are cached so they are not requested again.
+Exports merge into a local library on the device. Later backups upsert. Routes are snapped to roads with Apple Maps and cached so they are not requested again.
 
 ## Using the app
 
