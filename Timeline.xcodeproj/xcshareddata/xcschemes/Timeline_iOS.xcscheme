@@ -5,8 +5,36 @@
    <BuildAction
       parallelizeBuildables = "YES"
       buildImplicitDependencies = "YES"
-      buildArchitectures = "Automatic">
+      runPostActionsOnFailure = "NO">
       <BuildActionEntries>
+         <BuildActionEntry
+            buildForTesting = "YES"
+            buildForRunning = "NO"
+            buildForProfiling = "NO"
+            buildForArchiving = "NO"
+            buildForAnalyzing = "NO">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "B88BE8384A78CAA04BBBB043"
+               BuildableName = "TimelineTests.xctest"
+               BlueprintName = "TimelineTests"
+               ReferencedContainer = "container:Timeline.xcodeproj">
+            </BuildableReference>
+         </BuildActionEntry>
+         <BuildActionEntry
+            buildForTesting = "YES"
+            buildForRunning = "NO"
+            buildForProfiling = "NO"
+            buildForArchiving = "NO"
+            buildForAnalyzing = "NO">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "0F9DCF58FB872081D7948078"
+               BuildableName = "TimelineUITests.xctest"
+               BlueprintName = "TimelineUITests"
+               ReferencedContainer = "container:Timeline.xcodeproj">
+            </BuildableReference>
+         </BuildActionEntry>
          <BuildActionEntry
             buildForTesting = "YES"
             buildForRunning = "YES"
@@ -17,6 +45,7 @@
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "95E51891E504D1A4FDEC89B6"
                BuildableName = "Timeline.app"
+               BlueprintName = "Timeline_iOS"
                ReferencedContainer = "container:Timeline.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
@@ -27,7 +56,42 @@
       selectedDebuggerIdentifier = "Xcode.DebuggerFoundation.Debugger.LLDB"
       selectedLauncherIdentifier = "Xcode.DebuggerFoundation.Launcher.LLDB"
       shouldUseLaunchSchemeArgsEnv = "YES"
-      shouldAutocreateTestPlan = "YES">
+      onlyGenerateCoverageForSpecifiedTargets = "NO">
+      <MacroExpansion>
+         <BuildableReference
+            BuildableIdentifier = "primary"
+            BlueprintIdentifier = "95E51891E504D1A4FDEC89B6"
+            BuildableName = "Timeline.app"
+            BlueprintName = "Timeline_iOS"
+            ReferencedContainer = "container:Timeline.xcodeproj">
+         </BuildableReference>
+      </MacroExpansion>
+      <Testables>
+         <TestableReference
+            skipped = "NO"
+            parallelizable = "NO">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "B88BE8384A78CAA04BBBB043"
+               BuildableName = "TimelineTests.xctest"
+               BlueprintName = "TimelineTests"
+               ReferencedContainer = "container:Timeline.xcodeproj">
+            </BuildableReference>
+         </TestableReference>
+         <TestableReference
+            skipped = "NO"
+            parallelizable = "NO">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "0F9DCF58FB872081D7948078"
+               BuildableName = "TimelineUITests.xctest"
+               BlueprintName = "TimelineUITests"
+               ReferencedContainer = "container:Timeline.xcodeproj">
+            </BuildableReference>
+         </TestableReference>
+      </Testables>
+      <CommandLineArguments>
+      </CommandLineArguments>
    </TestAction>
    <LaunchAction
       buildConfiguration = "Debug"
@@ -38,17 +102,19 @@
       ignoresPersistentStateOnLaunch = "NO"
       debugDocumentVersioning = "YES"
       debugServiceExtension = "internal"
-      allowLocationSimulation = "YES"
-      queueDebuggingEnabled = "No">
+      allowLocationSimulation = "YES">
       <BuildableProductRunnable
          runnableDebuggingMode = "0">
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "95E51891E504D1A4FDEC89B6"
             BuildableName = "Timeline.app"
+            BlueprintName = "Timeline_iOS"
             ReferencedContainer = "container:Timeline.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
+      <CommandLineArguments>
+      </CommandLineArguments>
    </LaunchAction>
    <ProfileAction
       buildConfiguration = "Release"
@@ -62,6 +128,7 @@
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "95E51891E504D1A4FDEC89B6"
             BuildableName = "Timeline.app"
+            BlueprintName = "Timeline_iOS"
             ReferencedContainer = "container:Timeline.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>

@@ -5,9 +5,11 @@ import MapKit
 actor RouteSnapper {
     private var hopCache: [String: [CLLocationCoordinate2D]] = [:]
     private let database: TimelineDatabase
+    private let directions: MapDirectionsClient
 
-    init(database: TimelineDatabase) {
+    init(database: TimelineDatabase, directions: MapDirectionsClient = AppleMapDirectionsClient()) {
         self.database = database
+        self.directions = directions
     }
 
     func cached(id: String, kind: TravelKind, points: [CLLocationCoordinate2D] = []) async -> [CLLocationCoordinate2D]? {
@@ -103,22 +105,8 @@ actor RouteSnapper {
             return disk
         }
 
-        let request = MKDirections.Request()
-        request.source = MKMapItem(placemark: MKPlacemark(coordinate: start))
-        request.destination = MKMapItem(placemark: MKPlacemark(coordinate: end))
-        request.transportType = transport
-        request.requestsAlternateRoutes = false
-        request.departureDate = Self.staticDeparture
-        request.arrivalDate = nil
-        request.highwayPreference = .any
-        request.tollPreference = .any
-
         do {
-            let response = try await MKDirections(request: request).calculate()
-            guard let polyline = response.routes.first?.polyline else { return [start, end] }
-            var coords = [CLLocationCoordinate2D](repeating: kCLLocationCoordinate2DInvalid, count: polyline.pointCount)
-            polyline.getCoordinates(&coords, range: NSRange(location: 0, length: polyline.pointCount))
-            let valid = coords.filter { CLLocationCoordinate2DIsValid($0) }
+            let valid = try await directions.route(from: start, to: end, transport: transport)
             if valid.count >= 2 {
                 if hopCache.count > 1500 { hopCache.removeAll(keepingCapacity: true) }
                 hopCache[key] = valid
@@ -131,18 +119,6 @@ actor RouteSnapper {
         return [start, end]
     }
 
-    /// Off-peak Sunday so Apple does not optimize around live congestion.
-    private static let staticDeparture: Date = {
-        var parts = DateComponents()
-        parts.calendar = Calendar(identifier: .gregorian)
-        parts.timeZone = TimeZone(secondsFromGMT: 0)
-        parts.year = 2024
-        parts.month = 1
-        parts.day = 7
-        parts.hour = 4
-        return parts.date ?? Date(timeIntervalSince1970: 1_704_600_000)
-    }()
-
     static func cacheKey(from start: CLLocationCoordinate2D, to end: CLLocationCoordinate2D, transport: MKDirectionsTransportType) -> String {
         String(
             format: "%.4f,%.4f-%.4f,%.4f-%u-nt",
@@ -150,7 +126,7 @@ actor RouteSnapper {
         )
     }
 
-    private static func sample(_ points: [CLLocationCoordinate2D], maxCount: Int, minMeters: Double) -> [CLLocationCoordinate2D] {
+    static func sample(_ points: [CLLocationCoordinate2D], maxCount: Int, minMeters: Double) -> [CLLocationCoordinate2D] {
         guard points.count > maxCount else { return points }
         var sampled: [CLLocationCoordinate2D] = [points[0]]
         var last = points[0]

@@ -1,0 +1,38 @@
+{
+  "semanticSegments": [
+    {
+      "startTime": "2024-06-15T10:00:00.000+02:00",
+      "endTime": "2024-06-15T12:00:00.000+02:00",
+      "visit": {
+        "topCandidate": {
+          "placeID": "eiffel-tower",
+          "semanticType": "Home",
+          "placeLocation": "geo:48.858370,2.294481"
+        }
+      }
+    },
+    {
+      "startTime": "2024-06-15T12:00:00.000+02:00",
+      "endTime": "2024-06-15T12:20:00.000+02:00",
+      "activity": {
+        "start": "geo:48.858370,2.294481",
+        "end": "geo:48.860611,2.337633",
+        "distanceMeters": 3200,
+        "topCandidate": {
+          "type": "IN_PASSENGER_VEHICLE"
+        }
+      }
+    },
+    {
+      "startTime": "2024-06-15T12:20:00.000+02:00",
+      "endTime": "2024-06-15T14:00:00.000+02:00",
+      "visit": {
+        "topCandidate": {
+          "placeID": "louvre-pyramid",
+          "semanticType": "Work",
+          "placeLocation": "geo:48.860611,2.337633"
+        }
+      }
+    }
+  ]
+}

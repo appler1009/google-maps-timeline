@@ -289,36 +289,14 @@ struct TimelineKitMap: UIViewRepresentable {
             hoverOverlay = nil
 
             if let day {
-                addDayPaths(map: map, day: day, routed: routed)
-                for visit in day.visits {
-                    guard let coordinate = visit.coordinate else { continue }
-                    let pin = VisitAnnotation()
-                    pin.coordinate = coordinate
-                    pin.title = TimelineParser.semanticTitle(visit.semanticType) ?? "Place"
-                    pin.semantic = visit.semanticType
-                    pin.visitID = visit.id
-                    map.addAnnotation(pin)
-                }
-            } else if let place, let coordinate = place.coordinate {
-                let pin = VisitAnnotation()
-                pin.coordinate = coordinate
-                pin.title = TimelineParser.semanticTitle(place.semanticType) ?? "Place"
-                pin.semantic = place.semanticType
-                map.addAnnotation(pin)
+                TimelineMapPlotter.install(on: map, day: day, place: nil, routed: routed)
+            } else if let place {
+                TimelineMapPlotter.install(on: map, day: nil, place: place, routed: [])
             }
         }
 
         private func addDayPaths(map: MKMapView, day _: DayRecord, routed: [RoutedHop]) {
-            for hop in routed where hop.points.count >= 2 {
-                addPolyline(map: map, points: hop.points, kind: hop.kind)
-            }
-        }
-
-        private func addPolyline(map: MKMapView, points: [CLLocationCoordinate2D], kind: TravelKind) {
-            var coords = points
-            let overlay = KindPolyline(coordinates: &coords, count: coords.count)
-            overlay.kind = kind
-            map.addOverlay(overlay, level: .aboveRoads)
+            TimelineMapPlotter.addDayPaths(map: map, routed: routed)
         }
 
         private func updateHover(map: MKMapView, visit: TimelineVisit?) {
@@ -445,6 +423,16 @@ private final class VisitMarkerView: MKAnnotationView {
     }
 
     func apply(_ annotation: VisitAnnotation?) {
+        isAccessibilityElement = true
+        let title = annotation?.title ?? "Place"
+        accessibilityLabel = title
+        if let coordinate = annotation?.coordinate {
+            accessibilityIdentifier = String(format: "map-marker-%.6f,%.6f", coordinate.latitude, coordinate.longitude)
+            accessibilityValue = String(format: "%.6f,%.6f", coordinate.latitude, coordinate.longitude)
+        } else {
+            accessibilityIdentifier = "map-marker"
+            accessibilityValue = nil
+        }
         label.text = annotation?.title ?? "Place"
         let color: UIColor
         switch annotation?.semantic {

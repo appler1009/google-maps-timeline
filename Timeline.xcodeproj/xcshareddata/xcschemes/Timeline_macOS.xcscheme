@@ -5,8 +5,36 @@
    <BuildAction
       parallelizeBuildables = "YES"
       buildImplicitDependencies = "YES"
-      buildArchitectures = "Automatic">
+      runPostActionsOnFailure = "NO">
       <BuildActionEntries>
+         <BuildActionEntry
+            buildForTesting = "YES"
+            buildForRunning = "NO"
+            buildForProfiling = "NO"
+            buildForArchiving = "NO"
+            buildForAnalyzing = "NO">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "AFF35F41F2678297A77F5A00"
+               BuildableName = "TimelineMacTests.xctest"
+               BlueprintName = "TimelineMacTests"
+               ReferencedContainer = "container:Timeline.xcodeproj">
+            </BuildableReference>
+         </BuildActionEntry>
+         <BuildActionEntry
+            buildForTesting = "YES"
+            buildForRunning = "NO"
+            buildForProfiling = "NO"
+            buildForArchiving = "NO"
+            buildForAnalyzing = "NO">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "1584FCC518D91877F00B4139"
+               BuildableName = "TimelineMacUITests.xctest"
+               BlueprintName = "TimelineMacUITests"
+               ReferencedContainer = "container:Timeline.xcodeproj">
+            </BuildableReference>
+         </BuildActionEntry>
          <BuildActionEntry
             buildForTesting = "YES"
             buildForRunning = "YES"
@@ -17,6 +45,7 @@
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "1FE3DEE2E76993A55C7A0F96"
                BuildableName = "Timeline.app"
+               BlueprintName = "Timeline_macOS"
                ReferencedContainer = "container:Timeline.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
@@ -27,7 +56,42 @@
       selectedDebuggerIdentifier = "Xcode.DebuggerFoundation.Debugger.LLDB"
       selectedLauncherIdentifier = "Xcode.DebuggerFoundation.Launcher.LLDB"
       shouldUseLaunchSchemeArgsEnv = "YES"
-      shouldAutocreateTestPlan = "YES">
+      onlyGenerateCoverageForSpecifiedTargets = "NO">
+      <MacroExpansion>
+         <BuildableReference
+            BuildableIdentifier = "primary"
+            BlueprintIdentifier = "1FE3DEE2E76993A55C7A0F96"
+            BuildableName = "Timeline.app"
+            BlueprintName = "Timeline_macOS"
+            ReferencedContainer = "container:Timeline.xcodeproj">
+         </BuildableReference>
+      </MacroExpansion>
+      <Testables>
+         <TestableReference
+            skipped = "NO"
+            parallelizable = "NO">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "AFF35F41F2678297A77F5A00"
+               BuildableName = "TimelineMacTests.xctest"
+               BlueprintName = "TimelineMacTests"
+               ReferencedContainer = "container:Timeline.xcodeproj">
+            </BuildableReference>
+         </TestableReference>
+         <TestableReference
+            skipped = "NO"
+            parallelizable = "NO">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "1584FCC518D91877F00B4139"
+               BuildableName = "TimelineMacUITests.xctest"
+               BlueprintName = "TimelineMacUITests"
+               ReferencedContainer = "container:Timeline.xcodeproj">
+            </BuildableReference>
+         </TestableReference>
+      </Testables>
+      <CommandLineArguments>
+      </CommandLineArguments>
    </TestAction>
    <LaunchAction
       buildConfiguration = "Debug"
@@ -38,17 +102,19 @@
       ignoresPersistentStateOnLaunch = "NO"
       debugDocumentVersioning = "YES"
       debugServiceExtension = "internal"
-      allowLocationSimulation = "YES"
-      queueDebuggingEnabled = "No">
+      allowLocationSimulation = "YES">
       <BuildableProductRunnable
          runnableDebuggingMode = "0">
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "1FE3DEE2E76993A55C7A0F96"
             BuildableName = "Timeline.app"
+            BlueprintName = "Timeline_macOS"
             ReferencedContainer = "container:Timeline.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
+      <CommandLineArguments>
+      </CommandLineArguments>
    </LaunchAction>
    <ProfileAction
       buildConfiguration = "Release"
@@ -62,6 +128,7 @@
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "1FE3DEE2E76993A55C7A0F96"
             BuildableName = "Timeline.app"
+            BlueprintName = "Timeline_macOS"
             ReferencedContainer = "container:Timeline.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>

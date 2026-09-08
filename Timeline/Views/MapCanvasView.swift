@@ -58,6 +58,7 @@ struct MapCanvasView: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Back to list")
+                .accessibilityIdentifier("back-to-list")
                 .chromePlate()
             }
 
@@ -76,6 +77,7 @@ struct MapCanvasView: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityHint("Recentre the map on this day")
+                .accessibilityIdentifier("selected-day-title")
                 .chromePlate()
 
                 HStack(spacing: 0) {
@@ -158,6 +160,40 @@ struct MapCanvasView: View {
     }
 }
 
+private struct UITestMapPins: View {
+    var day: DayRecord?
+    var place: PlaceRecord?
+    var routeCount: Int
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("\(routeCount) routes")
+                .accessibilityIdentifier("map-route-count")
+            if let day {
+                ForEach(day.visits) { visit in
+                    if let coordinate = visit.coordinate {
+                        Text(Self.coordinateID(coordinate))
+                            .accessibilityIdentifier(Self.coordinateID(coordinate))
+                            .accessibilityLabel(TimelineParser.semanticTitle(visit.semanticType) ?? "Place")
+                    }
+                }
+            } else if let place, let coordinate = place.coordinate {
+                Text(Self.coordinateID(coordinate))
+                    .accessibilityIdentifier(Self.coordinateID(coordinate))
+                    .accessibilityLabel(TimelineParser.semanticTitle(place.semanticType) ?? "Place")
+            }
+        }
+        .font(.system(size: 8, design: .monospaced))
+        .foregroundStyle(Palette.muted)
+        .accessibilityElement(children: .contain)
+        .allowsHitTesting(false)
+    }
+
+    private static func coordinateID(_ coordinate: CLLocationCoordinate2D) -> String {
+        String(format: "map-marker-%.6f,%.6f", coordinate.latitude, coordinate.longitude)
+    }
+}
+
 private struct TimelineKitMapHost: View {
     @Environment(TimelineStore.self) private var store
 
@@ -179,6 +215,17 @@ private struct TimelineKitMapHost: View {
             legendCoverage: store.legendCoverage
         )
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .accessibilityIdentifier("timeline-map")
+        .accessibilityValue("\(store.routesForDisplay.count) routes")
+        .overlay(alignment: .topLeading) {
+            if TimelineLaunch.isUITesting {
+                UITestMapPins(
+                    day: store.selectedDay,
+                    place: store.selectedPlace,
+                    routeCount: store.routesForDisplay.count
+                )
+            }
+        }
         #if os(iOS)
         .ignoresSafeArea()
         #else
@@ -411,36 +458,14 @@ struct TimelineKitMap: NSViewRepresentable {
             hoverOverlay = nil
 
             if let day {
-                addDayPaths(map: map, day: day, routed: routed)
-                for visit in day.visits {
-                    guard let coordinate = visit.coordinate else { continue }
-                    let pin = VisitAnnotation()
-                    pin.coordinate = coordinate
-                    pin.title = TimelineParser.semanticTitle(visit.semanticType) ?? "Place"
-                    pin.semantic = visit.semanticType
-                    pin.visitID = visit.id
-                    map.addAnnotation(pin)
-                }
-            } else if let place, let coordinate = place.coordinate {
-                let pin = VisitAnnotation()
-                pin.coordinate = coordinate
-                pin.title = TimelineParser.semanticTitle(place.semanticType) ?? "Place"
-                pin.semantic = place.semanticType
-                map.addAnnotation(pin)
+                TimelineMapPlotter.install(on: map, day: day, place: nil, routed: routed)
+            } else if let place {
+                TimelineMapPlotter.install(on: map, day: nil, place: place, routed: [])
             }
         }
 
         private func addDayPaths(map: MKMapView, day _: DayRecord, routed: [RoutedHop]) {
-            for hop in routed where hop.points.count >= 2 {
-                addPolyline(map: map, points: hop.points, kind: hop.kind)
-            }
-        }
-
-        private func addPolyline(map: MKMapView, points: [CLLocationCoordinate2D], kind: TravelKind) {
-            var coords = points
-            let overlay = KindPolyline(coordinates: &coords, count: coords.count)
-            overlay.kind = kind
-            map.addOverlay(overlay, level: .aboveRoads)
+            TimelineMapPlotter.addDayPaths(map: map, routed: routed)
         }
 
         private func updateHover(map: MKMapView, visit: TimelineVisit?) {
@@ -536,15 +561,6 @@ struct TimelineKitMap: NSViewRepresentable {
     }
 }
 #endif
-
-final class KindPolyline: MKPolyline {
-    var kind: TravelKind = .automobile
-}
-
-final class VisitAnnotation: MKPointAnnotation {
-    var semantic: String?
-    var visitID: String?
-}
 
 enum TimelineMapChrome {
     static func apply(to map: MKMapView) {
@@ -669,6 +685,7 @@ struct SelectionCard: View {
                         .buttonStyle(.borderless)
                         .foregroundStyle(Palette.parchment)
                         .disabled(store.isRerouting || day.visitCount < 2)
+                        .accessibilityIdentifier("reroute-button")
                         .opacity(sheetExpansion)
                         .allowsHitTesting(sheetExpansion > 0.35)
                     }
@@ -755,6 +772,7 @@ struct SelectionCard: View {
             .frame(maxWidth: .infinity)
             .padding(.bottom, 2)
             .accessibilityLabel(collapsed ? "Expand legend" : "Collapse legend")
+            .accessibilityIdentifier("legend-grabber")
             .onTapGesture {
                 withAnimation(.spring(response: 0.34, dampingFraction: 0.86)) {
                     collapsed.toggle()
@@ -839,6 +857,7 @@ struct SelectionCard: View {
             .font(.system(size: 20, weight: .regular, design: .serif))
             .onTapGesture { store.clearVisitFocus() }
             .help("Show the full day’s routes")
+            .accessibilityIdentifier("selected-day-title")
         HStack(alignment: .firstTextBaseline, spacing: 8) {
             Text(daySummary(day))
                 .font(.system(size: 12))
@@ -859,6 +878,7 @@ struct SelectionCard: View {
             .foregroundStyle(Palette.parchment)
             .disabled(store.isRerouting || day.visitCount < 2)
             .help("Ask Apple Maps again for road traces between this day’s stays")
+            .accessibilityIdentifier("reroute-button")
         }
         #endif
     }
@@ -880,6 +900,7 @@ struct SelectionCard: View {
                 store.hoveredVisitID = visit.id
                 store.focus(visit: visit)
             }
+            .accessibilityIdentifier("legend-visit-\(visit.id)")
         }
         #if os(iOS)
         ScrollView {

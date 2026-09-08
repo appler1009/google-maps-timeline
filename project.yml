@@ -24,6 +24,9 @@ targets:
       - path: Timeline
         excludes:
           - "*.entitlements"
+          - "Fixtures/*.json"
+      - path: Timeline/Fixtures/eiffel-tower-day.json
+        buildPhase: resources
     dependencies:
       - sdk: libsqlite3.tbd
     settings:
@@ -77,3 +80,84 @@ targets:
             UTTypeTagSpecification:
               public.filename-extension: [json]
               public.mime-type: [application/json]
+  TimelineTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: TimelineTests
+    dependencies:
+      - target: Timeline_iOS
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.appler.TimelineTests
+        GENERATE_INFOPLIST_FILE: YES
+        IPHONEOS_DEPLOYMENT_TARGET: "17.0"
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/Timeline.app/Timeline"
+        BUNDLE_LOADER: "$(TEST_HOST)"
+  TimelineMacTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: TimelineTests
+    dependencies:
+      - target: Timeline_macOS
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.appler.TimelineMacTests
+        GENERATE_INFOPLIST_FILE: YES
+        MACOSX_DEPLOYMENT_TARGET: "14.0"
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/Timeline.app/Contents/MacOS/Timeline"
+        BUNDLE_LOADER: "$(TEST_HOST)"
+        ENABLE_HARDENED_RUNTIME: NO
+  TimelineUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: TimelineUITests
+    dependencies:
+      - target: Timeline_iOS
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.appler.TimelineUITests
+        GENERATE_INFOPLIST_FILE: YES
+        IPHONEOS_DEPLOYMENT_TARGET: "17.0"
+        TEST_TARGET_NAME: Timeline_iOS
+  TimelineMacUITests:
+    type: bundle.ui-testing
+    platform: macOS
+    sources:
+      - path: TimelineUITests
+    dependencies:
+      - target: Timeline_macOS
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.appler.TimelineMacUITests
+        GENERATE_INFOPLIST_FILE: YES
+        MACOSX_DEPLOYMENT_TARGET: "14.0"
+        TEST_TARGET_NAME: Timeline_macOS
+        ENABLE_HARDENED_RUNTIME: NO
+schemes:
+  Timeline_iOS:
+    build:
+      targets:
+        Timeline_iOS: all
+        TimelineTests: [test]
+        TimelineUITests: [test]
+    test:
+      targets:
+        - TimelineTests
+        - TimelineUITests
+    run:
+      config: Debug
+  Timeline_macOS:
+    build:
+      targets:
+        Timeline_macOS: all
+        TimelineMacTests: [test]
+        TimelineMacUITests: [test]
+    test:
+      targets:
+        - TimelineMacTests
+        - TimelineMacUITests
+    run:
+      config: Debug

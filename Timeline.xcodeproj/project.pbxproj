@@ -8,50 +8,121 @@
 
 /* Begin PBXBuildFile section */
 		10EA88841A4ED1F827A9CD4F /* Palette.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9E1B28FC5BF045913929FD4 /* Palette.swift */; };
+		18B9EA1106022C3C35237159 /* RouteSnapperTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 71B4F471B4A574BC0ABB38C6 /* RouteSnapperTests.swift */; };
 		39F8A3A67F10E9AB7E293028 /* libsqlite3.tbd in Frameworks */ = {isa = PBXBuildFile; fileRef = AAFD7CBAD5210FAA2FDF9FFA /* libsqlite3.tbd */; };
+		43AE5B25E3DCCC5819276DA1 /* MapDirectionsClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E2B0CEA1726213918DF87C9 /* MapDirectionsClient.swift */; };
 		440BDDFA36C5E534D7EA8F21 /* TimelineModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A498B0C8D72090AC4BAF657 /* TimelineModels.swift */; };
 		45AB66324806BAD817122ABC /* SidebarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E27C0E12EC51D3A3D0B395AC /* SidebarView.swift */; };
+		477A2CC104A37B7156AAB707 /* Landmark.swift in Sources */ = {isa = PBXBuildFile; fileRef = 89C557260FF448CAE3747FD8 /* Landmark.swift */; };
 		4EDBBF8CCA6D77BC993A4BCC /* SidebarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E27C0E12EC51D3A3D0B395AC /* SidebarView.swift */; };
 		4FD3FDCDF9FF9D477C311B5F /* MapCanvasView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C84392A4A35D3A0FF607D83 /* MapCanvasView.swift */; };
+		53527DCD3CC12C525EAB1BCB /* eiffel-tower-day.json in Resources */ = {isa = PBXBuildFile; fileRef = 6DA6D178D95EAD82BA6BC956 /* eiffel-tower-day.json */; };
 		557DEBB2DFDC88D8C1285ACE /* TimelineDatabase.swift in Sources */ = {isa = PBXBuildFile; fileRef = A6C2E6A823AF58F47F778B43 /* TimelineDatabase.swift */; };
+		56AC0F7D3F93FDC861D91797 /* MarkerMapTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E0F49A8E7037AC3A6458AD93 /* MarkerMapTests.swift */; };
+		593C80158AEF13F1FCD6A540 /* MarkersAndRoutesUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9B7B68A2C5A47F130B19C06 /* MarkersAndRoutesUITests.swift */; };
 		5B404FEF0895D6CF64249ADF /* TimelineStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 55715F8BD5815481AB80CCAE /* TimelineStore.swift */; };
 		61E057B94A0331DDD5FB506B /* TimelineApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 27A603B8D2E85569C4F2AC40 /* TimelineApp.swift */; };
+		63F9B3CE39E7714EC22FC434 /* TimelineParserTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E04A92A7BC968DEE2C1E98C7 /* TimelineParserTests.swift */; };
+		6480458E08F5E4B3A0C83A58 /* RoutePlannerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3743ECF459145619A53BAFE /* RoutePlannerTests.swift */; };
+		64875FF0A0A90DE354A8EFD1 /* TimelineMapPlotter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7656BF50DC1AE8BB6971F641 /* TimelineMapPlotter.swift */; };
+		64CAA24A232A91377DC4F964 /* eiffel-tower-day.json in Resources */ = {isa = PBXBuildFile; fileRef = 6DA6D178D95EAD82BA6BC956 /* eiffel-tower-day.json */; };
+		6606ECAF7069BB8248A5FB1A /* TimelineMapPlotter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7656BF50DC1AE8BB6971F641 /* TimelineMapPlotter.swift */; };
 		680588BE2CA48256095862A7 /* TimelineAppScene.swift in Sources */ = {isa = PBXBuildFile; fileRef = 82ECD6098781D0E441C5CEE4 /* TimelineAppScene.swift */; };
+		6DCB9C1145A01D9CFDD101B9 /* MarkerMapTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E0F49A8E7037AC3A6458AD93 /* MarkerMapTests.swift */; };
 		6FF2F358C44A36A7DC05B478 /* TimelineDatabase.swift in Sources */ = {isa = PBXBuildFile; fileRef = A6C2E6A823AF58F47F778B43 /* TimelineDatabase.swift */; };
 		7EE7764734BB4F10B52D60C8 /* MapCanvasView+iOS.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8EF9167F835586F0B2E5C8F5 /* MapCanvasView+iOS.swift */; };
+		886D2DB443AF6A8852FE2B57 /* TimelineParserTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E04A92A7BC968DEE2C1E98C7 /* TimelineParserTests.swift */; };
+		893BAC3E9EAA11C4E9636968 /* GeoTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F3D570FD3C06A7239A56A812 /* GeoTests.swift */; };
+		931622D8BC51D41E309E61BE /* RoutePlanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 76BAF0A4F92F29FA98081ADB /* RoutePlanner.swift */; };
 		96B59CD15DADADC9520920A8 /* libsqlite3.tbd in Frameworks */ = {isa = PBXBuildFile; fileRef = AAFD7CBAD5210FAA2FDF9FFA /* libsqlite3.tbd */; };
 		983E0828BD8950C6868F85C9 /* TimelineApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 27A603B8D2E85569C4F2AC40 /* TimelineApp.swift */; };
+		A0FC3C8AB26379B2D2DEFE7C /* GeoTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F3D570FD3C06A7239A56A812 /* GeoTests.swift */; };
 		A12779692ABD1AF058D60516 /* MapCanvasView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C84392A4A35D3A0FF607D83 /* MapCanvasView.swift */; };
+		A1909CDF7C749AC78BBADA24 /* TimelineLaunch.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8DF68F06E1121E88E519C9BC /* TimelineLaunch.swift */; };
 		AB4BA78FE075A27C51398F99 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = F38FDE28A77697434B262F4C /* Assets.xcassets */; };
+		ACDB06C09F4926234980A27E /* TimelineLaunch.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8DF68F06E1121E88E519C9BC /* TimelineLaunch.swift */; };
 		AFFE5021B10D3A2EB4C0568F /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = F38FDE28A77697434B262F4C /* Assets.xcassets */; };
+		BB7C9FA0BF2D8C97366EC640 /* MarkersAndRoutesUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9B7B68A2C5A47F130B19C06 /* MarkersAndRoutesUITests.swift */; };
 		BE5A3265749B32A8E4661A68 /* MapCanvasView+iOS.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8EF9167F835586F0B2E5C8F5 /* MapCanvasView+iOS.swift */; };
 		BE71455F71F539A0E487FA4D /* Palette.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9E1B28FC5BF045913929FD4 /* Palette.swift */; };
+		C36CFB977724E83B2402615A /* RoutePlannerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3743ECF459145619A53BAFE /* RoutePlannerTests.swift */; };
 		C7A96D4167ED6038915F5C02 /* TimelineParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 30475295489F71438FC87FC3 /* TimelineParser.swift */; };
 		D043A1DCB7AAD23D56E7DA4D /* TimelineStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 55715F8BD5815481AB80CCAE /* TimelineStore.swift */; };
+		D3FE925EC69D1014ADE3817B /* Landmark.swift in Sources */ = {isa = PBXBuildFile; fileRef = 89C557260FF448CAE3747FD8 /* Landmark.swift */; };
 		D6A7FF8397BE356AD52900B5 /* RouteSnapper.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD3B7EEBCFA7764518D9E18E /* RouteSnapper.swift */; };
 		EE77B27F0E6DF16DDF11864E /* RouteSnapper.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD3B7EEBCFA7764518D9E18E /* RouteSnapper.swift */; };
 		F6EB15E5E9A0246EE425675B /* TimelineAppScene.swift in Sources */ = {isa = PBXBuildFile; fileRef = 82ECD6098781D0E441C5CEE4 /* TimelineAppScene.swift */; };
+		F7982D38B7D6F507D5347CEB /* RoutePlanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 76BAF0A4F92F29FA98081ADB /* RoutePlanner.swift */; };
+		F97F40526F45D1595B0D0851 /* MapDirectionsClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E2B0CEA1726213918DF87C9 /* MapDirectionsClient.swift */; };
 		F9C703A7EFE5B97ADD61970B /* TimelineParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 30475295489F71438FC87FC3 /* TimelineParser.swift */; };
+		FC0A7F53D600B675C1DD07A5 /* RouteSnapperTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 71B4F471B4A574BC0ABB38C6 /* RouteSnapperTests.swift */; };
 		FDE6839E49CA511377389692 /* TimelineModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A498B0C8D72090AC4BAF657 /* TimelineModels.swift */; };
 /* End PBXBuildFile section */
 
+/* Begin PBXContainerItemProxy section */
+		1E7E326820555910AD3BE3E2 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 0AB726F52DD27D3CB3EF7166 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 1FE3DEE2E76993A55C7A0F96;
+			remoteInfo = Timeline_macOS;
+		};
+		2915C828FECF90595F56D040 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 0AB726F52DD27D3CB3EF7166 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 1FE3DEE2E76993A55C7A0F96;
+			remoteInfo = Timeline_macOS;
+		};
+		707045A3D19F6F39110F9005 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 0AB726F52DD27D3CB3EF7166 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 95E51891E504D1A4FDEC89B6;
+			remoteInfo = Timeline_iOS;
+		};
+		BEC4C1EB99B96C8CB0E0F55F /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 0AB726F52DD27D3CB3EF7166 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 95E51891E504D1A4FDEC89B6;
+			remoteInfo = Timeline_iOS;
+		};
+/* End PBXContainerItemProxy section */
+
 /* Begin PBXFileReference section */
 		27A603B8D2E85569C4F2AC40 /* TimelineApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimelineApp.swift; sourceTree = "<group>"; };
+		27DB2D73BEF1B63C8278F73E /* TimelineMacTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = TimelineMacTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		30475295489F71438FC87FC3 /* TimelineParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimelineParser.swift; sourceTree = "<group>"; };
 		3E8F64E885AEB7D4A4EEA4D4 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		4C84392A4A35D3A0FF607D83 /* MapCanvasView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MapCanvasView.swift; sourceTree = "<group>"; };
 		55715F8BD5815481AB80CCAE /* TimelineStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimelineStore.swift; sourceTree = "<group>"; };
 		5CA4D65EE9994C83850722CB /* Timeline.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Timeline.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		6A498B0C8D72090AC4BAF657 /* TimelineModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimelineModels.swift; sourceTree = "<group>"; };
+		6DA6D178D95EAD82BA6BC956 /* eiffel-tower-day.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "eiffel-tower-day.json"; sourceTree = "<group>"; };
+		71B4F471B4A574BC0ABB38C6 /* RouteSnapperTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RouteSnapperTests.swift; sourceTree = "<group>"; };
+		7656BF50DC1AE8BB6971F641 /* TimelineMapPlotter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimelineMapPlotter.swift; sourceTree = "<group>"; };
+		76BAF0A4F92F29FA98081ADB /* RoutePlanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RoutePlanner.swift; sourceTree = "<group>"; };
 		82ECD6098781D0E441C5CEE4 /* TimelineAppScene.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimelineAppScene.swift; sourceTree = "<group>"; };
+		89C557260FF448CAE3747FD8 /* Landmark.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Landmark.swift; sourceTree = "<group>"; };
+		8DF68F06E1121E88E519C9BC /* TimelineLaunch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimelineLaunch.swift; sourceTree = "<group>"; };
+		8E2B0CEA1726213918DF87C9 /* MapDirectionsClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MapDirectionsClient.swift; sourceTree = "<group>"; };
 		8EF9167F835586F0B2E5C8F5 /* MapCanvasView+iOS.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MapCanvasView+iOS.swift"; sourceTree = "<group>"; };
+		90632FA9D1FDE2C394D78D7E /* TimelineMacUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = TimelineMacUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		A6C2E6A823AF58F47F778B43 /* TimelineDatabase.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimelineDatabase.swift; sourceTree = "<group>"; };
+		A9B7B68A2C5A47F130B19C06 /* MarkersAndRoutesUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkersAndRoutesUITests.swift; sourceTree = "<group>"; };
 		AAFD7CBAD5210FAA2FDF9FFA /* libsqlite3.tbd */ = {isa = PBXFileReference; lastKnownFileType = "sourcecode.text-based-dylib-definition"; name = libsqlite3.tbd; path = usr/lib/libsqlite3.tbd; sourceTree = SDKROOT; };
 		AD3B7EEBCFA7764518D9E18E /* RouteSnapper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RouteSnapper.swift; sourceTree = "<group>"; };
+		AD4CF2C63079E56DFD6AFB4A /* TimelineUITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = TimelineUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		C3743ECF459145619A53BAFE /* RoutePlannerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RoutePlannerTests.swift; sourceTree = "<group>"; };
 		C5F2A5746D23CC00A54DFE5F /* Timeline.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = Timeline.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		C9E1B28FC5BF045913929FD4 /* Palette.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Palette.swift; sourceTree = "<group>"; };
+		E04A92A7BC968DEE2C1E98C7 /* TimelineParserTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimelineParserTests.swift; sourceTree = "<group>"; };
+		E0F49A8E7037AC3A6458AD93 /* MarkerMapTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkerMapTests.swift; sourceTree = "<group>"; };
 		E27C0E12EC51D3A3D0B395AC /* SidebarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarView.swift; sourceTree = "<group>"; };
 		F38FDE28A77697434B262F4C /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		F3D570FD3C06A7239A56A812 /* GeoTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GeoTests.swift; sourceTree = "<group>"; };
+		F6743555640412252927D0B7 /* TimelineTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = TimelineTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -74,6 +145,18 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		02DDCC7E7654E72A35262F3B /* TimelineTests */ = {
+			isa = PBXGroup;
+			children = (
+				F3D570FD3C06A7239A56A812 /* GeoTests.swift */,
+				E0F49A8E7037AC3A6458AD93 /* MarkerMapTests.swift */,
+				C3743ECF459145619A53BAFE /* RoutePlannerTests.swift */,
+				71B4F471B4A574BC0ABB38C6 /* RouteSnapperTests.swift */,
+				E04A92A7BC968DEE2C1E98C7 /* TimelineParserTests.swift */,
+			);
+			path = TimelineTests;
+			sourceTree = "<group>";
+		};
 		0DE51C1230D53E8BFAB6C29B /* Views */ = {
 			isa = PBXGroup;
 			children = (
@@ -86,11 +169,24 @@
 			path = Views;
 			sourceTree = "<group>";
 		};
+		0E7FFCC02B3B694318BECA3B /* Fixtures */ = {
+			isa = PBXGroup;
+			children = (
+				6DA6D178D95EAD82BA6BC956 /* eiffel-tower-day.json */,
+				89C557260FF448CAE3747FD8 /* Landmark.swift */,
+			);
+			path = Fixtures;
+			sourceTree = "<group>";
+		};
 		2CAD0800C2A5170A509B4CB6 /* Products */ = {
 			isa = PBXGroup;
 			children = (
 				C5F2A5746D23CC00A54DFE5F /* Timeline.app */,
 				5CA4D65EE9994C83850722CB /* Timeline.app */,
+				27DB2D73BEF1B63C8278F73E /* TimelineMacTests.xctest */,
+				90632FA9D1FDE2C394D78D7E /* TimelineMacUITests.xctest */,
+				F6743555640412252927D0B7 /* TimelineTests.xctest */,
+				AD4CF2C63079E56DFD6AFB4A /* TimelineUITests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -117,6 +213,8 @@
 			isa = PBXGroup;
 			children = (
 				C73671537A11FF5564EC106B /* Timeline */,
+				02DDCC7E7654E72A35262F3B /* TimelineTests */,
+				FDED715C537D43A98B0169EA /* TimelineUITests */,
 				36D497792F353DCB644F4D83 /* Frameworks */,
 				2CAD0800C2A5170A509B4CB6 /* Products */,
 			);
@@ -125,8 +223,11 @@
 		B298A13FC9D6E9CE95AB0671 /* Services */ = {
 			isa = PBXGroup;
 			children = (
+				8E2B0CEA1726213918DF87C9 /* MapDirectionsClient.swift */,
+				76BAF0A4F92F29FA98081ADB /* RoutePlanner.swift */,
 				AD3B7EEBCFA7764518D9E18E /* RouteSnapper.swift */,
 				A6C2E6A823AF58F47F778B43 /* TimelineDatabase.swift */,
+				7656BF50DC1AE8BB6971F641 /* TimelineMapPlotter.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -137,6 +238,8 @@
 				F38FDE28A77697434B262F4C /* Assets.xcassets */,
 				3E8F64E885AEB7D4A4EEA4D4 /* Info.plist */,
 				27A603B8D2E85569C4F2AC40 /* TimelineApp.swift */,
+				0E7FFCC02B3B694318BECA3B /* Fixtures */,
+				E79321B9FB9417613A18B037 /* Launch */,
 				58E202DBD845B6E0207497FE /* Models */,
 				B298A13FC9D6E9CE95AB0671 /* Services */,
 				0DE51C1230D53E8BFAB6C29B /* Views */,
@@ -144,9 +247,61 @@
 			path = Timeline;
 			sourceTree = "<group>";
 		};
+		E79321B9FB9417613A18B037 /* Launch */ = {
+			isa = PBXGroup;
+			children = (
+				8DF68F06E1121E88E519C9BC /* TimelineLaunch.swift */,
+			);
+			path = Launch;
+			sourceTree = "<group>";
+		};
+		FDED715C537D43A98B0169EA /* TimelineUITests */ = {
+			isa = PBXGroup;
+			children = (
+				A9B7B68A2C5A47F130B19C06 /* MarkersAndRoutesUITests.swift */,
+			);
+			path = TimelineUITests;
+			sourceTree = "<group>";
+		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		0F9DCF58FB872081D7948078 /* TimelineUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 1D086A93CADA051E83974688 /* Build configuration list for PBXNativeTarget "TimelineUITests" */;
+			buildPhases = (
+				76083FCD2D76D1607C2DEFEF /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				B43DB44EBE1723AFB3AE31A1 /* PBXTargetDependency */,
+			);
+			name = TimelineUITests;
+			packageProductDependencies = (
+			);
+			productName = TimelineUITests;
+			productReference = AD4CF2C63079E56DFD6AFB4A /* TimelineUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
+		1584FCC518D91877F00B4139 /* TimelineMacUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 5509C4C1113AD6CC40F45930 /* Build configuration list for PBXNativeTarget "TimelineMacUITests" */;
+			buildPhases = (
+				89A2DFC9DB95E39B216EBA43 /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				76DC501270D65D96BBF26DB1 /* PBXTargetDependency */,
+			);
+			name = TimelineMacUITests;
+			packageProductDependencies = (
+			);
+			productName = TimelineMacUITests;
+			productReference = 90632FA9D1FDE2C394D78D7E /* TimelineMacUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
 		1FE3DEE2E76993A55C7A0F96 /* Timeline_macOS */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = 43115B787653AE88C3695CFB /* Build configuration list for PBXNativeTarget "Timeline_macOS" */;
@@ -185,6 +340,42 @@
 			productReference = C5F2A5746D23CC00A54DFE5F /* Timeline.app */;
 			productType = "com.apple.product-type.application";
 		};
+		AFF35F41F2678297A77F5A00 /* TimelineMacTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = C4C1E3E8568D0971AE64FDF4 /* Build configuration list for PBXNativeTarget "TimelineMacTests" */;
+			buildPhases = (
+				C2D400FA882D12FA03D667BC /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				622362F0031D867C15BBA0B9 /* PBXTargetDependency */,
+			);
+			name = TimelineMacTests;
+			packageProductDependencies = (
+			);
+			productName = TimelineMacTests;
+			productReference = 27DB2D73BEF1B63C8278F73E /* TimelineMacTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		B88BE8384A78CAA04BBBB043 /* TimelineTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 526BA4A7EAD88B18361C79A4 /* Build configuration list for PBXNativeTarget "TimelineTests" */;
+			buildPhases = (
+				F203C2972775105E44B3A07B /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				75311BDB5289AFC6475BF197 /* PBXTargetDependency */,
+			);
+			name = TimelineTests;
+			packageProductDependencies = (
+			);
+			productName = TimelineTests;
+			productReference = F6743555640412252927D0B7 /* TimelineTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -194,6 +385,14 @@
 				BuildIndependentTargetsInParallel = YES;
 				LastUpgradeCheck = 2700;
 				TargetAttributes = {
+					0F9DCF58FB872081D7948078 = {
+						DevelopmentTeam = TN2RQ5P647;
+						TestTargetID = 95E51891E504D1A4FDEC89B6;
+					};
+					1584FCC518D91877F00B4139 = {
+						DevelopmentTeam = TN2RQ5P647;
+						TestTargetID = 1FE3DEE2E76993A55C7A0F96;
+					};
 					1FE3DEE2E76993A55C7A0F96 = {
 						DevelopmentTeam = TN2RQ5P647;
 						ProvisioningStyle = Automatic;
@@ -201,6 +400,12 @@
 					95E51891E504D1A4FDEC89B6 = {
 						DevelopmentTeam = TN2RQ5P647;
 						ProvisioningStyle = Automatic;
+					};
+					AFF35F41F2678297A77F5A00 = {
+						DevelopmentTeam = TN2RQ5P647;
+					};
+					B88BE8384A78CAA04BBBB043 = {
+						DevelopmentTeam = TN2RQ5P647;
 					};
 				};
 			};
@@ -218,6 +423,10 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
+				AFF35F41F2678297A77F5A00 /* TimelineMacTests */,
+				1584FCC518D91877F00B4139 /* TimelineMacUITests */,
+				B88BE8384A78CAA04BBBB043 /* TimelineTests */,
+				0F9DCF58FB872081D7948078 /* TimelineUITests */,
 				95E51891E504D1A4FDEC89B6 /* Timeline_iOS */,
 				1FE3DEE2E76993A55C7A0F96 /* Timeline_macOS */,
 			);
@@ -230,6 +439,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				AB4BA78FE075A27C51398F99 /* Assets.xcassets in Resources */,
+				53527DCD3CC12C525EAB1BCB /* eiffel-tower-day.json in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -238,6 +448,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				AFFE5021B10D3A2EB4C0568F /* Assets.xcassets in Resources */,
+				64CAA24A232A91377DC4F964 /* eiffel-tower-day.json in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -248,14 +459,19 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				477A2CC104A37B7156AAB707 /* Landmark.swift in Sources */,
 				7EE7764734BB4F10B52D60C8 /* MapCanvasView+iOS.swift in Sources */,
 				4FD3FDCDF9FF9D477C311B5F /* MapCanvasView.swift in Sources */,
+				43AE5B25E3DCCC5819276DA1 /* MapDirectionsClient.swift in Sources */,
 				10EA88841A4ED1F827A9CD4F /* Palette.swift in Sources */,
+				931622D8BC51D41E309E61BE /* RoutePlanner.swift in Sources */,
 				D6A7FF8397BE356AD52900B5 /* RouteSnapper.swift in Sources */,
 				4EDBBF8CCA6D77BC993A4BCC /* SidebarView.swift in Sources */,
 				983E0828BD8950C6868F85C9 /* TimelineApp.swift in Sources */,
 				680588BE2CA48256095862A7 /* TimelineAppScene.swift in Sources */,
 				6FF2F358C44A36A7DC05B478 /* TimelineDatabase.swift in Sources */,
+				A1909CDF7C749AC78BBADA24 /* TimelineLaunch.swift in Sources */,
+				6606ECAF7069BB8248A5FB1A /* TimelineMapPlotter.swift in Sources */,
 				440BDDFA36C5E534D7EA8F21 /* TimelineModels.swift in Sources */,
 				C7A96D4167ED6038915F5C02 /* TimelineParser.swift in Sources */,
 				D043A1DCB7AAD23D56E7DA4D /* TimelineStore.swift in Sources */,
@@ -266,23 +482,127 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				D3FE925EC69D1014ADE3817B /* Landmark.swift in Sources */,
 				BE5A3265749B32A8E4661A68 /* MapCanvasView+iOS.swift in Sources */,
 				A12779692ABD1AF058D60516 /* MapCanvasView.swift in Sources */,
+				F97F40526F45D1595B0D0851 /* MapDirectionsClient.swift in Sources */,
 				BE71455F71F539A0E487FA4D /* Palette.swift in Sources */,
+				F7982D38B7D6F507D5347CEB /* RoutePlanner.swift in Sources */,
 				EE77B27F0E6DF16DDF11864E /* RouteSnapper.swift in Sources */,
 				45AB66324806BAD817122ABC /* SidebarView.swift in Sources */,
 				61E057B94A0331DDD5FB506B /* TimelineApp.swift in Sources */,
 				F6EB15E5E9A0246EE425675B /* TimelineAppScene.swift in Sources */,
 				557DEBB2DFDC88D8C1285ACE /* TimelineDatabase.swift in Sources */,
+				ACDB06C09F4926234980A27E /* TimelineLaunch.swift in Sources */,
+				64875FF0A0A90DE354A8EFD1 /* TimelineMapPlotter.swift in Sources */,
 				FDE6839E49CA511377389692 /* TimelineModels.swift in Sources */,
 				F9C703A7EFE5B97ADD61970B /* TimelineParser.swift in Sources */,
 				5B404FEF0895D6CF64249ADF /* TimelineStore.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		76083FCD2D76D1607C2DEFEF /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				593C80158AEF13F1FCD6A540 /* MarkersAndRoutesUITests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		89A2DFC9DB95E39B216EBA43 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				BB7C9FA0BF2D8C97366EC640 /* MarkersAndRoutesUITests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		C2D400FA882D12FA03D667BC /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				893BAC3E9EAA11C4E9636968 /* GeoTests.swift in Sources */,
+				56AC0F7D3F93FDC861D91797 /* MarkerMapTests.swift in Sources */,
+				6480458E08F5E4B3A0C83A58 /* RoutePlannerTests.swift in Sources */,
+				FC0A7F53D600B675C1DD07A5 /* RouteSnapperTests.swift in Sources */,
+				886D2DB443AF6A8852FE2B57 /* TimelineParserTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		F203C2972775105E44B3A07B /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A0FC3C8AB26379B2D2DEFE7C /* GeoTests.swift in Sources */,
+				6DCB9C1145A01D9CFDD101B9 /* MarkerMapTests.swift in Sources */,
+				C36CFB977724E83B2402615A /* RoutePlannerTests.swift in Sources */,
+				18B9EA1106022C3C35237159 /* RouteSnapperTests.swift in Sources */,
+				63F9B3CE39E7714EC22FC434 /* TimelineParserTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
+/* Begin PBXTargetDependency section */
+		622362F0031D867C15BBA0B9 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 1FE3DEE2E76993A55C7A0F96 /* Timeline_macOS */;
+			targetProxy = 2915C828FECF90595F56D040 /* PBXContainerItemProxy */;
+		};
+		75311BDB5289AFC6475BF197 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 95E51891E504D1A4FDEC89B6 /* Timeline_iOS */;
+			targetProxy = BEC4C1EB99B96C8CB0E0F55F /* PBXContainerItemProxy */;
+		};
+		76DC501270D65D96BBF26DB1 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 1FE3DEE2E76993A55C7A0F96 /* Timeline_macOS */;
+			targetProxy = 1E7E326820555910AD3BE3E2 /* PBXContainerItemProxy */;
+		};
+		B43DB44EBE1723AFB3AE31A1 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 95E51891E504D1A4FDEC89B6 /* Timeline_iOS */;
+			targetProxy = 707045A3D19F6F39110F9005 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
 /* Begin XCBuildConfiguration section */
+		007EDE8AB1CF822461AC40FB /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.appler.TimelineUITests;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = Timeline_iOS;
+			};
+			name = Debug;
+		};
+		04DA3F159AD4F37646612CE7 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.appler.TimelineUITests;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = Timeline_iOS;
+			};
+			name = Release;
+		};
 		14F29140C8E489721B550139 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -320,6 +640,44 @@
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Release;
+		};
+		4016E1B9BF2033FCA4EA872B /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				COMBINE_HIDPI_IMAGES = YES;
+				ENABLE_HARDENED_RUNTIME = NO;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@loader_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.appler.TimelineMacTests;
+				SDKROOT = macosx;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Timeline.app/Contents/MacOS/Timeline";
+			};
+			name = Release;
+		};
+		49EA6CD6EE409ABA95F80818 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				COMBINE_HIDPI_IMAGES = YES;
+				ENABLE_HARDENED_RUNTIME = NO;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@loader_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.appler.TimelineMacTests;
+				SDKROOT = macosx;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Timeline.app/Contents/MacOS/Timeline";
+			};
+			name = Debug;
 		};
 		4BCA08914B7F7B60ACD72B96 /* Debug */ = {
 			isa = XCBuildConfiguration;
@@ -502,6 +860,25 @@
 			};
 			name = Debug;
 		};
+		8FAA93010256C6B099DC4B6E /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				COMBINE_HIDPI_IMAGES = YES;
+				ENABLE_HARDENED_RUNTIME = NO;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.appler.TimelineMacUITests;
+				SDKROOT = macosx;
+				TEST_TARGET_NAME = Timeline_macOS;
+			};
+			name = Debug;
+		};
 		9D8E0928822654C7421F28E1 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -562,6 +939,61 @@
 			};
 			name = Release;
 		};
+		C8F37E912CA4A13EA90CE22C /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.appler.TimelineTests;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Timeline.app/Timeline";
+			};
+			name = Debug;
+		};
+		CFA67C9BD1D322EBE9CA7FA5 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.appler.TimelineTests;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Timeline.app/Timeline";
+			};
+			name = Release;
+		};
+		F596A2C4618E1D6B194639CB /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				COMBINE_HIDPI_IMAGES = YES;
+				ENABLE_HARDENED_RUNTIME = NO;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.appler.TimelineMacUITests;
+				SDKROOT = macosx;
+				TEST_TARGET_NAME = Timeline_macOS;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -570,6 +1002,15 @@
 			buildConfigurations = (
 				697146A0AAF3DB2FE7515F63 /* Debug */,
 				14F29140C8E489721B550139 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		1D086A93CADA051E83974688 /* Build configuration list for PBXNativeTarget "TimelineUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				007EDE8AB1CF822461AC40FB /* Debug */,
+				04DA3F159AD4F37646612CE7 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;
@@ -583,11 +1024,38 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;
 		};
+		526BA4A7EAD88B18361C79A4 /* Build configuration list for PBXNativeTarget "TimelineTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				C8F37E912CA4A13EA90CE22C /* Debug */,
+				CFA67C9BD1D322EBE9CA7FA5 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		5509C4C1113AD6CC40F45930 /* Build configuration list for PBXNativeTarget "TimelineMacUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				8FAA93010256C6B099DC4B6E /* Debug */,
+				F596A2C4618E1D6B194639CB /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
 		A396E4CD3CD6A9EA4F3E4D18 /* Build configuration list for PBXProject "Timeline" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				4BCA08914B7F7B60ACD72B96 /* Debug */,
 				9D8E0928822654C7421F28E1 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		C4C1E3E8568D0971AE64FDF4 /* Build configuration list for PBXNativeTarget "TimelineMacTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				49EA6CD6EE409ABA95F80818 /* Debug */,
+				4016E1B9BF2033FCA4EA872B /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;

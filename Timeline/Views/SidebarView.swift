@@ -57,6 +57,8 @@ struct SidebarView: View {
             }
             .buttonStyle(.plain)
             .help("Open a Google Maps Timeline JSON export")
+            .accessibilityLabel("Open Timeline")
+            .accessibilityIdentifier("open-timeline")
         }
         .padding(.horizontal, 16)
         #if os(macOS)
@@ -68,39 +70,29 @@ struct SidebarView: View {
     }
 
     private var tabPicker: some View {
-        Picker("Dates or Places", selection: Bindable(store).tab) {
+        HStack(spacing: 4) {
             ForEach(SidebarTab.allCases) { tab in
-                Text(tab.rawValue).tag(tab)
+                Button(tab.rawValue) {
+                    store.selectTab(tab)
+                }
+                .buttonStyle(.plain)
+                .font(.system(size: 13, weight: store.tab == tab ? .semibold : .regular))
+                .foregroundStyle(Palette.parchment)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 7)
+                .background(
+                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        .fill(store.tab == tab ? Palette.inkLift : Color.clear)
+                )
+                .accessibilityIdentifier("tab-\(tab.rawValue.lowercased())")
+                .accessibilityLabel(tab.rawValue)
             }
         }
-        .pickerStyle(.segmented)
-        .labelsHidden()
+        .padding(3)
+        .background(Palette.inkLift.opacity(0.4), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
         .padding(.horizontal, 16)
         .padding(.bottom, 10)
-        .onChange(of: store.tab) { _, newValue in
-            store.search = ""
-            #if os(iOS)
-            if newValue == .dates, let day = store.selectedDay {
-                store.focus(day: day)
-            } else if newValue == .places, let place = store.selectedPlace {
-                store.focus(place: place)
-            }
-            #else
-            if newValue == .dates {
-                if store.selectedDay == nil, let day = store.parsed?.days.first {
-                    store.select(day: day)
-                } else if let day = store.selectedDay {
-                    store.focus(day: day)
-                }
-            } else {
-                if store.selectedPlace == nil, let place = store.parsed?.places.first {
-                    store.select(place: place)
-                } else if let place = store.selectedPlace {
-                    store.focus(place: place)
-                }
-            }
-            #endif
-        }
+        .accessibilityElement(children: .contain)
     }
 
     private var dateFilters: some View {
@@ -141,6 +133,8 @@ struct SidebarView: View {
         .background(Palette.inkLift, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
         .padding(.horizontal, 16)
         .padding(.bottom, 12)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("place-search")
     }
 
     private func filterMenu<Content: View>(
@@ -222,6 +216,7 @@ struct SidebarView: View {
             }
             .buttonStyle(.borderedProminent)
             .tint(Palette.water)
+            .accessibilityIdentifier("open-timeline-empty")
             #if os(macOS)
             Button("Open Downloads/Timeline.json") {
                 store.tryOpenDownloadsExample()
@@ -274,6 +269,8 @@ struct SidebarView: View {
         DayRow(day: day, scaleMeters: scale)
             .tag(day.day)
             .id(day.day)
+            .accessibilityIdentifier("day-row")
+            .accessibilityValue(Self.dayRowID(day.day))
             .listRowBackground(rowBackground(isSelected: store.selectedDayID == day.day))
             .contentShape(Rectangle())
             .onTapGesture {
@@ -295,6 +292,7 @@ struct SidebarView: View {
                     .onTapGesture {
                         store.select(place: place)
                     }
+                    .accessibilityIdentifier("place-\(place.id)")
             }
         }
         .listStyle(.sidebar)
@@ -302,6 +300,11 @@ struct SidebarView: View {
         .onChange(of: store.selectedPlaceID) { _, _ in
             store.handlePlaceSelectionChange()
         }
+    }
+
+    private static func dayRowID(_ day: Date) -> String {
+        let parts = Calendar.current.dateComponents([.year, .month, .day], from: day)
+        return String(format: "day-%04d-%02d-%02d", parts.year ?? 0, parts.month ?? 0, parts.day ?? 0)
     }
 
     private func rowBackground(isSelected: Bool) -> some View {
@@ -345,6 +348,9 @@ struct DayRow: View, Equatable {
             .frame(width: barWidth, alignment: .trailing)
         }
         .padding(.vertical, 4)
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("day-row")
+        .accessibilityAddTraits(.isButton)
     }
 
     private var placeSummary: String {
@@ -412,6 +418,9 @@ struct PlaceRow: View {
             }
         }
         .padding(.vertical, 4)
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("place-\(place.id)")
+        .accessibilityAddTraits(.isButton)
     }
 
     private var pinColor: Color {

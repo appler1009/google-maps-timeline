@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct TimelineAppScene: View {
-    @State private var store = TimelineStore()
+    @State private var store = TimelineLaunch.isUITesting ? TimelineStore.uiTesting() : TimelineStore()
     @State private var importerPresented = false
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
     #if os(iOS)
@@ -37,7 +37,11 @@ struct TimelineAppScene: View {
                 Task { @MainActor in
                     await Task.yield()
                     if store.parsed == nil {
-                        store.restoreLastOpenedFile()
+                        if TimelineLaunch.shouldLoadFixture {
+                            store.loadBundledFixture()
+                        } else if !TimelineLaunch.isUITesting {
+                            store.restoreLastOpenedFile()
+                        }
                     }
                 }
             }

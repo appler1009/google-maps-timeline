@@ -17,11 +17,17 @@ enum TimelineDatabaseError: LocalizedError {
 actor TimelineDatabase {
     private var db: OpaquePointer?
 
-    init() {
-        let folder = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-            .appendingPathComponent("Timeline", isDirectory: true)
-        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        let url = folder.appendingPathComponent("library.sqlite")
+    init(fileURL: URL? = nil) {
+        let url: URL
+        if let fileURL {
+            try? FileManager.default.createDirectory(at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+            url = fileURL
+        } else {
+            let folder = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+                .appendingPathComponent("Timeline", isDirectory: true)
+            try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            url = folder.appendingPathComponent("library.sqlite")
+        }
         var handle: OpaquePointer?
         let flags = SQLITE_OPEN_CREATE | SQLITE_OPEN_READWRITE | SQLITE_OPEN_FULLMUTEX
         if sqlite3_open_v2(url.path, &handle, flags, nil) != SQLITE_OK || handle == nil {
