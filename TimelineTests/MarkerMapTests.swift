@@ -107,6 +107,34 @@ final class MarkerMapTests: XCTestCase {
         XCTAssertFalse(lines[2].isCasing)
     }
 
+    func testWalkAndCycleCasingsSitUnderEveryDashedStroke() {
+        let start = CLLocationCoordinate2D(latitude: 48.858, longitude: 2.294)
+        let end = CLLocationCoordinate2D(latitude: 48.861, longitude: 2.336)
+        let routed = [
+            RoutedHop(id: "walk", points: [start, end], kind: .walking, at: Date(timeIntervalSince1970: 2_000), until: Date(timeIntervalSince1970: 2_600)),
+            RoutedHop(id: "cycle", points: [start, end], kind: .cycling, at: Date(timeIntervalSince1970: 1_000), until: Date(timeIntervalSince1970: 1_600)),
+        ]
+        let map = MKMapView(frame: CGRect(x: 0, y: 0, width: 390, height: 844))
+        TimelineMapPlotter.addDayPaths(map: map, routed: routed)
+        let lines = map.overlays.compactMap { $0 as? KindPolyline }
+        XCTAssertEqual(lines.map(\.kind), [.cycling, .walking, .cycling, .walking])
+        XCTAssertEqual(lines.map(\.isCasing), [true, true, false, false])
+    }
+
+    func testRawPathsHaveNoCasing() {
+        let start = CLLocationCoordinate2D(latitude: 48.858, longitude: 2.294)
+        let end = CLLocationCoordinate2D(latitude: 52.52, longitude: 13.405)
+        let routed = [
+            RoutedHop(id: "flight", points: [start, end], kind: .raw, at: Date(timeIntervalSince1970: 1_000), until: Date(timeIntervalSince1970: 8_000)),
+        ]
+        let map = MKMapView(frame: CGRect(x: 0, y: 0, width: 390, height: 844))
+        TimelineMapPlotter.addDayPaths(map: map, routed: routed)
+        let lines = map.overlays.compactMap { $0 as? KindPolyline }
+        XCTAssertEqual(lines.count, 1)
+        XCTAssertEqual(lines[0].kind, .raw)
+        XCTAssertFalse(lines[0].isCasing)
+    }
+
     func testSameKindPathsKeepChronologicalOrderWithoutCasing() {
         let a = CLLocationCoordinate2D(latitude: 48.85, longitude: 2.29)
         let b = CLLocationCoordinate2D(latitude: 48.86, longitude: 2.30)

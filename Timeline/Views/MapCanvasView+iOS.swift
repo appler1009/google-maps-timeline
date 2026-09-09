@@ -315,8 +315,8 @@ struct TimelineKitMap: UIViewRepresentable {
             let renderer: MKOverlayRenderer
             if let circle = overlay as? MKCircle {
                 let circleRenderer = MKCircleRenderer(circle: circle)
-                circleRenderer.fillColor = UIColor(red: 0.78, green: 0.36, blue: 0.22, alpha: 0.22)
-                circleRenderer.strokeColor = UIColor(red: 0.93, green: 0.89, blue: 0.82, alpha: 0.85)
+                circleRenderer.fillColor = Palette.ui(Palette.path, alpha: 0.22)
+                circleRenderer.strokeColor = Palette.ui(Palette.parchment, alpha: 0.85)
                 circleRenderer.lineWidth = 1.5
                 renderer = circleRenderer
             } else if let line = overlay as? KindPolyline {
@@ -414,9 +414,9 @@ private final class VisitMarkerView: MKAnnotationView {
         label.text = annotation?.title ?? "Place"
         let color: UIColor
         switch annotation?.semantic {
-        case "Home": color = UIColor(red: 0.72, green: 0.42, blue: 0.22, alpha: 1)
-        case "Work": color = UIColor(red: 0.16, green: 0.45, blue: 0.42, alpha: 1)
-        default: color = UIColor(red: 0.78, green: 0.36, blue: 0.22, alpha: 1)
+        case "Home": color = Palette.ui(Palette.copper)
+        case "Work": color = Palette.ui(Palette.water)
+        default: color = Palette.ui(Palette.path)
         }
         if let name = TimelineParser.symbolName(annotation?.semantic) {
             glyph.image = UIImage(systemName: name)

@@ -1,17 +1,18 @@
+import SwiftUI
 import MapKit
 #if os(iOS)
 import UIKit
-private typealias PlatformColor = UIColor
 #else
 import AppKit
-private typealias PlatformColor = NSColor
 #endif
 
-final class KindPolyline: MKPolyline {
+class KindPolyline: MKPolyline {
     var kind: TravelKind = .automobile
-    /// Wider parchment understroke so dashed modes stay readable over drives.
-    var isCasing: Bool = false
+    var isCasing: Bool { self is PathCasingPolyline }
 }
+
+/// Separate type so MapKit cannot drop a stored `isCasing` flag when vending renderers.
+final class PathCasingPolyline: KindPolyline {}
 
 final class VisitAnnotation: MKPointAnnotation {
     var semantic: String?
@@ -66,10 +67,16 @@ enum TimelineMapPlotter {
     }
 
     static func addDayPaths(map: MKMapView, routed: [RoutedHop]) {
-        for hop in orderedForDisplay(routed) {
-            if hop.kind.usesPathCasing {
-                addPolyline(map: map, points: hop.points, kind: hop.kind, isCasing: true)
-            }
+        let hops = orderedForDisplay(routed)
+        // Solid modes first, then every dashed halo, then dashed color — dashes stay
+        // above every casing, including when walk and cycle share geometry.
+        for hop in hops where !hop.kind.usesPathCasing {
+            addPolyline(map: map, points: hop.points, kind: hop.kind, isCasing: false)
+        }
+        for hop in hops where hop.kind.usesPathCasing {
+            addPolyline(map: map, points: hop.points, kind: hop.kind, isCasing: true)
+        }
+        for hop in hops where hop.kind.usesPathCasing {
             addPolyline(map: map, points: hop.points, kind: hop.kind, isCasing: false)
         }
     }
@@ -81,9 +88,10 @@ enum TimelineMapPlotter {
         isCasing: Bool = false
     ) {
         var coords = points
-        let overlay = KindPolyline(coordinates: &coords, count: coords.count)
+        let overlay: KindPolyline = isCasing
+            ? PathCasingPolyline(coordinates: &coords, count: coords.count)
+            : KindPolyline(coordinates: &coords, count: coords.count)
         overlay.kind = kind
-        overlay.isCasing = isCasing
         map.addOverlay(overlay, level: .aboveRoads)
     }
 
@@ -94,23 +102,23 @@ enum TimelineMapPlotter {
         }
         switch line.kind {
         case .walking:
-            renderer.strokeColor = platformColor(red: 0.08, green: 0.66, blue: 0.58, alpha: 1)
+            renderer.strokeColor = platform(Palette.walk)
             renderer.lineWidth = 3
             renderer.lineDashPattern = [7, 5]
             renderer.lineCap = .round
             renderer.lineJoin = .round
         case .cycling:
-            renderer.strokeColor = platformColor(red: 0.03, green: 0.48, blue: 0.44, alpha: 1)
+            renderer.strokeColor = platform(Palette.water)
             renderer.lineWidth = 2.6
             renderer.lineDashPattern = [9, 5]
             renderer.lineCap = .round
             renderer.lineJoin = .round
         case .raw:
-            renderer.strokeColor = platformColor(red: 0.03, green: 0.48, blue: 0.44, alpha: 0.7)
+            renderer.strokeColor = platform(Palette.water, alpha: 0.7)
             renderer.lineWidth = 2
             renderer.lineDashPattern = [5, 5]
         case .automobile:
-            renderer.strokeColor = platformColor(red: 0.68, green: 0.28, blue: 0.14, alpha: 1)
+            renderer.strokeColor = platform(Palette.path)
             renderer.lineWidth = 3.5
             renderer.lineCap = .round
             renderer.lineJoin = .round
@@ -118,7 +126,7 @@ enum TimelineMapPlotter {
     }
 
     private static func applyCasing(to renderer: MKPolylineRenderer, kind: TravelKind) {
-        renderer.strokeColor = platformColor(red: 0.93, green: 0.89, blue: 0.82, alpha: 0.92)
+        renderer.strokeColor = platform(Palette.parchment, alpha: 0.92)
         renderer.lineWidth = casingWidth(for: kind)
         renderer.lineCap = .round
         renderer.lineJoin = .round
@@ -129,13 +137,16 @@ enum TimelineMapPlotter {
         switch kind {
         case .walking: return 5
         case .cycling: return 4.5
-        case .raw: return 4
-        case .automobile: return 3.5
+        case .raw, .automobile: return 0
         }
     }
 
-    private static func platformColor(red: CGFloat, green: CGFloat, blue: CGFloat, alpha: CGFloat) -> PlatformColor {
-        PlatformColor(red: red, green: green, blue: blue, alpha: alpha)
+    private static func platform(_ color: Color, alpha: CGFloat = 1) -> PlatformColor {
+        #if os(iOS)
+        Palette.ui(color, alpha: alpha)
+        #else
+        Palette.ns(color, alpha: alpha)
+        #endif
     }
 }
 
@@ -152,8 +163,8 @@ private extension TravelKind {
 
     var usesPathCasing: Bool {
         switch self {
-        case .walking, .cycling, .raw: return true
-        case .automobile: return false
+        case .walking, .cycling: return true
+        case .automobile, .raw: return false
         }
     }
 }
