@@ -70,16 +70,21 @@ enum TimelineMapPlotter {
 
     static func addDayPaths(map: MKMapView, routed: [RoutedHop]) {
         let hops = orderedForDisplay(routed)
+        let kinds = Set(hops.map(\.kind))
         // Solid modes first, then every dashed halo, then dashed color — dashes stay
         // above every casing, including when walk and cycle share geometry.
+        // Different kinds also get parallel lane offsets so shared snaps don’t stack.
         for hop in hops where !hop.kind.usesPathCasing {
-            addPolyline(map: map, points: hop.points, kind: hop.kind, isCasing: false)
+            let points = PathOffset.displayPoints(hop.points, kind: hop.kind, amongKinds: kinds)
+            addPolyline(map: map, points: points, kind: hop.kind, isCasing: false)
         }
         for hop in hops where hop.kind.usesPathCasing {
-            addPolyline(map: map, points: hop.points, kind: hop.kind, isCasing: true)
+            let points = PathOffset.displayPoints(hop.points, kind: hop.kind, amongKinds: kinds)
+            addPolyline(map: map, points: points, kind: hop.kind, isCasing: true)
         }
         for hop in hops where hop.kind.usesPathCasing {
-            addPolyline(map: map, points: hop.points, kind: hop.kind, isCasing: false)
+            let points = PathOffset.displayPoints(hop.points, kind: hop.kind, amongKinds: kinds)
+            addPolyline(map: map, points: points, kind: hop.kind, isCasing: false)
         }
     }
 

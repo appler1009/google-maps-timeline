@@ -27,6 +27,8 @@
 		6480458E08F5E4B3A0C83A58 /* RoutePlannerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3743ECF459145619A53BAFE /* RoutePlannerTests.swift */; };
 		64875FF0A0A90DE354A8EFD1 /* TimelineMapPlotter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7656BF50DC1AE8BB6971F641 /* TimelineMapPlotter.swift */; };
 		64CAA24A232A91377DC4F964 /* eiffel-tower-day.json in Resources */ = {isa = PBXBuildFile; fileRef = 6DA6D178D95EAD82BA6BC956 /* eiffel-tower-day.json */; };
+		65A1B2C3D4E5F60718293A01 /* PathOffset.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C4E91A02F8B4D6E9A1C3E5F /* PathOffset.swift */; };
+		65A1B2C3D4E5F60718293A02 /* PathOffset.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C4E91A02F8B4D6E9A1C3E5F /* PathOffset.swift */; };
 		6606ECAF7069BB8248A5FB1A /* TimelineMapPlotter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7656BF50DC1AE8BB6971F641 /* TimelineMapPlotter.swift */; };
 		680588BE2CA48256095862A7 /* TimelineAppScene.swift in Sources */ = {isa = PBXBuildFile; fileRef = 82ECD6098781D0E441C5CEE4 /* TimelineAppScene.swift */; };
 		6DCB9C1145A01D9CFDD101B9 /* MarkerMapTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E0F49A8E7037AC3A6458AD93 /* MarkerMapTests.swift */; };
@@ -105,6 +107,7 @@
 		6DA6D178D95EAD82BA6BC956 /* eiffel-tower-day.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "eiffel-tower-day.json"; sourceTree = "<group>"; };
 		71B4F471B4A574BC0ABB38C6 /* RouteSnapperTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RouteSnapperTests.swift; sourceTree = "<group>"; };
 		7656BF50DC1AE8BB6971F641 /* TimelineMapPlotter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimelineMapPlotter.swift; sourceTree = "<group>"; };
+		7C4E91A02F8B4D6E9A1C3E5F /* PathOffset.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PathOffset.swift; sourceTree = "<group>"; };
 		76BAF0A4F92F29FA98081ADB /* RoutePlanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RoutePlanner.swift; sourceTree = "<group>"; };
 		82ECD6098781D0E441C5CEE4 /* TimelineAppScene.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimelineAppScene.swift; sourceTree = "<group>"; };
 		89C557260FF448CAE3747FD8 /* Landmark.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Landmark.swift; sourceTree = "<group>"; };
@@ -228,6 +231,7 @@
 			isa = PBXGroup;
 			children = (
 				8E2B0CEA1726213918DF87C9 /* MapDirectionsClient.swift */,
+				7C4E91A02F8B4D6E9A1C3E5F /* PathOffset.swift */,
 				76BAF0A4F92F29FA98081ADB /* RoutePlanner.swift */,
 				AD3B7EEBCFA7764518D9E18E /* RouteSnapper.swift */,
 				A6C2E6A823AF58F47F778B43 /* TimelineDatabase.swift */,
@@ -469,6 +473,7 @@
 				4FD3FDCDF9FF9D477C311B5F /* MapCanvasView.swift in Sources */,
 				43AE5B25E3DCCC5819276DA1 /* MapDirectionsClient.swift in Sources */,
 				10EA88841A4ED1F827A9CD4F /* Palette.swift in Sources */,
+				65A1B2C3D4E5F60718293A01 /* PathOffset.swift in Sources */,
 				931622D8BC51D41E309E61BE /* RoutePlanner.swift in Sources */,
 				D6A7FF8397BE356AD52900B5 /* RouteSnapper.swift in Sources */,
 				4EDBBF8CCA6D77BC993A4BCC /* SidebarView.swift in Sources */,
@@ -493,6 +498,7 @@
 				A12779692ABD1AF058D60516 /* MapCanvasView.swift in Sources */,
 				F97F40526F45D1595B0D0851 /* MapDirectionsClient.swift in Sources */,
 				BE71455F71F539A0E487FA4D /* Palette.swift in Sources */,
+				65A1B2C3D4E5F60718293A02 /* PathOffset.swift in Sources */,
 				F7982D38B7D6F507D5347CEB /* RoutePlanner.swift in Sources */,
 				EE77B27F0E6DF16DDF11864E /* RouteSnapper.swift in Sources */,
 				45AB66324806BAD817122ABC /* SidebarView.swift in Sources */,
