@@ -1,0 +1,82 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Marketing version (without a leading v)
+        required: false
+        default: "0.1.0"
+
+permissions:
+  contents: write
+
+jobs:
+  macos:
+    runs-on: macos-latest
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Select Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate project
+        run: xcodegen generate
+
+      - name: Resolve versions
+        id: versions
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+          else
+            VERSION="${{ github.event.inputs.version || '0.1.0' }}"
+          fi
+          BUILD="${{ github.run_number }}"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "build=${BUILD}" >> "$GITHUB_OUTPUT"
+          echo "Marketing ${VERSION}  build ${BUILD}"
+
+      - name: Build macOS Release
+        run: |
+          xcodebuild \
+            -project Timeline.xcodeproj \
+            -scheme Timeline_macOS \
+            -configuration Release \
+            -destination 'platform=macOS' \
+            -derivedDataPath DerivedData \
+            MARKETING_VERSION="${{ steps.versions.outputs.version }}" \
+            CURRENT_PROJECT_VERSION="${{ steps.versions.outputs.build }}" \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+
+      - name: Package app
+        run: |
+          APP="DerivedData/Build/Products/Release/Timeline.app"
+          /usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$APP/Contents/Info.plist"
+          /usr/libexec/PlistBuddy -c "Print :CFBundleVersion" "$APP/Contents/Info.plist"
+          ditto -c -k --keepParent "$APP" "Timeline-${{ steps.versions.outputs.version }}-${{ steps.versions.outputs.build }}.zip"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Timeline-macOS-${{ steps.versions.outputs.version }}-${{ steps.versions.outputs.build }}
+          path: Timeline-${{ steps.versions.outputs.version }}-${{ steps.versions.outputs.build }}.zip
+
+      - name: GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" \
+            "Timeline-${{ steps.versions.outputs.version }}-${{ steps.versions.outputs.build }}.zip" \
+            --title "Timeline ${{ steps.versions.outputs.version }}" \
+            --notes "Timeline ${{ steps.versions.outputs.version }} (build ${{ steps.versions.outputs.build }})."

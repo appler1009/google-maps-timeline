@@ -40,4 +40,13 @@ The sidebar has **Dates** and **Places**.
 | `TimelineTests/` | Unit and MapKit tests |
 | `TimelineUITests/` | XCUITest marker and route flow |
 | `project.yml` | XcodeGen spec (`xcodegen generate` if you change it) |
+| `Config/Version.xcconfig` | Marketing version `0.1.0` and local build number |
 | `Timeline.xcodeproj` | Xcode project used to build and run |
+
+## Versioning
+
+The user-facing version is **0.1.0** (`MARKETING_VERSION` in `Config/Version.xcconfig`). Bump that file when you cut a release.
+
+The build number (`CURRENT_PROJECT_VERSION` / `CFBundleVersion`) stays `1` for local Xcode builds. GitHub Actions sets it to the workflow run number.
+
+Tag a release as `v0.1.0` (or run the **Release** workflow) to build an unsigned macOS `Timeline.app` zip and, on a tag, attach it to a GitHub Release.

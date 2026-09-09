@@ -29,13 +29,16 @@ targets:
         buildPhase: resources
     dependencies:
       - sdk: libsqlite3.tbd
+    configFiles:
+      Debug: Config/Version.xcconfig
+      Release: Config/Version.xcconfig
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.appler.Timeline
         PRODUCT_NAME: Timeline
-        MARKETING_VERSION: "1.0"
-        CURRENT_PROJECT_VERSION: "1"
         GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        INFOPLIST_KEY_CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
         INFOPLIST_KEY_CFBundleDisplayName: Timeline
         INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.travel
         INFOPLIST_KEY_NSHumanReadableCopyright: ""
@@ -62,6 +65,8 @@ targets:
       path: Timeline/Info.plist
       properties:
         CFBundleDisplayName: Timeline
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         LSMinimumSystemVersion: "14.0"
         NSHighResolutionCapable: true
         UILaunchScreen: {}
