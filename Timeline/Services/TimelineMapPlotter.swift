@@ -94,23 +94,23 @@ enum TimelineMapPlotter {
         }
         switch line.kind {
         case .walking:
-            renderer.strokeColor = platformColor(red: 0.55, green: 0.82, blue: 0.74, alpha: 1)
+            renderer.strokeColor = platformColor(red: 0.08, green: 0.66, blue: 0.58, alpha: 1)
             renderer.lineWidth = 3
             renderer.lineDashPattern = [7, 5]
             renderer.lineCap = .round
             renderer.lineJoin = .round
         case .cycling:
-            renderer.strokeColor = platformColor(red: 0.16, green: 0.45, blue: 0.42, alpha: 0.9)
+            renderer.strokeColor = platformColor(red: 0.03, green: 0.48, blue: 0.44, alpha: 1)
             renderer.lineWidth = 2.6
             renderer.lineDashPattern = [9, 5]
             renderer.lineCap = .round
             renderer.lineJoin = .round
         case .raw:
-            renderer.strokeColor = platformColor(red: 0.16, green: 0.45, blue: 0.42, alpha: 0.55)
+            renderer.strokeColor = platformColor(red: 0.03, green: 0.48, blue: 0.44, alpha: 0.7)
             renderer.lineWidth = 2
             renderer.lineDashPattern = [5, 5]
         case .automobile:
-            renderer.strokeColor = platformColor(red: 0.78, green: 0.36, blue: 0.22, alpha: 1)
+            renderer.strokeColor = platformColor(red: 0.68, green: 0.28, blue: 0.14, alpha: 1)
             renderer.lineWidth = 3.5
             renderer.lineCap = .round
             renderer.lineJoin = .round
