@@ -1,0 +1,4 @@
+// Marketing version is bumped in this file. GitHub Actions overwrites
+// CURRENT_PROJECT_VERSION with the workflow run number on each release build.
+MARKETING_VERSION = 0.1.0
+CURRENT_PROJECT_VERSION = 1
