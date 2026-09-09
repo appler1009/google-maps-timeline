@@ -862,13 +862,14 @@ struct SelectionCard: View {
         return Button {
             store.rerouteSelectedDay()
         } label: {
-            if store.isRerouting {
-                ProgressView()
-                    .controlSize(.small)
-            } else {
-                Label("Re-route", systemImage: "arrow.triangle.swap")
-                    .font(.system(size: 11, weight: .semibold))
-            }
+            Label("Re-route", systemImage: "arrow.triangle.swap")
+                .font(.system(size: 11, weight: .semibold))
+                .opacity(store.isRerouting ? 0 : 1)
+                .overlay {
+                    if store.isRerouting {
+                        RerouteSpinner()
+                    }
+                }
         }
         .buttonStyle(.borderless)
         .foregroundStyle(tint)
@@ -1028,5 +1029,18 @@ struct SelectionCard: View {
         let rem = minutes % 60
         if rem == 0 { return "\(hours)h" }
         return "\(hours)h \(rem)m"
+    }
+}
+
+/// Spinning glyph with no AppKit bezel — `ProgressView` draws an opaque well on the legend.
+private struct RerouteSpinner: View {
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1 / 30, paused: false)) { context in
+            let turn = context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 0.85)
+            Image(systemName: "arrow.triangle.2.circlepath")
+                .font(.system(size: 11, weight: .semibold))
+                .rotationEffect(.degrees(turn / 0.85 * 360))
+        }
+        .accessibilityHidden(true)
     }
 }
