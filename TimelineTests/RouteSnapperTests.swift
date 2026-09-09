@@ -17,15 +17,16 @@ final class RouteSnapperTests: XCTestCase {
             ]
         }
         let snapper = RouteSnapper(database: database, directions: client)
-        let points = await snapper.snap(
+        let snapped = await snapper.snap(
             id: "paris-hop",
             points: [Landmark.eiffelTower, Landmark.louvrePyramid],
             kind: .automobile
         )
         XCTAssertEqual(requested, 1)
-        XCTAssertEqual(points.count, 3)
-        XCTAssertEqual(points[1].latitude, 48.863000, accuracy: 0.000001)
-        XCTAssertEqual(points[1].longitude, 2.300000, accuracy: 0.000001)
+        XCTAssertFalse(snapped.throttled)
+        XCTAssertEqual(snapped.points.count, 3)
+        XCTAssertEqual(snapped.points[1].latitude, 48.863000, accuracy: 0.000001)
+        XCTAssertEqual(snapped.points[1].longitude, 2.300000, accuracy: 0.000001)
     }
 
     func testDoesNotCallDirectionsForVeryShortHops() async throws {
@@ -42,7 +43,8 @@ final class RouteSnapperTests: XCTestCase {
         )
         let points = await snapper.snap(id: "short", points: [Landmark.eiffelTower, nearby], kind: .automobile)
         XCTAssertEqual(requested, 0)
-        XCTAssertEqual(points.count, 2)
+        XCTAssertFalse(points.throttled)
+        XCTAssertEqual(points.points.count, 2)
     }
 
     func testCachesMockedRouteOnDisk() async throws {
@@ -66,6 +68,73 @@ final class RouteSnapperTests: XCTestCase {
         XCTAssertEqual(cached?.count, 3)
     }
 
+    func testFreshRerouteKeepsRicherRouteWhenDirectionsAreThrottled() async throws {
+        let database = TimelineDatabase(fileURL: temporaryDatabase())
+        let rich = ScriptedMapDirectionsClient { start, end, _ in
+            [
+                start,
+                CLLocationCoordinate2D(latitude: 48.861000, longitude: 2.301000),
+                CLLocationCoordinate2D(latitude: 48.862000, longitude: 2.304000),
+                CLLocationCoordinate2D(latitude: 48.863000, longitude: 2.307000),
+                end
+            ]
+        }
+        let snapper = RouteSnapper(database: database, directions: rich)
+        let first = await snapper.snap(
+            id: "reroute",
+            points: [Landmark.eiffelTower, Landmark.louvrePyramid],
+            kind: .automobile
+        )
+        XCTAssertEqual(first.points.count, 5)
+        XCTAssertFalse(first.throttled)
+
+        let throttled = ThrottledMapDirectionsClient()
+        let again = RouteSnapper(database: database, directions: throttled)
+        let second = await again.snap(
+            id: "reroute",
+            points: [Landmark.eiffelTower, Landmark.louvrePyramid],
+            kind: .automobile,
+            fresh: true
+        )
+        XCTAssertTrue(second.throttled)
+        XCTAssertEqual(second.points.count, 5)
+        XCTAssertEqual(second.points[2].latitude, 48.862000, accuracy: 0.000001)
+    }
+
+    func testFreshRerouteReplacesRouteWhenDirectionsReturnMorePoints() async throws {
+        let database = TimelineDatabase(fileURL: temporaryDatabase())
+        let sparse = ScriptedMapDirectionsClient { start, end, _ in
+            ScriptedMapDirectionsClient.dogleg().hops(start, end, .automobile)
+        }
+        let firstSnapper = RouteSnapper(database: database, directions: sparse)
+        let first = await firstSnapper.snap(
+            id: "upgrade",
+            points: [Landmark.eiffelTower, Landmark.louvrePyramid],
+            kind: .automobile
+        )
+        XCTAssertEqual(first.points.count, 3)
+        XCTAssertFalse(first.throttled)
+
+        let dense = ScriptedMapDirectionsClient { start, end, _ in
+            [
+                start,
+                CLLocationCoordinate2D(latitude: 48.860500, longitude: 2.298000),
+                CLLocationCoordinate2D(latitude: 48.861500, longitude: 2.301000),
+                CLLocationCoordinate2D(latitude: 48.862500, longitude: 2.305000),
+                end
+            ]
+        }
+        let secondSnapper = RouteSnapper(database: database, directions: dense)
+        let second = await secondSnapper.snap(
+            id: "upgrade",
+            points: [Landmark.eiffelTower, Landmark.louvrePyramid],
+            kind: .automobile,
+            fresh: true
+        )
+        XCTAssertEqual(second.points.count, 5)
+        XCTAssertFalse(second.throttled)
+    }
+
     func testRawTravelDoesNotCallDirections() async throws {
         var requested = 0
         let client = ScriptedMapDirectionsClient { start, end, _ in
@@ -79,11 +148,42 @@ final class RouteSnapperTests: XCTestCase {
             kind: .raw
         )
         XCTAssertEqual(requested, 0)
-        XCTAssertEqual(points.count, 2)
+        XCTAssertFalse(points.throttled)
+        XCTAssertEqual(points.points.count, 2)
     }
 
     private func temporaryDatabase() -> URL {
         FileManager.default.temporaryDirectory.appendingPathComponent("snap-\(UUID().uuidString).sqlite")
+    }
+}
+
+private struct ThrottledMapDirectionsClient: MapDirectionsClient {
+    func route(
+        from _: CLLocationCoordinate2D,
+        to _: CLLocationCoordinate2D,
+        transport _: MKDirectionsTransportType
+    ) async throws -> [CLLocationCoordinate2D] {
+        throw NSError(domain: MKErrorDomain, code: Int(MKError.Code.loadingThrottled.rawValue))
+    }
+}
+
+final class MapDirectionsThrottleTests: XCTestCase {
+    func testRecognizesLoadingThrottledCode() {
+        let error = NSError(domain: MKErrorDomain, code: Int(MKError.Code.loadingThrottled.rawValue))
+        XCTAssertTrue(MapDirectionsThrottle.isThrottled(error))
+    }
+
+    func testRecognizesThrottlerPayloadOnOtherMKErrors() {
+        let error = NSError(
+            domain: MKErrorDomain,
+            code: 2,
+            userInfo: ["MKErrorGEOErrorUserInfo": ["throttler.keyPath": "app:test", "timeUntilReset": 54]]
+        )
+        XCTAssertTrue(MapDirectionsThrottle.isThrottled(error))
+    }
+
+    func testIgnoresUnrelatedErrors() {
+        XCTAssertFalse(MapDirectionsThrottle.isThrottled(NSError(domain: NSURLErrorDomain, code: -1009)))
     }
 }
 

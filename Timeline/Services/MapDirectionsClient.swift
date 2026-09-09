@@ -10,6 +10,17 @@ protocol MapDirectionsClient: Sendable {
     ) async throws -> [CLLocationCoordinate2D]
 }
 
+enum MapDirectionsThrottle {
+    static func isThrottled(_ error: Error) -> Bool {
+        let ns = error as NSError
+        if ns.domain == MKErrorDomain, ns.code == Int(MKError.Code.loadingThrottled.rawValue) {
+            return true
+        }
+        let info = String(describing: ns.userInfo).lowercased()
+        return info.contains("throttler") || info.contains("timeuntilreset")
+    }
+}
+
 struct AppleMapDirectionsClient: MapDirectionsClient {
     /// Off-peak Sunday so Apple does not optimize around live congestion.
     static let staticDeparture: Date = {

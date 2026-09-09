@@ -671,23 +671,9 @@ struct SelectionCard: View {
                             .font(.system(size: 12))
                             .foregroundStyle(Palette.muted)
                         Spacer(minLength: 8)
-                        Button {
-                            store.rerouteSelectedDay()
-                        } label: {
-                            if store.isRerouting {
-                                ProgressView()
-                                    .controlSize(.small)
-                            } else {
-                                Label("Re-route", systemImage: "arrow.triangle.swap")
-                                    .font(.system(size: 11, weight: .semibold))
-                            }
-                        }
-                        .buttonStyle(.borderless)
-                        .foregroundStyle(Palette.parchment)
-                        .disabled(store.isRerouting || day.visitCount < 2)
-                        .accessibilityIdentifier("reroute-button")
-                        .opacity(sheetExpansion)
-                        .allowsHitTesting(sheetExpansion > 0.35)
+                        rerouteControl(for: day)
+                            .opacity(sheetExpansion)
+                            .allowsHitTesting(sheetExpansion > 0.35)
                     }
                 } else if let place = store.selectedPlace {
                     Text(store.subtitle(for: place))
@@ -863,24 +849,35 @@ struct SelectionCard: View {
                 .font(.system(size: 12))
                 .foregroundStyle(Palette.muted)
             Spacer(minLength: 8)
-            Button {
-                store.rerouteSelectedDay()
-            } label: {
-                if store.isRerouting {
-                    ProgressView()
-                        .controlSize(.small)
-                } else {
-                    Label("Re-route", systemImage: "arrow.triangle.swap")
-                        .font(.system(size: 11, weight: .semibold))
-                }
-            }
-            .buttonStyle(.borderless)
-            .foregroundStyle(Palette.parchment)
-            .disabled(store.isRerouting || day.visitCount < 2)
-            .help("Ask Apple Maps again for road traces between this day’s stays")
-            .accessibilityIdentifier("reroute-button")
+            rerouteControl(for: day)
+                .help(store.directionsThrottled
+                    ? "Apple Maps is rate-limiting directions. Existing routes were kept."
+                    : "Ask Apple Maps again for road traces between this day’s stays")
         }
         #endif
+    }
+
+    private func rerouteControl(for day: DayRecord) -> some View {
+        let tint: Color = store.directionsThrottled ? .red : Palette.parchment
+        return Button {
+            store.rerouteSelectedDay()
+        } label: {
+            Label("Re-route", systemImage: "arrow.triangle.swap")
+                .font(.system(size: 11, weight: .semibold))
+                .opacity(store.isRerouting ? 0 : 1)
+                .overlay {
+                    if store.isRerouting {
+                        RerouteSpinner()
+                    }
+                }
+        }
+        .buttonStyle(.borderless)
+        .foregroundStyle(tint)
+        .tint(tint)
+        .disabled(store.isRerouting || day.visitCount < 2)
+        .animation(.easeInOut(duration: 0.2), value: store.directionsThrottled)
+        .accessibilityIdentifier("reroute-button")
+        .accessibilityValue(store.directionsThrottled ? "Rate limited" : "")
     }
 
     @ViewBuilder
@@ -1032,5 +1029,18 @@ struct SelectionCard: View {
         let rem = minutes % 60
         if rem == 0 { return "\(hours)h" }
         return "\(hours)h \(rem)m"
+    }
+}
+
+/// Spinning glyph with no AppKit bezel — `ProgressView` draws an opaque well on the legend.
+private struct RerouteSpinner: View {
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1 / 30, paused: false)) { context in
+            let turn = context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 0.85)
+            Image(systemName: "arrow.triangle.2.circlepath")
+                .font(.system(size: 11, weight: .semibold))
+                .rotationEffect(.degrees(turn / 0.85 * 360))
+        }
+        .accessibilityHidden(true)
     }
 }
