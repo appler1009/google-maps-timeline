@@ -1,4 +1,9 @@
 import SwiftUI
+#if os(iOS)
+import UIKit
+#elseif os(macOS)
+import AppKit
+#endif
 
 private enum CompactMapDismissKey: EnvironmentKey {
     static let defaultValue: (() -> Void)? = nil
@@ -18,8 +23,19 @@ enum Palette {
     static let parchment = Color(red: 0.93, green: 0.89, blue: 0.82)
     static let muted = Color(red: 0.62, green: 0.66, blue: 0.68)
     static let copper = Color(red: 0.72, green: 0.42, blue: 0.22)
-    static let water = Color(red: 0.16, green: 0.45, blue: 0.42)
-    static let path = Color(red: 0.78, green: 0.36, blue: 0.22)
+    static let water = Color(red: 0.05, green: 0.52, blue: 0.48)
+    static let walk = Color(red: 0.08, green: 0.66, blue: 0.58)
+    static let path = Color(red: 0.68, green: 0.28, blue: 0.14)
+
+    #if os(iOS)
+    static func ui(_ color: Color, alpha: CGFloat = 1) -> UIColor {
+        UIColor(color).withAlphaComponent(alpha)
+    }
+    #else
+    static func ns(_ color: Color, alpha: CGFloat = 1) -> NSColor {
+        NSColor(color).withAlphaComponent(alpha)
+    }
+    #endif
 
     static func distance(meters: Double) -> Color {
         let km = max(0, meters / 1000)
