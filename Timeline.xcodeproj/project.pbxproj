@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		0DF0BD019DFFBC79EDB55041 /* LiquidChrome.swift in Sources */ = {isa = PBXBuildFile; fileRef = 15F9427D76A38D8FFCE30323 /* LiquidChrome.swift */; };
 		10EA88841A4ED1F827A9CD4F /* Palette.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9E1B28FC5BF045913929FD4 /* Palette.swift */; };
 		18B9EA1106022C3C35237159 /* RouteSnapperTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 71B4F471B4A574BC0ABB38C6 /* RouteSnapperTests.swift */; };
 		39F8A3A67F10E9AB7E293028 /* libsqlite3.tbd in Frameworks */ = {isa = PBXBuildFile; fileRef = AAFD7CBAD5210FAA2FDF9FFA /* libsqlite3.tbd */; };
@@ -43,6 +44,7 @@
 		ACDB06C09F4926234980A27E /* TimelineLaunch.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8DF68F06E1121E88E519C9BC /* TimelineLaunch.swift */; };
 		AFFE5021B10D3A2EB4C0568F /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = F38FDE28A77697434B262F4C /* Assets.xcassets */; };
 		BB7C9FA0BF2D8C97366EC640 /* MarkersAndRoutesUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9B7B68A2C5A47F130B19C06 /* MarkersAndRoutesUITests.swift */; };
+		BC4C501347FBABBDEDEF86D0 /* LiquidChrome.swift in Sources */ = {isa = PBXBuildFile; fileRef = 15F9427D76A38D8FFCE30323 /* LiquidChrome.swift */; };
 		BE5A3265749B32A8E4661A68 /* MapCanvasView+iOS.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8EF9167F835586F0B2E5C8F5 /* MapCanvasView+iOS.swift */; };
 		BE71455F71F539A0E487FA4D /* Palette.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9E1B28FC5BF045913929FD4 /* Palette.swift */; };
 		C36CFB977724E83B2402615A /* RoutePlannerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3743ECF459145619A53BAFE /* RoutePlannerTests.swift */; };
@@ -91,6 +93,7 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		15F9427D76A38D8FFCE30323 /* LiquidChrome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiquidChrome.swift; sourceTree = "<group>"; };
 		27A603B8D2E85569C4F2AC40 /* TimelineApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimelineApp.swift; sourceTree = "<group>"; };
 		27DB2D73BEF1B63C8278F73E /* TimelineMacTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = TimelineMacTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		30475295489F71438FC87FC3 /* TimelineParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimelineParser.swift; sourceTree = "<group>"; };
@@ -160,6 +163,7 @@
 		0DE51C1230D53E8BFAB6C29B /* Views */ = {
 			isa = PBXGroup;
 			children = (
+				15F9427D76A38D8FFCE30323 /* LiquidChrome.swift */,
 				4C84392A4A35D3A0FF607D83 /* MapCanvasView.swift */,
 				8EF9167F835586F0B2E5C8F5 /* MapCanvasView+iOS.swift */,
 				C9E1B28FC5BF045913929FD4 /* Palette.swift */,
@@ -460,6 +464,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				477A2CC104A37B7156AAB707 /* Landmark.swift in Sources */,
+				BC4C501347FBABBDEDEF86D0 /* LiquidChrome.swift in Sources */,
 				7EE7764734BB4F10B52D60C8 /* MapCanvasView+iOS.swift in Sources */,
 				4FD3FDCDF9FF9D477C311B5F /* MapCanvasView.swift in Sources */,
 				43AE5B25E3DCCC5819276DA1 /* MapDirectionsClient.swift in Sources */,
@@ -483,6 +488,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				D3FE925EC69D1014ADE3817B /* Landmark.swift in Sources */,
+				0DF0BD019DFFBC79EDB55041 /* LiquidChrome.swift in Sources */,
 				BE5A3265749B32A8E4661A68 /* MapCanvasView+iOS.swift in Sources */,
 				A12779692ABD1AF058D60516 /* MapCanvasView.swift in Sources */,
 				F97F40526F45D1595B0D0851 /* MapDirectionsClient.swift in Sources */,
