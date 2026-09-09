@@ -486,29 +486,7 @@ struct TimelineKitMap: NSViewRepresentable {
                 renderer = circleRenderer
             } else if let line = overlay as? KindPolyline {
                 let polylineRenderer = MKPolylineRenderer(polyline: line)
-                switch line.kind {
-                case .walking:
-                    polylineRenderer.strokeColor = NSColor(red: 0.55, green: 0.82, blue: 0.74, alpha: 1)
-                    polylineRenderer.lineWidth = 3
-                    polylineRenderer.lineDashPattern = [7, 5]
-                    polylineRenderer.lineCap = .round
-                    polylineRenderer.lineJoin = .round
-                case .cycling:
-                    polylineRenderer.strokeColor = NSColor(red: 0.16, green: 0.45, blue: 0.42, alpha: 0.9)
-                    polylineRenderer.lineWidth = 2.6
-                    polylineRenderer.lineDashPattern = [9, 5]
-                    polylineRenderer.lineCap = .round
-                    polylineRenderer.lineJoin = .round
-                case .raw:
-                    polylineRenderer.strokeColor = NSColor(red: 0.16, green: 0.45, blue: 0.42, alpha: 0.55)
-                    polylineRenderer.lineWidth = 2
-                    polylineRenderer.lineDashPattern = [5, 5]
-                case .automobile:
-                    polylineRenderer.strokeColor = NSColor(red: 0.78, green: 0.36, blue: 0.22, alpha: 1)
-                    polylineRenderer.lineWidth = 3.5
-                    polylineRenderer.lineCap = .round
-                    polylineRenderer.lineJoin = .round
-                }
+                TimelineMapPlotter.configure(polylineRenderer, for: line)
                 renderer = polylineRenderer
             } else {
                 renderer = MKOverlayRenderer(overlay: overlay)
