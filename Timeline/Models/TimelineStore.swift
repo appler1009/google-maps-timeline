@@ -30,6 +30,7 @@ final class TimelineStore {
     var snappedDayID: Date?
     var routeGeneration: UInt64 = 0
     var isRerouting = false
+    var directionsThrottled = false
     /// Bumped when the user picks a day or place so compact iOS can show the map.
     var mapRevealGeneration: UInt64 = 0
     /// Points of map the iOS legend sheet hides at the bottom, so the map can
@@ -39,6 +40,7 @@ final class TimelineStore {
     private let database: TimelineDatabase
     private let snapper: RouteSnapper
     private var routeTask: Task<Void, Never>?
+    private var throttleHideTask: Task<Void, Never>?
     private var routesByDay: [Date: [RoutedHop]] = [:]
     private var daysByID: [Date: DayRecord] = [:]
     private var placesByID: [String: PlaceRecord] = [:]
@@ -374,9 +376,6 @@ final class TimelineStore {
 
     func rerouteSelectedDay() {
         guard let day = selectedDay else { return }
-        routesByDay[day.day] = nil
-        snappedRoutes = []
-        snappedDayID = nil
         requestRoutes(for: day, fresh: true)
     }
 
@@ -390,6 +389,10 @@ final class TimelineStore {
         }
         routeTask?.cancel()
         isRerouting = fresh
+        if fresh {
+            directionsThrottled = false
+            throttleHideTask?.cancel()
+        }
         if snappedDayID != day.day {
             snappedRoutes = []
             snappedDayID = nil
@@ -422,16 +425,31 @@ final class TimelineStore {
             }
             var lines: [RoutedHop] = []
             lines.reserveCapacity(hops.count)
+            var throttled = false
             for hop in hops {
                 if Task.isCancelled { return }
-                let points = await snapper.snap(id: hop.id, points: hop.points, kind: hop.kind, fresh: fresh)
-                lines.append(RoutedHop(id: "\(hop.id):\(hop.kind.stored)", points: points, kind: hop.kind, at: hop.at, until: hop.until))
+                let snapped = await snapper.snap(id: hop.id, points: hop.points, kind: hop.kind, fresh: fresh)
+                throttled = throttled || snapped.throttled
+                lines.append(RoutedHop(id: "\(hop.id):\(hop.kind.stored)", points: snapped.points, kind: hop.kind, at: hop.at, until: hop.until))
             }
             if Task.isCancelled { return }
             routesByDay[day.day] = lines
             snappedRoutes = lines
             snappedDayID = day.day
             routeGeneration &+= 1
+            if fresh, throttled {
+                flashDirectionsThrottle()
+            }
+        }
+    }
+
+    private func flashDirectionsThrottle() {
+        directionsThrottled = true
+        throttleHideTask?.cancel()
+        throttleHideTask = Task {
+            try? await Task.sleep(for: .seconds(3))
+            guard !Task.isCancelled else { return }
+            directionsThrottled = false
         }
     }
 
