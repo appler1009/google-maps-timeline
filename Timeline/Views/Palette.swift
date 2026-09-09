@@ -51,24 +51,3 @@ enum Palette {
         return Color(red: c.0, green: c.1, blue: c.2)
     }
 }
-
-#if os(iOS)
-/// Opaque plate behind the map's floating chrome — legible over any map tile,
-/// unlike a translucent material.
-private struct ChromePlate: ViewModifier {
-    private static let shape = RoundedRectangle(cornerRadius: 10, style: .continuous)
-
-    func body(content: Content) -> some View {
-        content
-            .background(Palette.inkLift.opacity(0.94), in: Self.shape)
-            .overlay(Self.shape.stroke(Palette.parchment.opacity(0.12), lineWidth: 1))
-            .shadow(color: .black.opacity(0.35), radius: 8, y: 3)
-    }
-}
-
-extension View {
-    func chromePlate() -> some View {
-        modifier(ChromePlate())
-    }
-}
-#endif

@@ -12,7 +12,6 @@ struct TimelineAppScene: View {
     var body: some View {
         layout
             .environment(store)
-            .background(Palette.ink)
             #if os(macOS)
             .background(WindowChrome())
             #endif
@@ -85,31 +84,57 @@ struct TimelineAppScene: View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
             SidebarView(importerPresented: $importerPresented)
                 .navigationSplitViewColumnWidth(min: 260, ideal: 300, max: 380)
+                .navigationTitle("Timeline")
                 #if os(iOS)
-                .toolbar(.hidden, for: .navigationBar)
+                .navigationBarTitleDisplayMode(.inline)
                 #endif
+                .toolbar {
+                    ToolbarItem(placement: .primaryAction) {
+                        Button {
+                            importerPresented = true
+                        } label: {
+                            Label("Open Timeline", systemImage: "folder")
+                        }
+                        .help("Open a Google Maps Timeline JSON export")
+                        .accessibilityLabel("Open Timeline")
+                        .accessibilityIdentifier("open-timeline")
+                    }
+                }
         } detail: {
             MapCanvasView()
                 #if os(iOS)
                 .toolbar(.hidden, for: .navigationBar)
                 #endif
+                .timelineBackgroundExtension()
         }
         .navigationSplitViewStyle(.balanced)
-        #if os(macOS)
-        .toolbar(.hidden)
-        .ignoresSafeArea(.container, edges: .top)
-        #endif
     }
 
     #if os(iOS)
     private var compactStack: some View {
         GeometryReader { geo in
             ZStack {
-                SidebarView(importerPresented: $importerPresented)
-                    .offset(x: showingCompactMap ? -geo.size.width * 0.22 : 0)
-                    .opacity(showingCompactMap ? 0 : 1)
-                    .allowsHitTesting(!showingCompactMap)
-                    .accessibilityHidden(showingCompactMap)
+                NavigationStack {
+                    SidebarView(importerPresented: $importerPresented)
+                        .navigationTitle("Timeline")
+                        .navigationBarTitleDisplayMode(.large)
+                        .toolbar(showingCompactMap ? .hidden : .automatic, for: .navigationBar)
+                        .toolbar {
+                            ToolbarItem(placement: .topBarTrailing) {
+                                Button {
+                                    importerPresented = true
+                                } label: {
+                                    Label("Open Timeline", systemImage: "folder")
+                                }
+                                .accessibilityLabel("Open Timeline")
+                                .accessibilityIdentifier("open-timeline")
+                            }
+                        }
+                }
+                .offset(x: showingCompactMap ? -geo.size.width * 0.22 : 0)
+                .opacity(showingCompactMap ? 0 : 1)
+                .allowsHitTesting(!showingCompactMap)
+                .accessibilityHidden(showingCompactMap)
                 if showingCompactMap {
                     MapCanvasView()
                         .environment(\.compactMapDismiss, dismissCompactMap)
@@ -120,7 +145,6 @@ struct TimelineAppScene: View {
                 }
             }
         }
-        .toolbar(.hidden, for: .navigationBar)
     }
 
     private func presentCompactMap() {
@@ -164,27 +188,27 @@ private final class WindowChromeView: NSView {
         guard let window else { return }
         window.title = "Timeline"
         window.subtitle = ""
-        window.titleVisibility = .hidden
+        window.titleVisibility = .visible
         window.titlebarAppearsTransparent = true
-        window.titlebarSeparatorStyle = .none
+        window.titlebarSeparatorStyle = .automatic
         window.styleMask.insert(.fullSizeContentView)
-        window.toolbarStyle = .unifiedCompact
-        window.toolbar = nil
+        window.toolbarStyle = .unified
         window.appearance = NSAppearance(named: .darkAqua)
-        window.backgroundColor = NSColor(srgbRed: 0.07, green: 0.11, blue: 0.16, alpha: 1)
-        window.isOpaque = true
+        window.backgroundColor = .clear
+        window.isOpaque = false
     }
 }
 
 private func bringWindowOnscreen() {
     DispatchQueue.main.async {
         guard let window = NSApp.windows.first(where: { $0.contentView != nil }) else { return }
-        window.titleVisibility = .hidden
+        window.titleVisibility = .visible
         window.titlebarAppearsTransparent = true
-        window.titlebarSeparatorStyle = .none
+        window.titlebarSeparatorStyle = .automatic
         window.styleMask.insert(.fullSizeContentView)
-        window.toolbar = nil
         window.appearance = NSAppearance(named: .darkAqua)
+        window.backgroundColor = .clear
+        window.isOpaque = false
         let target = NSScreen.main?.visibleFrame ?? NSRect(x: 80, y: 80, width: 1400, height: 900)
         if window.frame.width > target.width * 0.95 || !target.intersects(window.frame) {
             let width = min(1280, target.width - 40)

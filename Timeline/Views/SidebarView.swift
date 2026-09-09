@@ -11,10 +11,8 @@ struct SidebarView: View {
             tabPicker
             if store.tab == .dates {
                 dateFilters
-            } else {
-                placeSearch
             }
-            Divider().overlay(Palette.rule)
+            Divider().opacity(0.35)
             Group {
                 if store.isLoading {
                     loading
@@ -27,69 +25,37 @@ struct SidebarView: View {
                 }
             }
         }
-        .background(Palette.ink)
         .foregroundStyle(Palette.parchment)
-        #if os(macOS)
-        .ignoresSafeArea(.container, edges: .top)
-        #endif
     }
 
     private var header: some View {
         HStack(alignment: .center, spacing: 10) {
             VStack(alignment: .leading, spacing: 2) {
-                Text("Timeline")
-                    .font(.system(size: 22, weight: .bold, design: .serif))
-                    .foregroundStyle(Palette.parchment)
                 Text(store.sourceName ?? "Open a Timeline.json export")
-                    .font(.system(size: 11, weight: .regular, design: .default))
+                    .font(.system(size: 12, weight: .regular))
                     .foregroundStyle(Palette.muted)
-                    .lineLimit(1)
+                    .lineLimit(2)
             }
-            Spacer(minLength: 8)
-            Button {
-                importerPresented = true
-            } label: {
-                Image(systemName: "folder")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(Palette.parchment)
-                    .frame(width: 28, height: 28)
-                    .background(Palette.inkLift, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
-            }
-            .buttonStyle(.plain)
-            .help("Open a Google Maps Timeline JSON export")
-            .accessibilityLabel("Open Timeline")
-            .accessibilityIdentifier("open-timeline")
+            Spacer(minLength: 0)
         }
         .padding(.horizontal, 16)
-        #if os(macOS)
-        .padding(.top, 38)
-        #else
-        .padding(.top, 16)
-        #endif
-        .padding(.bottom, 10)
+        .padding(.top, 8)
+        .padding(.bottom, 8)
     }
 
     private var tabPicker: some View {
-        HStack(spacing: 4) {
+        Picker("Section", selection: Binding(
+            get: { store.tab },
+            set: { store.selectTab($0) }
+        )) {
             ForEach(SidebarTab.allCases) { tab in
-                Button(tab.rawValue) {
-                    store.selectTab(tab)
-                }
-                .buttonStyle(.plain)
-                .font(.system(size: 13, weight: store.tab == tab ? .semibold : .regular))
-                .foregroundStyle(Palette.parchment)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 7)
-                .background(
-                    RoundedRectangle(cornerRadius: 7, style: .continuous)
-                        .fill(store.tab == tab ? Palette.inkLift : Color.clear)
-                )
-                .accessibilityIdentifier("tab-\(tab.rawValue.lowercased())")
-                .accessibilityLabel(tab.rawValue)
+                Text(tab.rawValue)
+                    .tag(tab)
+                    .accessibilityIdentifier("tab-\(tab.rawValue.lowercased())")
             }
         }
-        .padding(3)
-        .background(Palette.inkLift.opacity(0.4), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+        .pickerStyle(.segmented)
+        .labelsHidden()
         .padding(.horizontal, 16)
         .padding(.bottom, 10)
         .accessibilityElement(children: .contain)
@@ -120,23 +86,6 @@ struct SidebarView: View {
         }
     }
 
-    private var placeSearch: some View {
-        HStack(spacing: 6) {
-            Image(systemName: "magnifyingglass")
-                .foregroundStyle(Palette.muted)
-            TextField("Find a place", text: Bindable(store).search)
-                .textFieldStyle(.plain)
-                .foregroundStyle(Palette.parchment)
-        }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 7)
-        .background(Palette.inkLift, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .padding(.horizontal, 16)
-        .padding(.bottom, 12)
-        .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("place-search")
-    }
-
     private func filterMenu<Content: View>(
         _ title: String,
         selection: Binding<Int>,
@@ -160,12 +109,9 @@ struct SidebarView: View {
             }
             .font(.system(size: 15, weight: .medium))
             .foregroundStyle(Palette.parchment)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 8)
             .frame(maxWidth: .infinity, minHeight: 36, alignment: .leading)
-            .background(Palette.inkLift, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.bordered)
         .frame(maxWidth: .infinity)
         #else
         Picker(title, selection: selection) {
@@ -175,9 +121,6 @@ struct SidebarView: View {
         .labelsHidden()
         .tint(Palette.parchment)
         .frame(maxWidth: .infinity)
-        .padding(.horizontal, 8)
-        .padding(.vertical, 6)
-        .background(Palette.inkLift, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
         #endif
     }
 
@@ -214,14 +157,14 @@ struct SidebarView: View {
             Button("Open Timeline.json") {
                 importerPresented = true
             }
-            .buttonStyle(.borderedProminent)
+            .timelineGlassButton(prominent: true)
             .tint(Palette.water)
             .accessibilityIdentifier("open-timeline-empty")
             #if os(macOS)
             Button("Open Downloads/Timeline.json") {
                 store.tryOpenDownloadsExample()
             }
-            .buttonStyle(.plain)
+            .timelineGlassButton()
             .foregroundStyle(Palette.parchment.opacity(0.85))
             #endif
             if let error = store.loadError {
@@ -297,6 +240,7 @@ struct SidebarView: View {
         }
         .listStyle(.sidebar)
         .scrollContentBackground(.hidden)
+        .searchable(text: Bindable(store).search, prompt: "Find a place")
         .onChange(of: store.selectedPlaceID) { _, _ in
             store.handlePlaceSelectionChange()
         }
@@ -309,7 +253,7 @@ struct SidebarView: View {
 
     private func rowBackground(isSelected: Bool) -> some View {
         RoundedRectangle(cornerRadius: 8, style: .continuous)
-            .fill(isSelected ? Palette.inkLift : Color.clear)
+            .fill(isSelected ? Palette.parchment.opacity(0.14) : Color.clear)
             .padding(.vertical, 1)
     }
 }

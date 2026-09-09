@@ -40,10 +40,6 @@ struct MapCanvasView: View {
                     .padding(.bottom, 8)
             }
         }
-        .background(Palette.ink.ignoresSafeArea())
-        #else
-        .background(Palette.ink)
-        .ignoresSafeArea(.container, edges: .top)
         #endif
     }
 
@@ -59,7 +55,7 @@ struct MapCanvasView: View {
                 .buttonStyle(.plain)
                 .accessibilityLabel("Back to list")
                 .accessibilityIdentifier("back-to-list")
-                .chromePlate()
+                .mapGlassChip()
             }
 
             if let day = store.selectedDay {
@@ -78,7 +74,7 @@ struct MapCanvasView: View {
                 .buttonStyle(.plain)
                 .accessibilityHint("Recentre the map on this day")
                 .accessibilityIdentifier("selected-day-title")
-                .chromePlate()
+                .mapGlassChip()
 
                 HStack(spacing: 0) {
                     Button {
@@ -109,7 +105,7 @@ struct MapCanvasView: View {
                     .opacity(store.canStepToNewerDay ? 1 : 0.28)
                     .accessibilityLabel("Next day")
                 }
-                .chromePlate()
+                .mapGlassChip()
             } else if let place = store.selectedPlace {
                 Button {
                     store.focus(place: place)
@@ -124,17 +120,18 @@ struct MapCanvasView: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityHint("Recentre the map on this place")
-                .chromePlate()
+                .mapGlassChip()
             } else {
                 Spacer()
             }
         }
+        .glassCluster(spacing: 8)
         .padding(.horizontal, 12)
         .padding(.top, 8)
         .foregroundStyle(Palette.parchment)
         .background(alignment: .top) {
             LinearGradient(
-                colors: [Palette.ink.opacity(0.75), Palette.ink.opacity(0)],
+                colors: [Color.black.opacity(0.28), Color.clear],
                 startPoint: .top,
                 endPoint: .bottom
             )
@@ -155,7 +152,6 @@ struct MapCanvasView: View {
                 .foregroundStyle(Palette.parchment)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Palette.ink.opacity(0.35))
         .allowsHitTesting(false)
     }
 }
@@ -709,10 +705,7 @@ struct SelectionCard: View {
         .padding(16)
         #if os(iOS)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Palette.inkLift, in: Self.legendShape)
-        .overlay(Self.legendShape.stroke(Palette.parchment.opacity(0.12), lineWidth: 1))
-        .compositingGroup()
-        .shadow(color: .black.opacity(0.4), radius: 12, y: 6)
+        .mapGlassCard()
         .offset(y: Self.iosOpenBodyHeight * (1 - sheetExpansion))
         .animation(nil, value: drag)
         .onAppear { publishCoverage() }
@@ -721,15 +714,11 @@ struct SelectionCard: View {
         .onDisappear { store.legendCoverage = 0 }
         #else
         .frame(maxWidth: 320, alignment: .leading)
-        .background(.ultraThinMaterial, in: Self.legendShape)
-        .overlay(Self.legendShape.stroke(Palette.parchment.opacity(0.12), lineWidth: 1))
-        .shadow(color: .black.opacity(0.25), radius: 18, y: 8)
+        .mapGlassCard()
         #endif
         .foregroundStyle(Palette.parchment)
         .onDisappear { store.hoveredVisitID = nil }
     }
-
-    private static let legendShape = RoundedRectangle(cornerRadius: 16, style: .continuous)
 
     #if os(iOS)
     private static let iosOpenBodyHeight: CGFloat = 280

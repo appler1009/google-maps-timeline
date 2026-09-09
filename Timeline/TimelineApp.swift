@@ -10,8 +10,7 @@ struct TimelineApp: App {
                 #endif
         }
         #if os(macOS)
-        .windowStyle(.hiddenTitleBar)
-        .windowToolbarStyle(.unifiedCompact(showsTitle: false))
+        .windowToolbarStyle(.unified)
         .defaultSize(width: 1280, height: 820)
         .defaultPosition(.center)
         .commands {
