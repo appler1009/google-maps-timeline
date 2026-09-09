@@ -2,8 +2,10 @@ import SwiftUI
 import MapKit
 #if os(iOS)
 import UIKit
+private typealias PlatformColor = UIColor
 #else
 import AppKit
+private typealias PlatformColor = NSColor
 #endif
 
 class KindPolyline: MKPolyline {
