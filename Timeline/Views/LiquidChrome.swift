@@ -1,9 +1,42 @@
 import SwiftUI
 
+/// Pin labels sit in an MKAnnotation hosting view, so Liquid Glass cannot sample
+/// the map underneath. Use alpha fills so the tiles actually show through.
+private struct MapPinLabelChipModifier: ViewModifier {
+    var cornerRadius: CGFloat
+
+    func body(content: Content) -> some View {
+        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+        content
+            .background {
+                ZStack {
+                    shape.fill(Palette.ink.opacity(0.42))
+                    shape.fill(
+                        LinearGradient(
+                            colors: [
+                                Palette.parchment.opacity(0.14),
+                                Palette.ink.opacity(0.08),
+                            ],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
+                }
+            }
+            .overlay(shape.stroke(Palette.parchment.opacity(0.38), lineWidth: 1))
+            .shadow(color: .black.opacity(0.35), radius: 5, y: 2)
+    }
+}
+
 extension View {
     /// Small floating chip over the map (back, title, day stepper).
     func mapGlassChip(cornerRadius: CGFloat = 10) -> some View {
         modifier(MapGlassChipModifier(cornerRadius: cornerRadius))
+    }
+
+    /// Denser chip for map pin name labels — readable over satellite tiles.
+    func mapPinLabelChip(cornerRadius: CGFloat = 12) -> some View {
+        modifier(MapPinLabelChipModifier(cornerRadius: cornerRadius))
     }
 
     /// Larger floating surface (day/place legend).
@@ -72,10 +105,11 @@ struct MapVisitPinChrome: View {
                 Text(resolvedTitle)
                     .font(.system(size: 13, weight: .semibold, design: .serif))
                     .foregroundStyle(Palette.parchment)
+                    .shadow(color: .black.opacity(0.65), radius: 1.5, y: 0.5)
                     .lineLimit(1)
                     .padding(.horizontal, 11)
                     .padding(.vertical, 6)
-                    .mapGlassChip(cornerRadius: 12)
+                    .mapPinLabelChip(cornerRadius: 12)
             }
         }
         .fixedSize()

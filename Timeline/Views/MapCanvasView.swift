@@ -581,6 +581,15 @@ private final class VisitMarkerView: MKAnnotationView, VisitMarkerTitleUpdating 
         displayPriority = .required
         collisionMode = .none
         canShowCallout = false
+        // Match iOS: without a clear host, alpha label fills composite onto an
+        // opaque NSHostingView backdrop and look solid over the map.
+        wantsLayer = true
+        layer?.backgroundColor = .clear
+        hosting.wantsLayer = true
+        hosting.layer?.backgroundColor = .clear
+        if #available(macOS 14.0, *) {
+            hosting.sizingOptions = [.intrinsicContentSize]
+        }
         hosting.frame = .zero
         addSubview(hosting)
         bounds.size = CGSize(width: MapVisitPinChrome.pinSpan, height: MapVisitPinChrome.pinSpan)
