@@ -479,8 +479,19 @@ private final class VisitMarkerView: MKAnnotationView, VisitMarkerTitleUpdating 
         collisionMode = .none
         canShowCallout = false
         clipsToBounds = false
+        // Safe-area insets on the hosting view push the pin down inside the
+        // annotation bounds; centerOffset then anchors the wrong point, so marks
+        // drift south when zoomed out (macOS NSHostingView has no safe area).
+        if #available(iOS 16.4, *) {
+            hostingController.safeAreaRegions = []
+        }
+        hostingController.sizingOptions = [.intrinsicContentSize]
         hostingController.view.backgroundColor = .clear
+        hostingController.view.isOpaque = false
         hostingController.view.isUserInteractionEnabled = false
+        hostingController.view.insetsLayoutMarginsFromSafeArea = false
+        hostingController.view.preservesSuperviewLayoutMargins = false
+        hostingController.view.layoutMargins = .zero
         addSubview(hostingController.view)
         bounds.size = CGSize(width: MapVisitPinChrome.pinSpan, height: MapVisitPinChrome.pinSpan)
     }
@@ -501,6 +512,7 @@ private final class VisitMarkerView: MKAnnotationView, VisitMarkerTitleUpdating 
             accessibilityValue = nil
         }
         hostingController.rootView = MapVisitPinChrome(title: annotation?.title, semantic: annotation?.semantic)
+        hostingController.view.invalidateIntrinsicContentSize()
         setNeedsLayout()
     }
 
@@ -510,8 +522,15 @@ private final class VisitMarkerView: MKAnnotationView, VisitMarkerTitleUpdating 
         let width = max(MapVisitPinChrome.pinSpan, size.width)
         let height = max(MapVisitPinChrome.pinSpan, size.height)
         bounds.size = CGSize(width: width, height: height)
-        hostingController.view.frame = bounds
-        // Keep the glass pin centered on the coordinate; label hangs below.
+        // Top-align the chrome so the pin sits at the top of the annotation view.
+        hostingController.view.frame = CGRect(
+            x: (width - size.width) / 2,
+            y: 0,
+            width: size.width,
+            height: size.height
+        )
+        // Positive y moves the view down; shift so the pin center (not the
+        // label-inclusive view center) stays on the coordinate.
         centerOffset = CGPoint(x: 0, y: height / 2 - MapVisitPinChrome.pinSpan / 2)
     }
 }
