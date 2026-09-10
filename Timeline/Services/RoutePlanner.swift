@@ -11,6 +11,10 @@ enum RoutePlanner {
             }
             return hops
         }
+        // One geocoded place for the day — don't invent loops from activity noise.
+        if spots.count == 1 {
+            return []
+        }
         let lines = day.activityLines.filter { $0.until > $0.at }.sorted { $0.at < $1.at }
         if !lines.isEmpty {
             return lines.map { line in
@@ -22,11 +26,12 @@ enum RoutePlanner {
         }
     }
 
-    /// Consecutive stays at the same pin collapse so hops run stay-to-stay.
+    /// Consecutive same-place (or <50m) stays collapse so hops run place-to-place.
     static func collapsedSpots(_ visits: [TimelineVisit]) -> [(TimelineVisit, CLLocationCoordinate2D)] {
         var spots: [(TimelineVisit, CLLocationCoordinate2D)] = []
-        for visit in visits {
-            guard let coordinate = visit.coordinate else { continue }
+        for run in PlaceVisitRun.coalesced(from: visits) {
+            guard let visit = run.visits.last(where: { $0.coordinate != nil }),
+                  let coordinate = visit.coordinate else { continue }
             if let last = spots.last, meters(last.1, coordinate) < 50 {
                 spots[spots.count - 1] = (visit, coordinate)
                 continue
@@ -41,7 +46,7 @@ enum RoutePlanner {
         to: (TimelineVisit, CLLocationCoordinate2D),
         activities: [ActivityLine]
     ) -> [(id: String, points: [CLLocationCoordinate2D], kind: TravelKind, at: Date, until: Date)] {
-        if meters(from.1, to.1) < 40 {
+        if from.0.placeKey == to.0.placeKey || meters(from.1, to.1) < 40 {
             return []
         }
         let gapStart = from.0.end

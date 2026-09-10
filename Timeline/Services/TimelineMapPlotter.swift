@@ -32,8 +32,10 @@ enum TimelineMapPlotter {
     ) {
         if let day {
             addDayPaths(map: map, routed: routed)
-            for visit in day.visits {
-                guard let coordinate = visit.coordinate else { continue }
+            // One pin per consecutive same-place run (matches day-legend folding).
+            for run in PlaceVisitRun.coalesced(from: day.visits) {
+                guard let visit = run.visits.first(where: { $0.coordinate != nil }),
+                      let coordinate = visit.coordinate else { continue }
                 map.addAnnotation(pin(visit: visit, coordinate: coordinate, titles: titles))
             }
         } else if let place, let coordinate = place.coordinate {

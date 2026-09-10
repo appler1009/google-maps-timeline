@@ -166,8 +166,9 @@ private struct UITestMapPins: View {
             Text("\(routeCount) routes")
                 .accessibilityIdentifier("map-route-count")
             if let day {
-                ForEach(day.visits) { visit in
-                    if let coordinate = visit.coordinate {
+                ForEach(PlaceVisitRun.coalesced(from: day.visits)) { run in
+                    if let visit = run.visits.first(where: { $0.coordinate != nil }),
+                       let coordinate = visit.coordinate {
                         Text(Self.coordinateID(coordinate))
                             .accessibilityIdentifier(Self.coordinateID(coordinate))
                             .accessibilityLabel(TimelineParser.semanticTitle(visit.semanticType) ?? "Place")
@@ -859,7 +860,7 @@ struct SelectionCard: View {
 
     @ViewBuilder
     private func dayVisits(_ day: DayRecord) -> some View {
-        let groups = Self.coalescedPlaceRuns(day.visits)
+        let groups = PlaceVisitRun.coalesced(from: day.visits)
         let rows = ForEach(groups) { group in
             let visit = group.representative
             legendRow(
@@ -901,26 +902,6 @@ struct SelectionCard: View {
             if !hovering { store.hoveredVisitID = nil }
         }
         #endif
-    }
-
-    /// View-only: fold consecutive visits that share a place into one legend row.
-    private static func coalescedPlaceRuns(_ visits: [TimelineVisit]) -> [LegendPlaceRun] {
-        // Stable order so equal-start duplicates stay adjacent for folding.
-        let ordered = visits.sorted {
-            if $0.start != $1.start { return $0.start < $1.start }
-            if $0.end != $1.end { return $0.end < $1.end }
-            return $0.placeKey < $1.placeKey
-        }
-        var runs: [LegendPlaceRun] = []
-        for visit in ordered {
-            if var last = runs.last, last.placeKey == visit.placeKey {
-                last.visits.append(visit)
-                runs[runs.count - 1] = last
-            } else {
-                runs.append(LegendPlaceRun(visits: [visit]))
-            }
-        }
-        return runs
     }
 
     @ViewBuilder
@@ -1046,37 +1027,6 @@ struct SelectionCard: View {
         let rem = minutes % 60
         if rem == 0 { return "\(hours)h" }
         return "\(hours)h \(rem)m"
-    }
-}
-
-/// Consecutive same-place visits shown as one day-legend row (view-only).
-private struct LegendPlaceRun: Identifiable {
-    var visits: [TimelineVisit]
-
-    var id: String { visits.first?.id ?? UUID().uuidString }
-    var placeKey: String { visits[0].placeKey }
-    var representative: TimelineVisit { visits[0] }
-
-    /// Union of stay intervals so duplicate/overlapping segments aren’t double-counted.
-    var totalDuration: TimeInterval {
-        let ordered = visits.sorted {
-            if $0.start != $1.start { return $0.start < $1.start }
-            return $0.end < $1.end
-        }
-        var total: TimeInterval = 0
-        var coveredThrough: Date?
-        for visit in ordered {
-            if let covered = coveredThrough, visit.start < covered {
-                if visit.end > covered {
-                    total += visit.end.timeIntervalSince(covered)
-                    coveredThrough = visit.end
-                }
-            } else {
-                total += max(visit.duration, 0)
-                coveredThrough = visit.end
-            }
-        }
-        return total
     }
 }
 

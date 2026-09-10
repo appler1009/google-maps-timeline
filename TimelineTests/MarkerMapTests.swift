@@ -71,6 +71,51 @@ final class MarkerMapTests: XCTestCase {
         XCTAssertEqual(lines[0].kind, .automobile)
     }
 
+    func testDayPlotFoldsConsecutiveSamePlacePins() {
+        let start = Date(timeIntervalSince1970: 1_718_445_600)
+        let home1 = TimelineVisit(
+            id: "a",
+            start: start,
+            end: start.addingTimeInterval(600),
+            coordinate: Landmark.eiffelTower,
+            semanticType: "Home",
+            placeKey: "home"
+        )
+        let home2 = TimelineVisit(
+            id: "b",
+            start: start.addingTimeInterval(700),
+            end: start.addingTimeInterval(1_200),
+            coordinate: Landmark.eiffelTower,
+            semanticType: "Home",
+            placeKey: "home"
+        )
+        let work = TimelineVisit(
+            id: "c",
+            start: start.addingTimeInterval(1_300),
+            end: start.addingTimeInterval(1_800),
+            coordinate: Landmark.louvrePyramid,
+            semanticType: "Work",
+            placeKey: "work"
+        )
+        let day = DayRecord(
+            day: Calendar.current.startOfDay(for: start),
+            visits: [home1, home2, work],
+            paths: [],
+            activityLines: [],
+            travelMeters: 3_000,
+            region: MKCoordinateRegion(
+                center: Landmark.eiffelTower,
+                span: MKCoordinateSpan(latitudeDelta: 0.05, longitudeDelta: 0.05)
+            )
+        )
+        let map = MKMapView(frame: CGRect(x: 0, y: 0, width: 390, height: 844))
+        TimelineMapPlotter.install(on: map, day: day, place: nil, routed: [])
+        let pins = map.annotations.compactMap { $0 as? VisitAnnotation }
+        XCTAssertEqual(pins.count, 2)
+        XCTAssertEqual(Set(pins.compactMap(\.placeKey)), Set(["home", "work"]))
+        XCTAssertEqual(pins.first { $0.placeKey == "home" }?.visitID, "a")
+    }
+
     func testPlacePlotUsesLouvreCoordinate() throws {
         let parsed = try TimelineParser.parse(data: Data(contentsOf: bundledFixture()), sourceName: "fixture")
         let work = try XCTUnwrap(parsed.places.first { $0.semanticType == "Work" })
