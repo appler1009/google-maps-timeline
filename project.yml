@@ -19,6 +19,8 @@ settings:
 packages:
   LogShip:
     path: Vendor/LogShip
+  LuxShared:
+    path: Vendor/LuxShared
 targets:
   Timeline:
     type: application
@@ -33,6 +35,7 @@ targets:
     dependencies:
       - sdk: libsqlite3.tbd
       - package: LogShip
+      - package: LuxShared
     configFiles:
       Debug: Config/Version.xcconfig
       Release: Config/Version.xcconfig
@@ -76,7 +79,9 @@ targets:
         UILaunchScreen: {}
         NSDownloadsFolderUsageDescription: Timeline reads a Timeline.json export from Downloads when you open it.
         NSDocumentsFolderUsageDescription: Timeline opens a Google Maps Timeline JSON export that you choose.
-        NSLocalNetworkUsageDescription: Timeline ships diagnostic logs to LogDock on your Mac when debugging.
+        NSLocalNetworkUsageDescription: Timeline connects to Lux on your Mac to match photos with visits, and may ship diagnostic logs to LogDock when debugging.
+        NSBonjourServices:
+          - _lux-library._tcp
         NSAppTransportSecurity:
           NSAllowsLocalNetworking: true
         LSSupportsOpeningDocumentsInPlace: true

@@ -7,13 +7,11 @@ struct TimelineApp: App {
     }
 
     var body: some Scene {
+        #if os(macOS)
         WindowGroup {
             TimelineAppScene()
-                #if os(macOS)
                 .frame(minWidth: 980, minHeight: 640)
-                #endif
         }
-        #if os(macOS)
         .windowToolbarStyle(.unified)
         .defaultSize(width: 1280, height: 820)
         .defaultPosition(.center)
@@ -24,6 +22,18 @@ struct TimelineApp: App {
                 }
                 .keyboardShortcut("o", modifiers: [.command])
             }
+            CommandGroup(after: .newItem) {
+                Button("Lux Photos…") {
+                    NSLog("[Timeline] lux photos menu command")
+                    TimelineLog.info("lux photos menu tapped")
+                    NotificationCenter.default.post(name: .luxPhotosSettingsRequested, object: nil)
+                }
+                .keyboardShortcut("l", modifiers: [.command, .shift])
+            }
+        }
+        #else
+        WindowGroup {
+            TimelineAppScene()
         }
         #endif
     }
@@ -31,4 +41,5 @@ struct TimelineApp: App {
 
 extension Notification.Name {
     static let openTimelineRequested = Notification.Name("openTimelineRequested")
+    static let luxPhotosSettingsRequested = Notification.Name("luxPhotosSettingsRequested")
 }
