@@ -59,10 +59,10 @@ final class LuxPhotoLink {
     /// Instant reopen: last successful strip set per day + linked libraries.
     private var dayStripCache: [String: [String: [LuxVisitPhoto]]] = [:]
     private static let defaultsKey = "lux.paired.session"
-    private static let dayStripDefaultsPrefix = "lux.dayStrip.v6."
-    /// Query / assign radius — large enough for airports & campuses; exclusive nearest-visit keeps neighbors clean.
-    private nonisolated static let defaultRadiusMeters: Double = 800
-    private nonisolated static let assignRadiusMeters: Double = 800
+    private static let dayStripDefaultsPrefix = "lux.dayStrip.v7."
+    /// Query / assign radius — large enough for airports & campuses; time window + exclusive nearest-visit keep neighbors clean.
+    private nonisolated static let defaultRadiusMeters: Double = 1600
+    private nonisolated static let assignRadiusMeters: Double = 1600
     /// Pad stays so arrival/departure shots still attach (airports especially).
     private nonisolated static let timePadSeconds: TimeInterval = 30 * 60
     private nonisolated static let maxPhotosPerVisit = 24
