@@ -4,6 +4,49 @@ import MapKit
 import UIKit
 import QuartzCore
 
+/// Holds space in the SwiftUI hierarchy and only mounts `MKMapView` once layout has a
+/// non-empty size. Creating MapKit at 0×0 trips Debug Metal validation fatally.
+final class TimelineMapHostView: UIView {
+    private(set) var mapView: MKMapView?
+    var onMapReady: ((MKMapView) -> Void)?
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        backgroundColor = .black
+        isOpaque = true
+        clipsToBounds = true
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        guard bounds.width >= 2, bounds.height >= 2 else {
+            mapView?.isHidden = true
+            return
+        }
+        if mapView == nil {
+            let map = MKMapView(frame: bounds)
+            map.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+            map.isPitchEnabled = false
+            map.isRotateEnabled = false
+            map.showsCompass = true
+            map.showsScale = false
+            map.overrideUserInterfaceStyle = .dark
+            TimelineMapChrome.apply(to: map)
+            addSubview(map)
+            mapView = map
+            onMapReady?(map)
+            TimelineLog.debug("ios map mounted", ["w": "\(Int(bounds.width))", "h": "\(Int(bounds.height))"])
+        }
+        mapView?.frame = bounds
+        mapView?.isHidden = false
+    }
+}
+
 struct TimelineKitMap: UIViewRepresentable {
     var generation: UInt64
     var region: MKCoordinateRegion
@@ -29,24 +72,16 @@ struct TimelineKitMap: UIViewRepresentable {
 
     /// Clearance below the safe area for the day title / day-step chrome.
     private static let topChromeClearance: CGFloat = 56
+    private static let scaleTag = 917_001
 
-    func makeUIView(context: Context) -> MKMapView {
-        // Non-empty initial frame avoids a 0×0 Metal drawable during the first layout pass.
-        let map = MKMapView(frame: CGRect(x: 0, y: 0, width: 1, height: 1))
-        map.delegate = context.coordinator
-        map.isPitchEnabled = false
-        map.isRotateEnabled = false
-        map.showsCompass = true
-        // Built-in scale pins top-leading under the day chrome; place our own below it.
-        map.showsScale = false
-        map.overrideUserInterfaceStyle = .dark
-        TimelineMapChrome.apply(to: map)
-        Self.installScale(on: map)
-        return map
+    func makeUIView(context: Context) -> TimelineMapHostView {
+        TimelineMapHostView()
     }
 
     private static func installScale(on map: MKMapView) {
+        guard map.viewWithTag(Self.scaleTag) == nil else { return }
         let scale = MKScaleView(mapView: map)
+        scale.tag = Self.scaleTag
         scale.legendAlignment = .leading
         scale.scaleVisibility = .adaptive
         scale.translatesAutoresizingMaskIntoConstraints = false
@@ -58,26 +93,38 @@ struct TimelineKitMap: UIViewRepresentable {
         ])
     }
 
-    func updateUIView(_ map: MKMapView, context: Context) {
-        context.coordinator.sync(
-            map: map,
-            generation: generation,
-            region: region,
-            animated: animated,
-            dayID: dayID,
-            placeID: placeID,
-            hoverID: hoverID,
-            day: day,
-            place: place,
-            hovered: hovered,
-            routed: routed,
-            routeGeneration: routeGeneration,
-            visitFocusID: visitFocusID,
-            placeNameGeneration: placeNameGeneration,
-            annotationTitles: annotationTitles,
-            onSelectVisit: onSelectVisit,
-            legendCoverage: legendCoverage
-        )
+    func updateUIView(_ host: TimelineMapHostView, context: Context) {
+        let apply: (MKMapView) -> Void = { map in
+            if map.delegate !== context.coordinator {
+                map.delegate = context.coordinator
+                Self.installScale(on: map)
+            }
+            guard map.bounds.width >= 2, map.bounds.height >= 2 else { return }
+            context.coordinator.sync(
+                map: map,
+                generation: generation,
+                region: region,
+                animated: animated,
+                dayID: dayID,
+                placeID: placeID,
+                hoverID: hoverID,
+                day: day,
+                place: place,
+                hovered: hovered,
+                routed: routed,
+                routeGeneration: routeGeneration,
+                visitFocusID: visitFocusID,
+                placeNameGeneration: placeNameGeneration,
+                annotationTitles: annotationTitles,
+                onSelectVisit: onSelectVisit,
+                legendCoverage: legendCoverage
+            )
+        }
+        if let map = host.mapView {
+            apply(map)
+        } else {
+            host.onMapReady = apply
+        }
     }
 
     final class Coordinator: NSObject, MKMapViewDelegate {
@@ -128,6 +175,7 @@ struct TimelineKitMap: UIViewRepresentable {
             onSelectVisit: @escaping (String) -> Void,
             legendCoverage: CGFloat
         ) {
+            guard map.bounds.width >= 2, map.bounds.height >= 2 else { return }
             self.onSelectVisit = onSelectVisit
             latestDay = day
             latestPlace = place
@@ -186,8 +234,10 @@ struct TimelineKitMap: UIViewRepresentable {
         }
 
         private func applyRegion(map: MKMapView, region: MKCoordinateRegion, animated: Bool) {
+            guard map.bounds.width >= 2, map.bounds.height >= 2 else { return }
             let apply = { [weak self] in
                 guard let self else { return }
+                guard map.bounds.width >= 2, map.bounds.height >= 2 else { return }
                 self.programmaticChanges += 1
                 map.setVisibleMapRect(
                     Self.mapRect(for: region),
