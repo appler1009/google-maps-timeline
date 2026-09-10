@@ -9,8 +9,13 @@
 /* Begin PBXBuildFile section */
 		0DF0BD019DFFBC79EDB55041 /* LiquidChrome.swift in Sources */ = {isa = PBXBuildFile; fileRef = 15F9427D76A38D8FFCE30323 /* LiquidChrome.swift */; };
 		10EA88841A4ED1F827A9CD4F /* Palette.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9E1B28FC5BF045913929FD4 /* Palette.swift */; };
+		1206EA7A74C5A49A16618591 /* LuxCompanionTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0FE6242695DDA947697A34B /* LuxCompanionTransport.swift */; };
 		18B9EA1106022C3C35237159 /* RouteSnapperTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 71B4F471B4A574BC0ABB38C6 /* RouteSnapperTests.swift */; };
+		1D8314A3B0A26F26DE99CCFE /* LuxPhotoLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F42083B6EA50D85B014CFA4 /* LuxPhotoLink.swift */; };
 		1EF12CF0AC955A2127C038B6 /* TimelineLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 42F77A3F26A639DA1D9B8472 /* TimelineLog.swift */; };
+		2F4D77765CE73711F545132A /* VisitPhotoStrip.swift in Sources */ = {isa = PBXBuildFile; fileRef = 19D6BC5356EA89FD2F53C904 /* VisitPhotoStrip.swift */; };
+		322C0C3A16299B0F506F72F8 /* LuxPhotoLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F42083B6EA50D85B014CFA4 /* LuxPhotoLink.swift */; };
+		38867026F11CB6844108148E /* LuxBonjourBrowser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6AD31226AF36728CA62510E2 /* LuxBonjourBrowser.swift */; };
 		39F8A3A67F10E9AB7E293028 /* libsqlite3.tbd in Frameworks */ = {isa = PBXBuildFile; fileRef = AAFD7CBAD5210FAA2FDF9FFA /* libsqlite3.tbd */; };
 		3A31336295B639ECB7DBE7DA /* PathOffset.swift in Sources */ = {isa = PBXBuildFile; fileRef = 76E0FA2861409381C0894F1F /* PathOffset.swift */; };
 		43AE5B25E3DCCC5819276DA1 /* MapDirectionsClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E2B0CEA1726213918DF87C9 /* MapDirectionsClient.swift */; };
@@ -36,28 +41,36 @@
 		6BA54EB7F242E8F11379361E /* PlaceIdentitySync.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4B262EA915626D212E4F5F5 /* PlaceIdentitySync.swift */; };
 		6DCB9C1145A01D9CFDD101B9 /* MarkerMapTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E0F49A8E7037AC3A6458AD93 /* MarkerMapTests.swift */; };
 		6FF2F358C44A36A7DC05B478 /* TimelineDatabase.swift in Sources */ = {isa = PBXBuildFile; fileRef = A6C2E6A823AF58F47F778B43 /* TimelineDatabase.swift */; };
+		74E4753A8141BD410C95C7DF /* LuxCompanionClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 779DB6859B7B0D720B7E4A39 /* LuxCompanionClient.swift */; };
 		7EE7764734BB4F10B52D60C8 /* MapCanvasView+iOS.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8EF9167F835586F0B2E5C8F5 /* MapCanvasView+iOS.swift */; };
 		7FE8672CD823E5AF443DE9FC /* PlaceRenameView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 75D604A7F0EBB14A8B11077A /* PlaceRenameView.swift */; };
 		886D2DB443AF6A8852FE2B57 /* TimelineParserTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E04A92A7BC968DEE2C1E98C7 /* TimelineParserTests.swift */; };
 		893BAC3E9EAA11C4E9636968 /* GeoTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F3D570FD3C06A7239A56A812 /* GeoTests.swift */; };
 		92296AD651C936956782CEE7 /* PlaceRenameView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 75D604A7F0EBB14A8B11077A /* PlaceRenameView.swift */; };
 		931622D8BC51D41E309E61BE /* RoutePlanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 76BAF0A4F92F29FA98081ADB /* RoutePlanner.swift */; };
+		95EA13D19A7AB0E40AC0B1A6 /* LuxShared in Frameworks */ = {isa = PBXBuildFile; productRef = 56441B4179519CBFCCD9DF5B /* LuxShared */; };
 		96B59CD15DADADC9520920A8 /* libsqlite3.tbd in Frameworks */ = {isa = PBXBuildFile; fileRef = AAFD7CBAD5210FAA2FDF9FFA /* libsqlite3.tbd */; };
 		975265C3134BEF3B20A68A69 /* TimelineLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 42F77A3F26A639DA1D9B8472 /* TimelineLog.swift */; };
+		97A25A42DD94B85B0BD1D5E3 /* LuxShared in Frameworks */ = {isa = PBXBuildFile; productRef = EDD341C2B15D99D8BBFBB92C /* LuxShared */; };
 		983E0828BD8950C6868F85C9 /* TimelineApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 27A603B8D2E85569C4F2AC40 /* TimelineApp.swift */; };
 		9885790E87229BE88B9C691B /* LogShip in Frameworks */ = {isa = PBXBuildFile; productRef = 4A622217CF4391B19D910D55 /* LogShip */; };
+		9AF8DE12329F94B1AC8322C0 /* LuxPhotosSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1752D9250320F1FA1FA6BC7C /* LuxPhotosSettingsView.swift */; };
 		A0FC3C8AB26379B2D2DEFE7C /* GeoTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F3D570FD3C06A7239A56A812 /* GeoTests.swift */; };
 		A12779692ABD1AF058D60516 /* MapCanvasView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C84392A4A35D3A0FF607D83 /* MapCanvasView.swift */; };
 		A1909CDF7C749AC78BBADA24 /* TimelineLaunch.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8DF68F06E1121E88E519C9BC /* TimelineLaunch.swift */; };
 		AB4BA78FE075A27C51398F99 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = F38FDE28A77697434B262F4C /* Assets.xcassets */; };
 		ACDB06C09F4926234980A27E /* TimelineLaunch.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8DF68F06E1121E88E519C9BC /* TimelineLaunch.swift */; };
 		AFFE5021B10D3A2EB4C0568F /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = F38FDE28A77697434B262F4C /* Assets.xcassets */; };
+		B0A875E3A9D778B59292C223 /* LuxCompanionTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0FE6242695DDA947697A34B /* LuxCompanionTransport.swift */; };
 		BB7C9FA0BF2D8C97366EC640 /* MarkersAndRoutesUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9B7B68A2C5A47F130B19C06 /* MarkersAndRoutesUITests.swift */; };
 		BC4C501347FBABBDEDEF86D0 /* LiquidChrome.swift in Sources */ = {isa = PBXBuildFile; fileRef = 15F9427D76A38D8FFCE30323 /* LiquidChrome.swift */; };
 		BE5A3265749B32A8E4661A68 /* MapCanvasView+iOS.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8EF9167F835586F0B2E5C8F5 /* MapCanvasView+iOS.swift */; };
 		BE71455F71F539A0E487FA4D /* Palette.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9E1B28FC5BF045913929FD4 /* Palette.swift */; };
+		C29BAA64427740392049CADD /* LuxBonjourBrowser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6AD31226AF36728CA62510E2 /* LuxBonjourBrowser.swift */; };
 		C36CFB977724E83B2402615A /* RoutePlannerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3743ECF459145619A53BAFE /* RoutePlannerTests.swift */; };
+		C4F0F27A97285AB6F9B96309 /* VisitPhotoStrip.swift in Sources */ = {isa = PBXBuildFile; fileRef = 19D6BC5356EA89FD2F53C904 /* VisitPhotoStrip.swift */; };
 		C7A96D4167ED6038915F5C02 /* TimelineParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 30475295489F71438FC87FC3 /* TimelineParser.swift */; };
+		CABFFAC7C90D44951185D163 /* LuxMediaCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = 48E08E788B756B80A0E3A664 /* LuxMediaCache.swift */; };
 		CD8E65BA7D7081416707C949 /* PlaceIdentitySync.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4B262EA915626D212E4F5F5 /* PlaceIdentitySync.swift */; };
 		D043A1DCB7AAD23D56E7DA4D /* TimelineStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 55715F8BD5815481AB80CCAE /* TimelineStore.swift */; };
 		D3FE925EC69D1014ADE3817B /* Landmark.swift in Sources */ = {isa = PBXBuildFile; fileRef = 89C557260FF448CAE3747FD8 /* Landmark.swift */; };
@@ -65,10 +78,13 @@
 		E2C517938A94BCFC60717CC9 /* PlaceNameSuggester.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A19F7BC9CF304A702197F76 /* PlaceNameSuggester.swift */; };
 		EE77B27F0E6DF16DDF11864E /* RouteSnapper.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD3B7EEBCFA7764518D9E18E /* RouteSnapper.swift */; };
 		F63AEA2289CFB6250D530B40 /* PlaceNameSuggester.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A19F7BC9CF304A702197F76 /* PlaceNameSuggester.swift */; };
+		F6C8B4F9899829F0BA97927E /* LuxCompanionClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 779DB6859B7B0D720B7E4A39 /* LuxCompanionClient.swift */; };
 		F6EB15E5E9A0246EE425675B /* TimelineAppScene.swift in Sources */ = {isa = PBXBuildFile; fileRef = 82ECD6098781D0E441C5CEE4 /* TimelineAppScene.swift */; };
 		F7982D38B7D6F507D5347CEB /* RoutePlanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 76BAF0A4F92F29FA98081ADB /* RoutePlanner.swift */; };
+		F8F80DA01C8AB4369112EDEF /* LuxPhotosSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1752D9250320F1FA1FA6BC7C /* LuxPhotosSettingsView.swift */; };
 		F97F40526F45D1595B0D0851 /* MapDirectionsClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E2B0CEA1726213918DF87C9 /* MapDirectionsClient.swift */; };
 		F9C703A7EFE5B97ADD61970B /* TimelineParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 30475295489F71438FC87FC3 /* TimelineParser.swift */; };
+		FBDE1E4B29520BDDD01E5AED /* LuxMediaCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = 48E08E788B756B80A0E3A664 /* LuxMediaCache.swift */; };
 		FC0A7F53D600B675C1DD07A5 /* RouteSnapperTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 71B4F471B4A574BC0ABB38C6 /* RouteSnapperTests.swift */; };
 		FDE6839E49CA511377389692 /* TimelineModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A498B0C8D72090AC4BAF657 /* TimelineModels.swift */; };
 /* End PBXBuildFile section */
@@ -106,27 +122,34 @@
 
 /* Begin PBXFileReference section */
 		15F9427D76A38D8FFCE30323 /* LiquidChrome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiquidChrome.swift; sourceTree = "<group>"; };
+		1752D9250320F1FA1FA6BC7C /* LuxPhotosSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LuxPhotosSettingsView.swift; sourceTree = "<group>"; };
+		19D6BC5356EA89FD2F53C904 /* VisitPhotoStrip.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VisitPhotoStrip.swift; sourceTree = "<group>"; };
 		27A603B8D2E85569C4F2AC40 /* TimelineApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimelineApp.swift; sourceTree = "<group>"; };
 		27DB2D73BEF1B63C8278F73E /* TimelineMacTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = TimelineMacTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		30475295489F71438FC87FC3 /* TimelineParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimelineParser.swift; sourceTree = "<group>"; };
 		3E8F64E885AEB7D4A4EEA4D4 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		42F77A3F26A639DA1D9B8472 /* TimelineLog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimelineLog.swift; sourceTree = "<group>"; };
+		48E08E788B756B80A0E3A664 /* LuxMediaCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LuxMediaCache.swift; sourceTree = "<group>"; };
 		4C84392A4A35D3A0FF607D83 /* MapCanvasView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MapCanvasView.swift; sourceTree = "<group>"; };
 		55715F8BD5815481AB80CCAE /* TimelineStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimelineStore.swift; sourceTree = "<group>"; };
 		5CA4D65EE9994C83850722CB /* Timeline.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Timeline.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		6A19F7BC9CF304A702197F76 /* PlaceNameSuggester.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaceNameSuggester.swift; sourceTree = "<group>"; };
 		6A498B0C8D72090AC4BAF657 /* TimelineModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimelineModels.swift; sourceTree = "<group>"; };
+		6AD31226AF36728CA62510E2 /* LuxBonjourBrowser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LuxBonjourBrowser.swift; sourceTree = "<group>"; };
 		6DA6D178D95EAD82BA6BC956 /* eiffel-tower-day.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "eiffel-tower-day.json"; sourceTree = "<group>"; };
 		71B4F471B4A574BC0ABB38C6 /* RouteSnapperTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RouteSnapperTests.swift; sourceTree = "<group>"; };
 		75D604A7F0EBB14A8B11077A /* PlaceRenameView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaceRenameView.swift; sourceTree = "<group>"; };
 		7656BF50DC1AE8BB6971F641 /* TimelineMapPlotter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimelineMapPlotter.swift; sourceTree = "<group>"; };
 		76BAF0A4F92F29FA98081ADB /* RoutePlanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RoutePlanner.swift; sourceTree = "<group>"; };
 		76E0FA2861409381C0894F1F /* PathOffset.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PathOffset.swift; sourceTree = "<group>"; };
+		779DB6859B7B0D720B7E4A39 /* LuxCompanionClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LuxCompanionClient.swift; sourceTree = "<group>"; };
 		82ECD6098781D0E441C5CEE4 /* TimelineAppScene.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimelineAppScene.swift; sourceTree = "<group>"; };
 		89C557260FF448CAE3747FD8 /* Landmark.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Landmark.swift; sourceTree = "<group>"; };
 		8DF68F06E1121E88E519C9BC /* TimelineLaunch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimelineLaunch.swift; sourceTree = "<group>"; };
 		8E2B0CEA1726213918DF87C9 /* MapDirectionsClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MapDirectionsClient.swift; sourceTree = "<group>"; };
 		8EF9167F835586F0B2E5C8F5 /* MapCanvasView+iOS.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MapCanvasView+iOS.swift"; sourceTree = "<group>"; };
+		8F42083B6EA50D85B014CFA4 /* LuxPhotoLink.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LuxPhotoLink.swift; sourceTree = "<group>"; };
+		8F98682C57BC32F76EC4E722 /* LuxShared */ = {isa = PBXFileReference; lastKnownFileType = folder; name = LuxShared; path = Vendor/LuxShared; sourceTree = SOURCE_ROOT; };
 		90632FA9D1FDE2C394D78D7E /* TimelineMacUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = TimelineMacUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		A6C2E6A823AF58F47F778B43 /* TimelineDatabase.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimelineDatabase.swift; sourceTree = "<group>"; };
 		A995DE7B2DF118DF18C41227 /* LogShip */ = {isa = PBXFileReference; lastKnownFileType = folder; name = LogShip; path = Vendor/LogShip; sourceTree = SOURCE_ROOT; };
@@ -134,6 +157,7 @@
 		AAFD7CBAD5210FAA2FDF9FFA /* libsqlite3.tbd */ = {isa = PBXFileReference; lastKnownFileType = "sourcecode.text-based-dylib-definition"; name = libsqlite3.tbd; path = usr/lib/libsqlite3.tbd; sourceTree = SDKROOT; };
 		AD3B7EEBCFA7764518D9E18E /* RouteSnapper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RouteSnapper.swift; sourceTree = "<group>"; };
 		AD4CF2C63079E56DFD6AFB4A /* TimelineUITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = TimelineUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		B0FE6242695DDA947697A34B /* LuxCompanionTransport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LuxCompanionTransport.swift; sourceTree = "<group>"; };
 		C3743ECF459145619A53BAFE /* RoutePlannerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RoutePlannerTests.swift; sourceTree = "<group>"; };
 		C4B262EA915626D212E4F5F5 /* PlaceIdentitySync.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaceIdentitySync.swift; sourceTree = "<group>"; };
 		C5F2A5746D23CC00A54DFE5F /* Timeline.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = Timeline.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -154,6 +178,7 @@
 			files = (
 				39F8A3A67F10E9AB7E293028 /* libsqlite3.tbd in Frameworks */,
 				576FD552B5785CCC31A57FA3 /* LogShip in Frameworks */,
+				95EA13D19A7AB0E40AC0B1A6 /* LuxShared in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -163,6 +188,7 @@
 			files = (
 				96B59CD15DADADC9520920A8 /* libsqlite3.tbd in Frameworks */,
 				9885790E87229BE88B9C691B /* LogShip in Frameworks */,
+				97A25A42DD94B85B0BD1D5E3 /* LuxShared in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -185,12 +211,14 @@
 			isa = PBXGroup;
 			children = (
 				15F9427D76A38D8FFCE30323 /* LiquidChrome.swift */,
+				1752D9250320F1FA1FA6BC7C /* LuxPhotosSettingsView.swift */,
 				4C84392A4A35D3A0FF607D83 /* MapCanvasView.swift */,
 				8EF9167F835586F0B2E5C8F5 /* MapCanvasView+iOS.swift */,
 				C9E1B28FC5BF045913929FD4 /* Palette.swift */,
 				75D604A7F0EBB14A8B11077A /* PlaceRenameView.swift */,
 				E27C0E12EC51D3A3D0B395AC /* SidebarView.swift */,
 				82ECD6098781D0E441C5CEE4 /* TimelineAppScene.swift */,
+				19D6BC5356EA89FD2F53C904 /* VisitPhotoStrip.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -237,6 +265,7 @@
 			isa = PBXGroup;
 			children = (
 				A995DE7B2DF118DF18C41227 /* LogShip */,
+				8F98682C57BC32F76EC4E722 /* LuxShared */,
 			);
 			name = Packages;
 			sourceTree = "<group>";
@@ -276,6 +305,7 @@
 				A6C2E6A823AF58F47F778B43 /* TimelineDatabase.swift */,
 				42F77A3F26A639DA1D9B8472 /* TimelineLog.swift */,
 				7656BF50DC1AE8BB6971F641 /* TimelineMapPlotter.swift */,
+				D7C70C1B74A5F58924D86183 /* Lux */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -293,6 +323,18 @@
 				0DE51C1230D53E8BFAB6C29B /* Views */,
 			);
 			path = Timeline;
+			sourceTree = "<group>";
+		};
+		D7C70C1B74A5F58924D86183 /* Lux */ = {
+			isa = PBXGroup;
+			children = (
+				6AD31226AF36728CA62510E2 /* LuxBonjourBrowser.swift */,
+				779DB6859B7B0D720B7E4A39 /* LuxCompanionClient.swift */,
+				B0FE6242695DDA947697A34B /* LuxCompanionTransport.swift */,
+				48E08E788B756B80A0E3A664 /* LuxMediaCache.swift */,
+				8F42083B6EA50D85B014CFA4 /* LuxPhotoLink.swift */,
+			);
+			path = Lux;
 			sourceTree = "<group>";
 		};
 		E79321B9FB9417613A18B037 /* Launch */ = {
@@ -365,6 +407,7 @@
 			name = Timeline_macOS;
 			packageProductDependencies = (
 				4A622217CF4391B19D910D55 /* LogShip */,
+				EDD341C2B15D99D8BBFBB92C /* LuxShared */,
 			);
 			productName = Timeline_macOS;
 			productReference = 5CA4D65EE9994C83850722CB /* Timeline.app */;
@@ -385,6 +428,7 @@
 			name = Timeline_iOS;
 			packageProductDependencies = (
 				6D9A07CFFF4C65ABB4682378 /* LogShip */,
+				56441B4179519CBFCCD9DF5B /* LuxShared */,
 			);
 			productName = Timeline_iOS;
 			productReference = C5F2A5746D23CC00A54DFE5F /* Timeline.app */;
@@ -470,6 +514,7 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				2D1B72C4D32D93E2849D31F7 /* XCLocalSwiftPackageReference "Vendor/LogShip" */,
+				8883256A042FF8B0EFC3B40D /* XCLocalSwiftPackageReference "Vendor/LuxShared" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 2CAD0800C2A5170A509B4CB6 /* Products */;
@@ -514,6 +559,12 @@
 			files = (
 				477A2CC104A37B7156AAB707 /* Landmark.swift in Sources */,
 				BC4C501347FBABBDEDEF86D0 /* LiquidChrome.swift in Sources */,
+				C29BAA64427740392049CADD /* LuxBonjourBrowser.swift in Sources */,
+				F6C8B4F9899829F0BA97927E /* LuxCompanionClient.swift in Sources */,
+				1206EA7A74C5A49A16618591 /* LuxCompanionTransport.swift in Sources */,
+				FBDE1E4B29520BDDD01E5AED /* LuxMediaCache.swift in Sources */,
+				322C0C3A16299B0F506F72F8 /* LuxPhotoLink.swift in Sources */,
+				F8F80DA01C8AB4369112EDEF /* LuxPhotosSettingsView.swift in Sources */,
 				7EE7764734BB4F10B52D60C8 /* MapCanvasView+iOS.swift in Sources */,
 				4FD3FDCDF9FF9D477C311B5F /* MapCanvasView.swift in Sources */,
 				43AE5B25E3DCCC5819276DA1 /* MapDirectionsClient.swift in Sources */,
@@ -534,6 +585,7 @@
 				440BDDFA36C5E534D7EA8F21 /* TimelineModels.swift in Sources */,
 				C7A96D4167ED6038915F5C02 /* TimelineParser.swift in Sources */,
 				D043A1DCB7AAD23D56E7DA4D /* TimelineStore.swift in Sources */,
+				2F4D77765CE73711F545132A /* VisitPhotoStrip.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -543,6 +595,12 @@
 			files = (
 				D3FE925EC69D1014ADE3817B /* Landmark.swift in Sources */,
 				0DF0BD019DFFBC79EDB55041 /* LiquidChrome.swift in Sources */,
+				38867026F11CB6844108148E /* LuxBonjourBrowser.swift in Sources */,
+				74E4753A8141BD410C95C7DF /* LuxCompanionClient.swift in Sources */,
+				B0A875E3A9D778B59292C223 /* LuxCompanionTransport.swift in Sources */,
+				CABFFAC7C90D44951185D163 /* LuxMediaCache.swift in Sources */,
+				1D8314A3B0A26F26DE99CCFE /* LuxPhotoLink.swift in Sources */,
+				9AF8DE12329F94B1AC8322C0 /* LuxPhotosSettingsView.swift in Sources */,
 				BE5A3265749B32A8E4661A68 /* MapCanvasView+iOS.swift in Sources */,
 				A12779692ABD1AF058D60516 /* MapCanvasView.swift in Sources */,
 				F97F40526F45D1595B0D0851 /* MapDirectionsClient.swift in Sources */,
@@ -563,6 +621,7 @@
 				FDE6839E49CA511377389692 /* TimelineModels.swift in Sources */,
 				F9C703A7EFE5B97ADD61970B /* TimelineParser.swift in Sources */,
 				5B404FEF0895D6CF64249ADF /* TimelineStore.swift in Sources */,
+				C4F0F27A97285AB6F9B96309 /* VisitPhotoStrip.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1136,6 +1195,10 @@
 			isa = XCLocalSwiftPackageReference;
 			relativePath = Vendor/LogShip;
 		};
+		8883256A042FF8B0EFC3B40D /* XCLocalSwiftPackageReference "Vendor/LuxShared" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Vendor/LuxShared;
+		};
 /* End XCLocalSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -1143,9 +1206,17 @@
 			isa = XCSwiftPackageProductDependency;
 			productName = LogShip;
 		};
+		56441B4179519CBFCCD9DF5B /* LuxShared */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = LuxShared;
+		};
 		6D9A07CFFF4C65ABB4682378 /* LogShip */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = LogShip;
+		};
+		EDD341C2B15D99D8BBFBB92C /* LuxShared */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = LuxShared;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

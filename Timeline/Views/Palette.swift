@@ -67,3 +67,15 @@ enum Palette {
         return Color(red: c.0, green: c.1, blue: c.2)
     }
 }
+
+/// Shared day-legend metrics so photo strips line up with place titles.
+enum LegendLayout {
+    static let rowHorizontalPadding: CGFloat = 6
+    static let dayTimeColumnWidth: CGFloat = 58
+    static let hStackSpacing: CGFloat = 8
+
+    /// Leading inset matching time column + gap before the title (no semantic-symbol gutter).
+    static var photoStripLeadingInset: CGFloat {
+        rowHorizontalPadding + dayTimeColumnWidth + hStackSpacing
+    }
+}

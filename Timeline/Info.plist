@@ -44,7 +44,11 @@
 	<key>NSDownloadsFolderUsageDescription</key>
 	<string>Timeline reads a Timeline.json export from Downloads when you open it.</string>
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>Timeline ships diagnostic logs to LogDock on your Mac when debugging.</string>
+	<string>Timeline connects to Lux on your Mac to match photos with visits, and may ship diagnostic logs to LogDock when debugging.</string>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_lux-library._tcp</string>
+	</array>
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsLocalNetworking</key>

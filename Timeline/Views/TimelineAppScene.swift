@@ -3,6 +3,7 @@ import SwiftUI
 struct TimelineAppScene: View {
     @State private var store = TimelineLaunch.isUITesting ? TimelineStore.uiTesting() : TimelineStore()
     @State private var importerPresented = false
+    @State private var luxSettingsPresented = false
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
     #if os(iOS)
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
@@ -28,11 +29,21 @@ struct TimelineAppScene: View {
                     store.loadError = error.localizedDescription
                 }
             }
+            .sheet(isPresented: $luxSettingsPresented) {
+                LuxPhotosSettingsView()
+                    #if os(macOS)
+                    .frame(width: 480, height: 560)
+                    #endif
+            }
             .onAppear {
+                TimelineLog.info("timeline scene appeared")
                 #if os(macOS)
                 NSApp.setActivationPolicy(.regular)
                 bringWindowOnscreen()
                 #endif
+                if !TimelineLaunch.isUITesting {
+                    LuxPhotoLink.shared.start()
+                }
                 Task { @MainActor in
                     await Task.yield()
                     if store.parsed == nil {
@@ -44,11 +55,23 @@ struct TimelineAppScene: View {
                     }
                 }
             }
+            .onChange(of: LuxPhotoLink.shared.browser.discovered.count) { _, count in
+                TimelineLog.info("lux bonjour hosts", ["count": "\(count)"])
+                guard !TimelineLaunch.isUITesting else { return }
+                Task { await LuxPhotoLink.shared.reconnectIfPossible() }
+            }
+            .onChange(of: luxSettingsPresented) { _, presented in
+                TimelineLog.info("lux settings presented changed", ["presented": "\(presented)"])
+            }
             .onOpenURL { url in
                 store.open(url: url)
             }
             .onReceive(NotificationCenter.default.publisher(for: .openTimelineRequested)) { _ in
                 importerPresented = true
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .luxPhotosSettingsRequested)) { _ in
+                TimelineLog.info("lux photos notification received")
+                presentLuxPhotos(source: "notification")
             }
             #if os(iOS)
             .onChange(of: store.mapRevealGeneration) { _, _ in
@@ -65,6 +88,13 @@ struct TimelineAppScene: View {
                 }
             }
             #endif
+    }
+
+    private func presentLuxPhotos(source: String) {
+        // NSLog so it shows in Console even when LogDock isn't configured yet.
+        NSLog("[Timeline] presentLuxPhotos source=%@", source)
+        TimelineLog.info("lux photos present requested", ["source": source])
+        luxSettingsPresented = true
     }
 
     @ViewBuilder
@@ -88,18 +118,6 @@ struct TimelineAppScene: View {
                 #if os(iOS)
                 .navigationBarTitleDisplayMode(.inline)
                 #endif
-                .toolbar {
-                    ToolbarItem(placement: .primaryAction) {
-                        Button {
-                            importerPresented = true
-                        } label: {
-                            Label("Open Timeline", systemImage: "folder")
-                        }
-                        .help("Open a Google Maps Timeline JSON export")
-                        .accessibilityLabel("Open Timeline")
-                        .accessibilityIdentifier("open-timeline")
-                    }
-                }
         } detail: {
             MapCanvasView()
                 #if os(iOS)
@@ -108,6 +126,31 @@ struct TimelineAppScene: View {
                 .timelineBackgroundExtension()
         }
         .navigationSplitViewStyle(.balanced)
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button {
+                    NSLog("[Timeline] lux photos toolbar button tapped")
+                    TimelineLog.info("lux photos toolbar tapped")
+                    presentLuxPhotos(source: "toolbar")
+                } label: {
+                    Label("Lux Photos", systemImage: "photo.on.rectangle")
+                }
+                .help("Link Lux libraries and match photos to visits")
+                .accessibilityLabel("Lux Photos")
+                .accessibilityIdentifier("lux-photos")
+            }
+            ToolbarItem(placement: .primaryAction) {
+                Button {
+                    TimelineLog.info("open timeline toolbar tapped")
+                    importerPresented = true
+                } label: {
+                    Label("Open Timeline", systemImage: "folder")
+                }
+                .help("Open a Google Maps Timeline JSON export")
+                .accessibilityLabel("Open Timeline")
+                .accessibilityIdentifier("open-timeline")
+            }
+        }
     }
 
     #if os(iOS)
@@ -120,6 +163,14 @@ struct TimelineAppScene: View {
                         .navigationBarTitleDisplayMode(.inline)
                         .toolbar(showingCompactMap ? .hidden : .automatic, for: .navigationBar)
                         .toolbar {
+                            ToolbarItem(placement: .topBarTrailing) {
+                                Button {
+                                    presentLuxPhotos(source: "compact-toolbar")
+                                } label: {
+                                    Label("Lux Photos", systemImage: "photo.on.rectangle")
+                                }
+                                .accessibilityLabel("Lux Photos")
+                            }
                             ToolbarItem(placement: .topBarTrailing) {
                                 Button {
                                     importerPresented = true

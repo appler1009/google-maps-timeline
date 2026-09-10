@@ -30,6 +30,14 @@ struct MapCanvasView: View {
                     .transition(.opacity)
             }
             #endif
+
+            LuxPhotoViewerOverlay()
+                .zIndex(100)
+        }
+        .onChange(of: store.selectedDayID) { _, _ in
+            // Paint cached strips before SelectionCard remounts its body.
+            LuxPhotoLink.shared.refreshPhotos(for: store.selectedDay)
+            LuxPhotoLink.shared.dismissViewer()
         }
         #if os(iOS)
         .overlay(alignment: .top) { iosTopChrome }
@@ -630,6 +638,7 @@ private final class VisitMarkerView: MKAnnotationView, VisitMarkerTitleUpdating 
 struct SelectionCard: View {
     @Environment(TimelineStore.self) private var store
     @State private var renamingPlaceID: String?
+    @Bindable private var lux = LuxPhotoLink.shared
     #if os(iOS)
     @State private var collapsed = true
     @State private var drag: CGFloat = 0
@@ -710,6 +719,16 @@ struct SelectionCard: View {
         .foregroundStyle(Palette.parchment)
         .onDisappear { store.hoveredVisitID = nil }
         .placeRenameSheet(placeID: $renamingPlaceID, store: store)
+        .onAppear { lux.refreshPhotos(for: store.selectedDay) }
+        .onChange(of: store.selectedDayID) { _, _ in
+            lux.refreshPhotos(for: store.selectedDay)
+        }
+        .onChange(of: lux.paired?.linkedLibraryIds) { _, _ in
+            lux.refreshPhotos(for: store.selectedDay)
+        }
+        .onChange(of: lux.isConnected) { _, connected in
+            if connected { lux.refreshPhotos(for: store.selectedDay) }
+        }
     }
 
     #if os(iOS)
@@ -866,15 +885,18 @@ struct SelectionCard: View {
         let groups = PlaceVisitRun.coalesced(from: day.visits)
         let rows = ForEach(groups) { group in
             let visit = group.representative
-            legendRow(
-                time: visit.start.formatted(date: .omitted, time: .shortened),
-                title: placeTitle(visit),
-                duration: Self.duration(group.totalDuration),
-                highlighted: group.visits.contains {
-                    $0.id == store.hoveredVisitID || $0.id == store.selectedVisitID
-                },
-                symbol: TimelineParser.symbolName(visit.semanticType)
-            )
+            VStack(alignment: .leading, spacing: 0) {
+                legendRow(
+                    time: visit.start.formatted(date: .omitted, time: .shortened),
+                    title: placeTitle(visit),
+                    duration: Self.duration(group.totalDuration),
+                    highlighted: group.visits.contains {
+                        $0.id == store.hoveredVisitID || $0.id == store.selectedVisitID
+                    },
+                    symbol: TimelineParser.symbolName(visit.semanticType)
+                )
+                VisitPhotoStrip(photos: lux.photosByVisitID[visit.id] ?? [])
+            }
             .onHover { hovering in
                 store.hoveredVisitID = hovering ? visit.id : nil
             }
@@ -977,11 +999,11 @@ struct SelectionCard: View {
     }
 
     private func legendRow(time: String, title: String?, duration: String, highlighted: Bool, symbol: String? = nil) -> some View {
-        HStack(alignment: .firstTextBaseline) {
+        HStack(alignment: .firstTextBaseline, spacing: LegendLayout.hStackSpacing) {
             Text(time)
                 .font(.system(size: 11, design: .monospaced))
                 .foregroundStyle(highlighted ? Palette.parchment : Self.secondary)
-                .frame(width: title == nil ? 120 : 58, alignment: .leading)
+                .frame(width: title == nil ? 120 : LegendLayout.dayTimeColumnWidth, alignment: .leading)
             if let symbol {
                 Image(systemName: symbol)
                     .font(.system(size: 10, weight: .semibold))
@@ -998,7 +1020,7 @@ struct SelectionCard: View {
                 .font(.system(size: 11))
                 .foregroundStyle(highlighted ? Palette.parchment : Self.secondary)
         }
-        .padding(.horizontal, 6)
+        .padding(.horizontal, LegendLayout.rowHorizontalPadding)
         .padding(.vertical, 5)
         .background(
             RoundedRectangle(cornerRadius: 6, style: .continuous)
