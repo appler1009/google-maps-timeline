@@ -48,11 +48,19 @@ struct MapCanvasView: View {
         }
         #if os(iOS)
         .overlay(alignment: .top) { iosTopChrome }
-        .overlay(alignment: .bottom) {
-            if store.activeDay != nil || store.activePlace != nil {
-                SelectionCard()
-                    .padding(.horizontal, 12)
-                    .padding(.bottom, 8)
+        .overlay {
+            GeometryReader { geo in
+                VStack(spacing: 0) {
+                    Spacer(minLength: 0)
+                    if store.activeDay != nil || store.activePlace != nil {
+                        SelectionCard(
+                            viewportHeight: geo.size.height,
+                            safeAreaTop: geo.safeAreaInsets.top
+                        )
+                        .padding(.horizontal, 12)
+                        .padding(.bottom, 8)
+                    }
+                }
             }
         }
         .fullScreenCover(isPresented: iosViewerPresented) {
@@ -665,6 +673,9 @@ struct SelectionCard: View {
     @State private var renamingPlaceID: String?
     @Bindable private var lux = LuxPhotoLink.shared
     #if os(iOS)
+    /// Full map canvas height — used to stretch the open sheet under the top chrome.
+    var viewportHeight: CGFloat = 0
+    var safeAreaTop: CGFloat = 0
     @State private var collapsed = true
     @State private var drag: CGFloat = 0
     @State private var headerHeight: CGFloat = 0
@@ -713,7 +724,10 @@ struct SelectionCard: View {
                     placeVisits(place)
                 }
             }
-            .frame(height: Self.iosOpenBodyHeight, alignment: .top)
+            // Grow/shrink height instead of offsetting a fixed tall card, so a near-full
+            // sheet does not leave an invisible hit target over the map when collapsed.
+            .frame(height: openBodyHeight * sheetExpansion, alignment: .top)
+            .clipped()
             .allowsHitTesting(sheetExpansion > 0.35)
             #else
             if let day = store.activeDay {
@@ -731,11 +745,12 @@ struct SelectionCard: View {
         #if os(iOS)
         .frame(maxWidth: .infinity, alignment: .leading)
         .mapGlassCard()
-        .offset(y: Self.iosOpenBodyHeight * (1 - sheetExpansion))
         .animation(nil, value: drag)
         .onAppear { publishCoverage() }
         .onChange(of: collapsed) { _, _ in publishCoverage() }
         .onChange(of: headerHeight) { _, _ in publishCoverage() }
+        .onChange(of: viewportHeight) { _, _ in publishCoverage() }
+        .onChange(of: safeAreaTop) { _, _ in publishCoverage() }
         .onDisappear { store.legendCoverage = 0 }
         #else
         .frame(maxWidth: 320, alignment: .leading)
@@ -760,19 +775,33 @@ struct SelectionCard: View {
     }
 
     #if os(iOS)
-    private static let iosOpenBodyHeight: CGFloat = 280
     private static let iosCardPadding: CGFloat = 16
     private static let iosCardSpacing: CGFloat = 10
+    /// Matches `iosTopChrome`: top pad + chip row + gap under the buttons.
+    private static let iosTopChromeBlock: CGFloat = 8 + 36 + 8
+    private static let iosBottomPad: CGFloat = 8
+    private static let iosMinBodyHeight: CGFloat = 220
+
+    /// Visit list height when fully open — fills the map up to under the date chrome.
+    private var openBodyHeight: CGFloat {
+        let header = headerHeight > 1 ? headerHeight : 56
+        let cardChrome = Self.iosCardPadding * 2 + header + Self.iosCardSpacing
+        let topChrome = safeAreaTop + Self.iosTopChromeBlock
+        let available = viewportHeight - topChrome - Self.iosBottomPad - cardChrome
+        guard viewportHeight > 1 else { return 280 }
+        return max(Self.iosMinBodyHeight, available)
+    }
+
     /// Distance from the bottom of the map to the top of the card, for the
     /// settled state only — the map must not chase the sheet mid-drag.
     private func publishCoverage() {
-        let body = collapsed ? 0 : Self.iosOpenBodyHeight
+        let body = collapsed ? 0 : openBodyHeight
         let visible = Self.iosCardPadding * 2 + headerHeight + Self.iosCardSpacing + body
         store.legendCoverage = visible + 8
     }
 
     private var sheetExpansion: CGFloat {
-        let range = Self.iosOpenBodyHeight
+        let range = max(openBodyHeight, 1)
         if collapsed {
             return min(1, max(0, -drag / range))
         }
