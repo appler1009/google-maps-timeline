@@ -96,7 +96,7 @@ struct MapCanvasView: View {
                 .buttonStyle(.plain)
                 .accessibilityLabel("Back to list")
                 .accessibilityIdentifier("back-to-list")
-                .mapGlassChip()
+                .mapGlassCard(cornerRadius: 10)
             }
 
             if let day = store.activeDay {
@@ -115,7 +115,7 @@ struct MapCanvasView: View {
                 .buttonStyle(.plain)
                 .accessibilityHint("Recentre the map on this day")
                 .accessibilityIdentifier("selected-day-title")
-                .mapGlassChip()
+                .mapGlassCard(cornerRadius: 10)
 
                 HStack(spacing: 0) {
                     Button {
@@ -146,7 +146,7 @@ struct MapCanvasView: View {
                     .opacity(store.canStepToNewerDay ? 1 : 0.28)
                     .accessibilityLabel("Next day")
                 }
-                .mapGlassChip()
+                .mapGlassCard(cornerRadius: 10)
             } else if let place = store.activePlace {
                 Button {
                     store.focus(place: place)
@@ -161,7 +161,7 @@ struct MapCanvasView: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityHint("Recentre the map on this place")
-                .mapGlassChip()
+                .mapGlassCard(cornerRadius: 10)
             } else {
                 Spacer()
             }
@@ -170,16 +170,6 @@ struct MapCanvasView: View {
         .padding(.horizontal, 12)
         .padding(.top, 8)
         .foregroundStyle(Palette.parchment)
-        .background(alignment: .top) {
-            LinearGradient(
-                colors: [Color.black.opacity(0.28), Color.clear],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-            .frame(height: 132)
-            .ignoresSafeArea(.container, edges: .top)
-            .allowsHitTesting(false)
-        }
     }
     #endif
 
@@ -676,7 +666,7 @@ struct SelectionCard: View {
     /// Full map canvas height — used to stretch the open sheet under the top chrome.
     var viewportHeight: CGFloat = 0
     var safeAreaTop: CGFloat = 0
-    @State private var collapsed = true
+    @State private var sheetTier: LegendSheetTier = .low
     @State private var drag: CGFloat = 0
     @State private var headerHeight: CGFloat = 0
     #endif
@@ -696,8 +686,8 @@ struct SelectionCard: View {
                             .foregroundStyle(Self.secondary)
                         Spacer(minLength: 8)
                         rerouteControl(for: day)
-                            .opacity(sheetExpansion)
-                            .allowsHitTesting(sheetExpansion > 0.35)
+                            .opacity(bodyReveal)
+                            .allowsHitTesting(bodyReveal > 0.35)
                     }
                 } else if let place = store.activePlace {
                     HStack(alignment: .center, spacing: 8) {
@@ -726,9 +716,9 @@ struct SelectionCard: View {
             }
             // Grow/shrink height instead of offsetting a fixed tall card, so a near-full
             // sheet does not leave an invisible hit target over the map when collapsed.
-            .frame(height: openBodyHeight * sheetExpansion, alignment: .top)
+            .frame(height: displayedBodyHeight, alignment: .top)
             .clipped()
-            .allowsHitTesting(sheetExpansion > 0.35)
+            .allowsHitTesting(bodyReveal > 0.35)
             #else
             if let day = store.activeDay {
                 dayHeader(day)
@@ -747,7 +737,7 @@ struct SelectionCard: View {
         .mapGlassCard()
         .animation(nil, value: drag)
         .onAppear { publishCoverage() }
-        .onChange(of: collapsed) { _, _ in publishCoverage() }
+        .onChange(of: sheetTier) { _, _ in publishCoverage() }
         .onChange(of: headerHeight) { _, _ in publishCoverage() }
         .onChange(of: viewportHeight) { _, _ in publishCoverage() }
         .onChange(of: safeAreaTop) { _, _ in publishCoverage() }
@@ -775,6 +765,12 @@ struct SelectionCard: View {
     }
 
     #if os(iOS)
+    private enum LegendSheetTier: Int, CaseIterable {
+        case low = 0
+        case medium = 1
+        case high = 2
+    }
+
     private static let iosCardPadding: CGFloat = 16
     private static let iosCardSpacing: CGFloat = 10
     /// Matches `iosTopChrome`: top pad + chip row + gap under the buttons.
@@ -782,8 +778,8 @@ struct SelectionCard: View {
     private static let iosBottomPad: CGFloat = 8
     private static let iosMinBodyHeight: CGFloat = 220
 
-    /// Visit list height when fully open — fills the map up to under the date chrome.
-    private var openBodyHeight: CGFloat {
+    /// Visit list height at the high tier — fills the map up to under the date chrome.
+    private var highBodyHeight: CGFloat {
         let header = headerHeight > 1 ? headerHeight : 56
         let cardChrome = Self.iosCardPadding * 2 + header + Self.iosCardSpacing
         let topChrome = safeAreaTop + Self.iosTopChromeBlock
@@ -792,20 +788,42 @@ struct SelectionCard: View {
         return max(Self.iosMinBodyHeight, available)
     }
 
+    /// Mid-map stop between peek and full.
+    private var mediumBodyHeight: CGFloat {
+        let high = highBodyHeight
+        return max(Self.iosMinBodyHeight, (high * 0.5).rounded())
+    }
+
+    private var settledBodyHeight: CGFloat {
+        switch sheetTier {
+        case .low: return 0
+        case .medium: return mediumBodyHeight
+        case .high: return highBodyHeight
+        }
+    }
+
+    private var displayedBodyHeight: CGFloat {
+        min(highBodyHeight, max(0, settledBodyHeight - drag))
+    }
+
+    private var bodyReveal: CGFloat {
+        displayedBodyHeight / max(mediumBodyHeight, 1)
+    }
+
     /// Distance from the bottom of the map to the top of the card, for the
     /// settled state only — the map must not chase the sheet mid-drag.
     private func publishCoverage() {
-        let body = collapsed ? 0 : openBodyHeight
-        let visible = Self.iosCardPadding * 2 + headerHeight + Self.iosCardSpacing + body
+        let visible = Self.iosCardPadding * 2 + headerHeight + Self.iosCardSpacing + settledBodyHeight
         store.legendCoverage = visible + 8
     }
 
-    private var sheetExpansion: CGFloat {
-        let range = max(openBodyHeight, 1)
-        if collapsed {
-            return min(1, max(0, -drag / range))
-        }
-        return min(1, max(0, 1 - max(0, drag) / range))
+    private func nearestTier(to height: CGFloat) -> LegendSheetTier {
+        let targets: [(LegendSheetTier, CGFloat)] = [
+            (.low, 0),
+            (.medium, mediumBodyHeight),
+            (.high, highBodyHeight),
+        ]
+        return targets.min(by: { abs($0.1 - height) < abs($1.1 - height) })?.0 ?? .low
     }
 
     private var grabber: some View {
@@ -814,14 +832,22 @@ struct SelectionCard: View {
             .frame(width: 36, height: 5)
             .frame(maxWidth: .infinity)
             .padding(.bottom, 2)
-            .accessibilityLabel(collapsed ? "Expand legend" : "Collapse legend")
+            .accessibilityLabel(grabberAccessibilityLabel)
             .accessibilityIdentifier("legend-grabber")
             .onTapGesture {
                 withAnimation(.spring(response: 0.34, dampingFraction: 0.86)) {
-                    collapsed.toggle()
+                    sheetTier = sheetTier == .high ? .low : LegendSheetTier(rawValue: sheetTier.rawValue + 1) ?? .high
                     drag = 0
                 }
             }
+    }
+
+    private var grabberAccessibilityLabel: String {
+        switch sheetTier {
+        case .low: return "Expand legend"
+        case .medium: return "Expand legend fully"
+        case .high: return "Collapse legend"
+        }
     }
 
     private var iosCardGesture: some Gesture {
@@ -841,14 +867,17 @@ struct SelectionCard: View {
                     store.stepDay(by: dx < 0 ? -1 : 1)
                     return
                 }
-                let collapse: Bool
-                if collapsed {
-                    collapse = predicted > -90 && sheetExpansion < 0.45
+                let projected = settledBodyHeight - predicted
+                let next: LegendSheetTier
+                if predicted < -140 {
+                    next = LegendSheetTier(rawValue: min(LegendSheetTier.high.rawValue, sheetTier.rawValue + 1)) ?? .high
+                } else if predicted > 140 {
+                    next = LegendSheetTier(rawValue: max(LegendSheetTier.low.rawValue, sheetTier.rawValue - 1)) ?? .low
                 } else {
-                    collapse = predicted > 90 || sheetExpansion < 0.55
+                    next = nearestTier(to: projected)
                 }
                 withAnimation(.spring(response: 0.34, dampingFraction: 0.86)) {
-                    collapsed = collapse
+                    sheetTier = next
                     drag = 0
                 }
             }
