@@ -57,8 +57,9 @@ actor TimelineDatabase {
 
     func loadBatch() throws -> TimelineBatch? {
         if try isEmpty() { return nil }
+        let merges = try loadPlaceMerges()
         return TimelineBatch(
-            visits: try loadVisits(),
+            visits: try loadVisits().map { Self.remapped($0, merges: merges) },
             activities: try loadActivities(),
             paths: try loadPaths()
         )
@@ -190,6 +191,131 @@ actor TimelineDatabase {
         }
     }
 
+    /// `from_key → to_key` aliases. Values are already resolved through chains.
+    func loadPlaceMerges() throws -> [String: String] {
+        guard let db else { return [:] }
+        var statement: OpaquePointer?
+        defer { sqlite3_finalize(statement) }
+        guard sqlite3_prepare_v2(
+            db,
+            "SELECT from_key, to_key FROM place_merges",
+            -1,
+            &statement,
+            nil
+        ) == SQLITE_OK else { throw TimelineDatabaseError.execute(errmsg()) }
+        var raw: [String: String] = [:]
+        while sqlite3_step(statement) == SQLITE_ROW {
+            guard let from = text(statement, 0), let to = text(statement, 1) else { continue }
+            raw[from] = to
+        }
+        return Self.resolveMerges(raw)
+    }
+
+    /// Fold `fromKey` into `toKey`: remap visits, record the alias, drop the old custom name.
+    func mergePlace(from fromKey: String, into toKey: String, targetSemantic: String?) throws {
+        guard fromKey != toKey else { return }
+        guard let db else { throw TimelineDatabaseError.open }
+        try exec("BEGIN IMMEDIATE")
+        do {
+            var update: OpaquePointer?
+            defer { sqlite3_finalize(update) }
+            guard sqlite3_prepare_v2(
+                db,
+                """
+                UPDATE visits
+                SET place_key = ?,
+                    semantic_type = CASE
+                        WHEN ? IS NOT NULL AND ? NOT IN ('', 'Unknown', 'unknown')
+                        THEN ?
+                        ELSE semantic_type
+                    END
+                WHERE place_key = ?
+                """,
+                -1,
+                &update,
+                nil
+            ) == SQLITE_OK else { throw TimelineDatabaseError.execute(errmsg()) }
+            sqlite3_bind_text(update, 1, toKey, -1, Self.transient)
+            if let targetSemantic, !targetSemantic.isEmpty {
+                sqlite3_bind_text(update, 2, targetSemantic, -1, Self.transient)
+                sqlite3_bind_text(update, 3, targetSemantic, -1, Self.transient)
+                sqlite3_bind_text(update, 4, targetSemantic, -1, Self.transient)
+            } else {
+                sqlite3_bind_null(update, 2)
+                sqlite3_bind_null(update, 3)
+                sqlite3_bind_null(update, 4)
+            }
+            sqlite3_bind_text(update, 5, fromKey, -1, Self.transient)
+            guard sqlite3_step(update) == SQLITE_DONE else {
+                throw TimelineDatabaseError.execute(errmsg())
+            }
+
+            var insert: OpaquePointer?
+            defer { sqlite3_finalize(insert) }
+            guard sqlite3_prepare_v2(
+                db,
+                """
+                INSERT INTO place_merges (from_key, to_key, updated_at)
+                VALUES (?, ?, ?)
+                ON CONFLICT(from_key) DO UPDATE SET
+                    to_key = excluded.to_key,
+                    updated_at = excluded.updated_at
+                """,
+                -1,
+                &insert,
+                nil
+            ) == SQLITE_OK else { throw TimelineDatabaseError.execute(errmsg()) }
+            sqlite3_bind_text(insert, 1, fromKey, -1, Self.transient)
+            sqlite3_bind_text(insert, 2, toKey, -1, Self.transient)
+            sqlite3_bind_double(insert, 3, Date().timeIntervalSince1970)
+            guard sqlite3_step(insert) == SQLITE_DONE else {
+                throw TimelineDatabaseError.execute(errmsg())
+            }
+
+            // Anything that pointed at fromKey should now point at toKey.
+            try exec(
+                """
+                UPDATE place_merges
+                SET to_key = \(quote(toKey)), updated_at = \(Date().timeIntervalSince1970)
+                WHERE to_key = \(quote(fromKey))
+                """
+            )
+            try exec("DELETE FROM place_names WHERE place_key = \(quote(fromKey))")
+            try exec("COMMIT")
+        } catch {
+            sqlite3_exec(db, "ROLLBACK", nil, nil, nil)
+            throw error
+        }
+    }
+
+    private static func resolveMerges(_ raw: [String: String]) -> [String: String] {
+        var resolved: [String: String] = [:]
+        for key in raw.keys {
+            var current = key
+            var seen: Set<String> = [key]
+            while let next = raw[current], !seen.contains(next) {
+                seen.insert(next)
+                current = next
+            }
+            if current != key {
+                resolved[key] = current
+            }
+        }
+        return resolved
+    }
+
+    private static func remapped(_ visit: TimelineVisit, merges: [String: String]) -> TimelineVisit {
+        guard let target = merges[visit.placeKey], target != visit.placeKey else { return visit }
+        return TimelineVisit(
+            id: visit.id,
+            start: visit.start,
+            end: visit.end,
+            coordinate: visit.coordinate,
+            semanticType: visit.semanticType,
+            placeKey: target
+        )
+    }
+
     private static func migrate(_ db: OpaquePointer?) throws {
         try exec(
             db,
@@ -244,6 +370,11 @@ actor TimelineDatabase {
             CREATE TABLE IF NOT EXISTS place_names (
                 place_key TEXT PRIMARY KEY,
                 name TEXT NOT NULL,
+                updated_at REAL NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS place_merges (
+                from_key TEXT PRIMARY KEY,
+                to_key TEXT NOT NULL,
                 updated_at REAL NOT NULL
             );
             CREATE TRIGGER IF NOT EXISTS paths_points_changed AFTER UPDATE OF points ON paths

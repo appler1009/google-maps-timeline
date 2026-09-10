@@ -6,6 +6,7 @@ struct PlaceRenameView: View {
     let initialName: String
     let visitedPlaces: [(id: String, title: String, visitCount: Int, coordinate: CLLocationCoordinate2D)]
     var onSave: (String) -> Void
+    var onMerge: (String) -> Void
     var onCancel: () -> Void
 
     @State private var draft: String
@@ -18,12 +19,14 @@ struct PlaceRenameView: View {
         initialName: String,
         visitedPlaces: [(id: String, title: String, visitCount: Int, coordinate: CLLocationCoordinate2D)],
         onSave: @escaping (String) -> Void,
+        onMerge: @escaping (String) -> Void,
         onCancel: @escaping () -> Void
     ) {
         self.place = place
         self.initialName = initialName
         self.visitedPlaces = visitedPlaces
         self.onSave = onSave
+        self.onMerge = onMerge
         self.onCancel = onCancel
         let seed = initialName == "Unnamed place" ? "" : initialName
         _draft = State(initialValue: seed)
@@ -145,9 +148,9 @@ struct PlaceRenameView: View {
 
     private var footerText: String {
         #if os(macOS)
-        "Suggestions nearby prefer places you visit often. Use ↑↓ to choose one, Return to apply. Clear the name to restore the default label."
+        "Suggestions nearby prefer places you visit often. Choosing a starred visit merges into that place. Use ↑↓ then Return to choose. Clear the name to restore the default label."
         #else
-        "Suggestions nearby prefer places you visit often. Clear the name to restore the default label."
+        "Suggestions nearby prefer places you visit often. Choosing a starred visit merges into that place. Clear the name to restore the default label."
         #endif
     }
 
@@ -231,6 +234,10 @@ struct PlaceRenameView: View {
     }
 
     private func applySuggestion(_ suggestion: PlaceNameSuggestion) {
+        if let targetPlaceID = suggestion.targetPlaceID {
+            onMerge(targetPlaceID)
+            return
+        }
         draft = suggestion.title
         onSave(suggestion.title)
     }
@@ -257,6 +264,9 @@ extension View {
                     visitedPlaces: store.visitedPlaceNameCandidates(excluding: id)
                 ) { name in
                     store.renamePlace(id: id, to: name)
+                    placeID.wrappedValue = nil
+                } onMerge: { targetID in
+                    store.mergePlace(from: id, into: targetID)
                     placeID.wrappedValue = nil
                 } onCancel: {
                     placeID.wrappedValue = nil

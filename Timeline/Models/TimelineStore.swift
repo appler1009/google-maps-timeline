@@ -161,7 +161,16 @@ final class TimelineStore {
         if let custom = placeNames[placeKey], !custom.isEmpty {
             return custom
         }
-        return TimelineParser.semanticTitle(semanticType) ?? "Unnamed place"
+        if let title = TimelineParser.semanticTitle(semanticType) {
+            return title
+        }
+        // Merged stays keep the target place key; inherit Home/Work (etc.) from that place.
+        if let place = placesByID[placeKey],
+           let title = TimelineParser.semanticTitle(place.semanticType)
+        {
+            return title
+        }
+        return "Unnamed place"
     }
 
     func canRename(_ place: PlaceRecord) -> Bool {
@@ -183,6 +192,33 @@ final class TimelineStore {
         placeNameGeneration &+= 1
         Task {
             try? await database.setPlaceName(placeKey: id, name: trimmed)
+        }
+    }
+
+    /// Fold `sourceID` into `targetID` so Places shows a single entry.
+    func mergePlace(from sourceID: String, into targetID: String) {
+        guard sourceID != targetID, let target = placesByID[targetID] else { return }
+        placeNames.removeValue(forKey: sourceID)
+        placeNames = placeNames
+        isLoading = true
+        Task {
+            try? await database.mergePlace(
+                from: sourceID,
+                into: targetID,
+                targetSemantic: target.semanticType
+            )
+            await refreshPlaceNames()
+            if let batch = try? await database.loadBatch() {
+                let name = (try? await database.latestSourceName()) ?? sourceName ?? "Library"
+                let timeline = TimelineParser.assemble(batch, sourceName: name)
+                apply(timeline)
+                if let merged = placesByID[targetID] {
+                    select(place: merged)
+                }
+            } else {
+                isLoading = false
+            }
+            placeNameGeneration &+= 1
         }
     }
 

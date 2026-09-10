@@ -16,6 +16,8 @@ struct PlaceNameSuggestion: Identifiable, Hashable {
     let source: Source
     let visitCount: Int
     let distanceMeters: Double
+    /// When set, choosing this suggestion merges into that place instead of only renaming.
+    let targetPlaceID: String?
 
     var accessibilityLabel: String {
         if let subtitle, !subtitle.isEmpty {
@@ -113,7 +115,8 @@ final class PlaceNameSuggester: NSObject, MKLocalSearchCompleterDelegate {
                 subtitle: completion.subtitle.isEmpty ? "Map suggestion" : completion.subtitle,
                 source: .map,
                 visitCount: 0,
-                distanceMeters: .infinity
+                distanceMeters: .infinity,
+                targetPlaceID: nil
             )
         }
         Task { @MainActor in
@@ -166,7 +169,8 @@ final class PlaceNameSuggester: NSObject, MKLocalSearchCompleterDelegate {
                     subtitle: subtitleParts.isEmpty ? "Nearby place" : subtitleParts.joined(separator: " · "),
                     source: .map,
                     visitCount: 0,
-                    distanceMeters: distance
+                    distanceMeters: distance,
+                    targetPlaceID: nil
                 )
             }
             .sorted { $0.distanceMeters < $1.distanceMeters }
@@ -199,7 +203,8 @@ final class PlaceNameSuggester: NSObject, MKLocalSearchCompleterDelegate {
                 subtitle: subtitle.isEmpty ? "Address" : subtitle,
                 source: .address,
                 visitCount: 0,
-                distanceMeters: 0
+                distanceMeters: 0,
+                targetPlaceID: nil
             )
         } catch {
             return nil
@@ -212,10 +217,11 @@ final class PlaceNameSuggester: NSObject, MKLocalSearchCompleterDelegate {
             PlaceNameSuggestion(
                 id: "visited:\(candidate.id)",
                 title: candidate.title,
-                subtitle: "\(candidate.visitCount) visit\(candidate.visitCount == 1 ? "" : "s") · \(Self.distanceLabel(candidate.distanceMeters))",
+                subtitle: "\(candidate.visitCount) visit\(candidate.visitCount == 1 ? "" : "s") · \(Self.distanceLabel(candidate.distanceMeters)) · Merge",
                 source: .visited,
                 visitCount: candidate.visitCount,
-                distanceMeters: candidate.distanceMeters
+                distanceMeters: candidate.distanceMeters,
+                targetPlaceID: candidate.id
             )
         }
         if !needle.isEmpty {
