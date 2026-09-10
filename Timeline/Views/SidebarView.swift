@@ -7,7 +7,6 @@ struct SidebarView: View {
     var body: some View {
         @Bindable var store = store
         VStack(spacing: 0) {
-            header
             tabPicker
             if store.tab == .dates {
                 dateFilters
@@ -26,21 +25,6 @@ struct SidebarView: View {
             }
         }
         .foregroundStyle(Palette.parchment)
-    }
-
-    private var header: some View {
-        HStack(alignment: .center, spacing: 10) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(store.sourceName ?? "Open a Timeline.json export")
-                    .font(.system(size: 12, weight: .regular))
-                    .foregroundStyle(Palette.muted)
-                    .lineLimit(2)
-            }
-            Spacer(minLength: 0)
-        }
-        .padding(.horizontal, 16)
-        .padding(.top, 8)
-        .padding(.bottom, 8)
     }
 
     private var tabPicker: some View {
