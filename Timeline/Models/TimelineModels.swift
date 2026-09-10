@@ -81,6 +81,55 @@ struct TimelineVisit: Identifiable {
     }
 }
 
+/// Consecutive same-placeKey visits in chronological order (legend rows + map pins).
+struct PlaceVisitRun: Identifiable {
+    var visits: [TimelineVisit]
+
+    var id: String { visits.first?.id ?? UUID().uuidString }
+    var placeKey: String { visits[0].placeKey }
+    var representative: TimelineVisit { visits[0] }
+
+    /// Union of stay intervals so duplicate/overlapping segments aren’t double-counted.
+    var totalDuration: TimeInterval {
+        let ordered = visits.sorted {
+            if $0.start != $1.start { return $0.start < $1.start }
+            return $0.end < $1.end
+        }
+        var total: TimeInterval = 0
+        var coveredThrough: Date?
+        for visit in ordered {
+            if let covered = coveredThrough, visit.start < covered {
+                if visit.end > covered {
+                    total += visit.end.timeIntervalSince(covered)
+                    coveredThrough = visit.end
+                }
+            } else {
+                total += max(visit.duration, 0)
+                coveredThrough = visit.end
+            }
+        }
+        return total
+    }
+
+    static func coalesced(from visits: [TimelineVisit]) -> [PlaceVisitRun] {
+        let ordered = visits.sorted {
+            if $0.start != $1.start { return $0.start < $1.start }
+            if $0.end != $1.end { return $0.end < $1.end }
+            return $0.placeKey < $1.placeKey
+        }
+        var runs: [PlaceVisitRun] = []
+        for visit in ordered {
+            if var last = runs.last, last.placeKey == visit.placeKey {
+                last.visits.append(visit)
+                runs[runs.count - 1] = last
+            } else {
+                runs.append(PlaceVisitRun(visits: [visit]))
+            }
+        }
+        return runs
+    }
+}
+
 struct TimelineActivity: Identifiable {
     let id: String
     let start: Date
