@@ -178,9 +178,11 @@ private struct VisitPhotoViewer: View {
         .focusable()
         .focused($isFocused)
         .focusEffectDisabled()
+        #if os(macOS)
         .onExitCommand {
             onDismiss()
         }
+        #endif
         .onKeyPress(.escape) {
             onDismiss()
             return .handled
