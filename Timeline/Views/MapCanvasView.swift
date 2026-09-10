@@ -194,22 +194,31 @@ private struct TimelineKitMapHost: View {
     @Environment(TimelineStore.self) private var store
 
     var body: some View {
-            TimelineKitMap(
-            generation: store.focusGeneration,
-            region: store.focusRegion,
-            animated: store.focusAnimated,
-            dayID: store.selectedDayID,
-            placeID: store.selectedPlaceID,
-            hoverID: store.hoveredVisitID,
-            day: store.selectedDay,
-            place: store.selectedPlace,
-            hovered: store.hoveredVisit,
-            routed: store.routesForDisplay,
-            routeGeneration: store.routeGeneration,
-            visitFocusID: store.selectedVisitID,
-            onSelectVisit: { store.focusVisit(id: $0) },
-            legendCoverage: store.legendCoverage
-        )
+        // Avoid creating MKMapView at 0×0 — Debug Metal validation asserts when MapKit
+        // tries to draw into a CAMetalLayer with an empty drawable.
+        GeometryReader { geo in
+            if geo.size.width > 1, geo.size.height > 1 {
+                TimelineKitMap(
+                    generation: store.focusGeneration,
+                    region: store.focusRegion,
+                    animated: store.focusAnimated,
+                    dayID: store.selectedDayID,
+                    placeID: store.selectedPlaceID,
+                    hoverID: store.hoveredVisitID,
+                    day: store.selectedDay,
+                    place: store.selectedPlace,
+                    hovered: store.hoveredVisit,
+                    routed: store.routesForDisplay,
+                    routeGeneration: store.routeGeneration,
+                    visitFocusID: store.selectedVisitID,
+                    placeNameGeneration: store.placeNameGeneration,
+                    annotationTitles: store.mapAnnotationTitles(),
+                    onSelectVisit: { store.focusVisit(id: $0) },
+                    legendCoverage: store.legendCoverage
+                )
+                .frame(width: geo.size.width, height: geo.size.height)
+            }
+        }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .accessibilityIdentifier("timeline-map")
         .accessibilityValue("\(store.routesForDisplay.count) routes")
@@ -244,6 +253,8 @@ struct TimelineKitMap: NSViewRepresentable {
     var routed: [RoutedHop]
     var routeGeneration: UInt64
     var visitFocusID: String?
+    var placeNameGeneration: UInt64
+    var annotationTitles: [String: String]
     var onSelectVisit: (String) -> Void
     /// Unused on macOS, where the legend sits beside the map rather than over it.
     var legendCoverage: CGFloat
@@ -280,6 +291,8 @@ struct TimelineKitMap: NSViewRepresentable {
             routed: routed,
             routeGeneration: routeGeneration,
             visitFocusID: visitFocusID,
+            placeNameGeneration: placeNameGeneration,
+            annotationTitles: annotationTitles,
             onSelectVisit: onSelectVisit
         )
     }
@@ -293,6 +306,7 @@ struct TimelineKitMap: NSViewRepresentable {
         private var lastHoverID: String?
         private var lastRouteGeneration: UInt64 = 0
         private var lastVisitFocusID: String?
+        private var lastPlaceNameGeneration: UInt64 = .max
         private var overlayRenderers: [ObjectIdentifier: MKOverlayRenderer] = [:]
         private var contentTick: UInt64 = 0
         private var pathTick: UInt64 = 0
@@ -303,6 +317,7 @@ struct TimelineKitMap: NSViewRepresentable {
         private var latestRouted: [RoutedHop] = []
         private var latestRouteGeneration: UInt64 = 0
         private var latestVisitFocusID: String?
+        private var latestTitles: [String: String] = [:]
         var onSelectVisit: ((String) -> Void)?
 
         func sync(
@@ -319,6 +334,8 @@ struct TimelineKitMap: NSViewRepresentable {
             routed: [RoutedHop],
             routeGeneration: UInt64,
             visitFocusID: String?,
+            placeNameGeneration: UInt64,
+            annotationTitles: [String: String],
             onSelectVisit: @escaping (String) -> Void
         ) {
             self.onSelectVisit = onSelectVisit
@@ -327,11 +344,13 @@ struct TimelineKitMap: NSViewRepresentable {
             latestRouted = routed
             latestRouteGeneration = routeGeneration
             latestVisitFocusID = visitFocusID
+            latestTitles = annotationTitles
             if dayID != lastDayID || placeID != lastPlaceID {
                 lastDayID = dayID
                 lastPlaceID = placeID
                 lastRouteGeneration = routeGeneration
                 lastVisitFocusID = visitFocusID
+                lastPlaceNameGeneration = placeNameGeneration
                 lastHoverID = nil
                 pathTick &+= 1
                 contentInFlight = true
@@ -341,7 +360,8 @@ struct TimelineKitMap: NSViewRepresentable {
                         map: map,
                         day: self.latestDay,
                         place: self.latestPlace,
-                        routed: self.latestRouted
+                        routed: self.latestRouted,
+                        titles: self.latestTitles
                     )
                     self.lastRouteGeneration = self.latestRouteGeneration
                     self.lastVisitFocusID = self.latestVisitFocusID
@@ -351,6 +371,12 @@ struct TimelineKitMap: NSViewRepresentable {
                 lastVisitFocusID = visitFocusID
                 if contentInFlight { return }
                 crossfadePaths(map: map, day: latestDay, routed: latestRouted)
+            }
+            if placeNameGeneration != lastPlaceNameGeneration {
+                lastPlaceNameGeneration = placeNameGeneration
+                if !contentInFlight {
+                    TimelineMapPlotter.applyTitles(annotationTitles, to: map)
+                }
             }
             if generation != lastGeneration {
                 lastGeneration = generation
@@ -447,16 +473,22 @@ struct TimelineKitMap: NSViewRepresentable {
             frame()
         }
 
-        private func rebuild(map: MKMapView, day: DayRecord?, place: PlaceRecord?, routed: [RoutedHop]) {
+        private func rebuild(
+            map: MKMapView,
+            day: DayRecord?,
+            place: PlaceRecord?,
+            routed: [RoutedHop],
+            titles: [String: String]
+        ) {
             overlayRenderers.removeAll(keepingCapacity: true)
             map.removeOverlays(map.overlays)
             map.removeAnnotations(map.annotations)
             hoverOverlay = nil
 
             if let day {
-                TimelineMapPlotter.install(on: map, day: day, place: nil, routed: routed)
+                TimelineMapPlotter.install(on: map, day: day, place: nil, routed: routed, titles: titles)
             } else if let place {
-                TimelineMapPlotter.install(on: map, day: nil, place: place, routed: [])
+                TimelineMapPlotter.install(on: map, day: nil, place: place, routed: [], titles: titles)
             }
         }
 
@@ -548,33 +580,26 @@ enum TimelineMapChrome {
 }
 
 #if os(macOS)
-private final class VisitMarkerView: MKAnnotationView {
-    private let dot = NSView()
-    private let glyph = NSImageView()
-    private let label = NSTextField(labelWithString: "")
+private final class VisitMarkerView: MKAnnotationView, VisitMarkerTitleUpdating {
+    private let hosting = NSHostingView(rootView: MapVisitPinChrome(title: nil, semantic: nil))
 
     override init(annotation: MKAnnotation?, reuseIdentifier: String?) {
         super.init(annotation: annotation, reuseIdentifier: reuseIdentifier)
         displayPriority = .required
         collisionMode = .none
         canShowCallout = false
-        dot.wantsLayer = true
-        dot.layer?.cornerRadius = 6
-        dot.layer?.borderWidth = 1.5
-        dot.layer?.borderColor = NSColor(red: 0.93, green: 0.89, blue: 0.82, alpha: 0.9).cgColor
-        glyph.imageScaling = .scaleProportionallyUpOrDown
-        glyph.symbolConfiguration = .init(pointSize: 13, weight: .semibold)
-        label.font = .systemFont(ofSize: 10, weight: .semibold)
-        label.textColor = NSColor(red: 0.93, green: 0.89, blue: 0.82, alpha: 1)
-        label.backgroundColor = NSColor.black.withAlphaComponent(0.45)
-        label.drawsBackground = true
-        label.wantsLayer = true
-        label.layer?.cornerRadius = 8
-        label.layer?.masksToBounds = true
-        addSubview(dot)
-        addSubview(glyph)
-        addSubview(label)
-        bounds.size = CGSize(width: 12, height: 12)
+        // Match iOS: without a clear host, alpha label fills composite onto an
+        // opaque NSHostingView backdrop and look solid over the map.
+        wantsLayer = true
+        layer?.backgroundColor = .clear
+        hosting.wantsLayer = true
+        hosting.layer?.backgroundColor = .clear
+        if #available(macOS 14.0, *) {
+            hosting.sizingOptions = [.intrinsicContentSize]
+        }
+        hosting.frame = .zero
+        addSubview(hosting)
+        bounds.size = CGSize(width: MapVisitPinChrome.pinSpan, height: MapVisitPinChrome.pinSpan)
     }
 
     required init?(coder: NSCoder) {
@@ -584,50 +609,26 @@ private final class VisitMarkerView: MKAnnotationView {
     override var isFlipped: Bool { true }
 
     func apply(_ annotation: VisitAnnotation?) {
-        label.stringValue = annotation?.title ?? "Place"
-        let color: NSColor
-        switch annotation?.semantic {
-        case "Home": color = Palette.ns(Palette.copper)
-        case "Work": color = Palette.ns(Palette.water)
-        default: color = Palette.ns(Palette.path)
-        }
-        if let name = TimelineParser.symbolName(annotation?.semantic) {
-            glyph.image = NSImage(systemSymbolName: name, accessibilityDescription: annotation?.title)
-            glyph.contentTintColor = color
-            glyph.isHidden = false
-            dot.isHidden = true
-        } else {
-            glyph.isHidden = true
-            dot.isHidden = false
-            dot.layer?.backgroundColor = color.cgColor
-        }
+        hosting.rootView = MapVisitPinChrome(title: annotation?.title, semantic: annotation?.semantic)
         needsLayout = true
     }
 
     override func layout() {
         super.layout()
-        let pin: CGFloat = glyph.isHidden ? 12 : 16
-        bounds.size = CGSize(width: pin, height: pin)
-        let pinFrame = CGRect(x: 0, y: 0, width: pin, height: pin)
-        dot.frame = pinFrame
-        glyph.frame = pinFrame
-        label.sizeToFit()
-        let labelSize = label.frame.size
-        let labelWidth = labelSize.width + 8
-        let labelHeight = labelSize.height + 2
-        label.frame = CGRect(
-            x: (pin - labelWidth) / 2,
-            y: -labelHeight - 4,
-            width: labelWidth,
-            height: labelHeight
-        )
-        centerOffset = .zero
+        let size = hosting.fittingSize
+        let width = max(MapVisitPinChrome.pinSpan, size.width)
+        let height = max(MapVisitPinChrome.pinSpan, size.height)
+        bounds.size = CGSize(width: width, height: height)
+        hosting.frame = CGRect(origin: .zero, size: bounds.size)
+        // Keep the glass pin centered on the coordinate; label hangs below.
+        centerOffset = CGPoint(x: 0, y: height / 2 - MapVisitPinChrome.pinSpan / 2)
     }
 }
 #endif
 
 struct SelectionCard: View {
     @Environment(TimelineStore.self) private var store
+    @State private var renamingPlaceID: String?
     #if os(iOS)
     @State private var collapsed = true
     @State private var drag: CGFloat = 0
@@ -650,9 +651,17 @@ struct SelectionCard: View {
                             .allowsHitTesting(sheetExpansion > 0.35)
                     }
                 } else if let place = store.selectedPlace {
-                    Text(store.subtitle(for: place))
-                        .font(.system(size: 12))
-                        .foregroundStyle(Palette.muted)
+                    HStack(alignment: .center, spacing: 8) {
+                        Text(store.subtitle(for: place))
+                            .font(.system(size: 12))
+                            .foregroundStyle(Palette.muted)
+                        Spacer(minLength: 8)
+                        if store.canRename(place) {
+                            PlaceActionsMenu(placeID: place.id) {
+                                renamingPlaceID = place.id
+                            }
+                        }
+                    }
                 }
             }
             .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { headerHeight = $0 }
@@ -696,6 +705,7 @@ struct SelectionCard: View {
         #endif
         .foregroundStyle(Palette.parchment)
         .onDisappear { store.hoveredVisitID = nil }
+        .placeRenameSheet(placeID: $renamingPlaceID, store: store)
     }
 
     #if os(iOS)
@@ -849,22 +859,32 @@ struct SelectionCard: View {
 
     @ViewBuilder
     private func dayVisits(_ day: DayRecord) -> some View {
-        let rows = ForEach(day.visits) { visit in
+        let groups = Self.coalescedPlaceRuns(day.visits)
+        let rows = ForEach(groups) { group in
+            let visit = group.representative
             legendRow(
                 time: visit.start.formatted(date: .omitted, time: .shortened),
                 title: placeTitle(visit),
-                duration: Self.duration(visit.duration),
-                highlighted: store.hoveredVisitID == visit.id || store.selectedVisitID == visit.id,
+                duration: Self.duration(group.totalDuration),
+                highlighted: group.visits.contains {
+                    $0.id == store.hoveredVisitID || $0.id == store.selectedVisitID
+                },
                 symbol: TimelineParser.symbolName(visit.semanticType)
             )
             .onHover { hovering in
                 store.hoveredVisitID = hovering ? visit.id : nil
             }
             .onTapGesture {
-                store.hoveredVisitID = visit.id
-                store.focus(visit: visit)
+                if let place = store.place(for: visit.placeKey) {
+                    store.select(place: place)
+                } else {
+                    store.hoveredVisitID = visit.id
+                    store.focus(visit: visit)
+                }
             }
+            .help("Show this place")
             .accessibilityIdentifier("legend-visit-\(visit.id)")
+            .accessibilityHint("Opens the place for this stay")
         }
         #if os(iOS)
         ScrollView {
@@ -883,17 +903,47 @@ struct SelectionCard: View {
         #endif
     }
 
+    /// View-only: fold consecutive visits that share a place into one legend row.
+    private static func coalescedPlaceRuns(_ visits: [TimelineVisit]) -> [LegendPlaceRun] {
+        // Stable order so equal-start duplicates stay adjacent for folding.
+        let ordered = visits.sorted {
+            if $0.start != $1.start { return $0.start < $1.start }
+            if $0.end != $1.end { return $0.end < $1.end }
+            return $0.placeKey < $1.placeKey
+        }
+        var runs: [LegendPlaceRun] = []
+        for visit in ordered {
+            if var last = runs.last, last.placeKey == visit.placeKey {
+                last.visits.append(visit)
+                runs[runs.count - 1] = last
+            } else {
+                runs.append(LegendPlaceRun(visits: [visit]))
+            }
+        }
+        return runs
+    }
+
     @ViewBuilder
     private func placeHeader(_ place: PlaceRecord) -> some View {
-        Text(store.displayName(for: place))
-            .font(.system(size: 20, weight: .regular, design: .serif))
-        Text(store.subtitle(for: place))
-            .font(.system(size: 12))
-            .foregroundStyle(Palette.muted)
-        if let first = place.firstVisit, let last = place.lastVisit {
-            Text("From \(first.formatted(date: .abbreviated, time: .omitted)) to \(last.formatted(date: .abbreviated, time: .omitted))")
-                .font(.system(size: 12))
-                .foregroundStyle(Palette.muted)
+        HStack(alignment: .top, spacing: 8) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(store.displayName(for: place))
+                    .font(.system(size: 20, weight: .regular, design: .serif))
+                Text(store.subtitle(for: place))
+                    .font(.system(size: 12))
+                    .foregroundStyle(Palette.muted)
+                if let first = place.firstVisit, let last = place.lastVisit {
+                    Text("From \(first.formatted(date: .abbreviated, time: .omitted)) to \(last.formatted(date: .abbreviated, time: .omitted))")
+                        .font(.system(size: 12))
+                        .foregroundStyle(Palette.muted)
+                }
+            }
+            Spacer(minLength: 8)
+            if store.canRename(place) {
+                PlaceActionsMenu(placeID: place.id) {
+                    renamingPlaceID = place.id
+                }
+            }
         }
     }
 
@@ -996,6 +1046,37 @@ struct SelectionCard: View {
         let rem = minutes % 60
         if rem == 0 { return "\(hours)h" }
         return "\(hours)h \(rem)m"
+    }
+}
+
+/// Consecutive same-place visits shown as one day-legend row (view-only).
+private struct LegendPlaceRun: Identifiable {
+    var visits: [TimelineVisit]
+
+    var id: String { visits.first?.id ?? UUID().uuidString }
+    var placeKey: String { visits[0].placeKey }
+    var representative: TimelineVisit { visits[0] }
+
+    /// Union of stay intervals so duplicate/overlapping segments aren’t double-counted.
+    var totalDuration: TimeInterval {
+        let ordered = visits.sorted {
+            if $0.start != $1.start { return $0.start < $1.start }
+            return $0.end < $1.end
+        }
+        var total: TimeInterval = 0
+        var coveredThrough: Date?
+        for visit in ordered {
+            if let covered = coveredThrough, visit.start < covered {
+                if visit.end > covered {
+                    total += visit.end.timeIntervalSince(covered)
+                    coveredThrough = visit.end
+                }
+            } else {
+                total += max(visit.duration, 0)
+                coveredThrough = visit.end
+            }
+        }
+        return total
     }
 }
 

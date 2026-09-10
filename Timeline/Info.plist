@@ -43,6 +43,13 @@
 	<string>Timeline opens a Google Maps Timeline JSON export that you choose.</string>
 	<key>NSDownloadsFolderUsageDescription</key>
 	<string>Timeline reads a Timeline.json export from Downloads when you open it.</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Timeline ships diagnostic logs to LogDock on your Mac when debugging.</string>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
 	<key>NSHighResolutionCapable</key>
 	<true/>
 	<key>UILaunchScreen</key>

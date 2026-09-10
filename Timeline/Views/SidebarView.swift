@@ -3,6 +3,7 @@ import SwiftUI
 struct SidebarView: View {
     @Environment(TimelineStore.self) private var store
     @Binding var importerPresented: Bool
+    @State private var renamingPlaceID: String?
 
     var body: some View {
         @Bindable var store = store
@@ -25,6 +26,7 @@ struct SidebarView: View {
             }
         }
         .foregroundStyle(Palette.parchment)
+        .placeRenameSheet(placeID: $renamingPlaceID, store: store)
     }
 
     private var tabPicker: some View {
@@ -211,7 +213,11 @@ struct SidebarView: View {
                 PlaceRow(
                     place: place,
                     title: store.displayName(for: place),
-                    subtitle: store.subtitle(for: place)
+                    subtitle: store.subtitle(for: place),
+                    showsActions: store.canRename(place),
+                    onRename: {
+                        renamingPlaceID = place.id
+                    }
                 )
                     .tag(place.id)
                     .listRowBackground(rowBackground(isSelected: store.selectedPlaceID == place.id))
@@ -320,6 +326,8 @@ struct PlaceRow: View {
     let place: PlaceRecord
     let title: String
     let subtitle: String
+    var showsActions = false
+    var onRename: (() -> Void)?
 
     var body: some View {
         HStack(spacing: 10) {
@@ -344,9 +352,13 @@ struct PlaceRow: View {
                     .foregroundStyle(Palette.muted)
                     .lineLimit(1)
             }
+            Spacer(minLength: 4)
+            if showsActions {
+                PlaceActionsMenu(placeID: place.id, onRename: { onRename?() })
+            }
         }
         .padding(.vertical, 4)
-        .accessibilityElement(children: .combine)
+        .accessibilityElement(children: showsActions ? .contain : .combine)
         .accessibilityIdentifier("place-\(place.id)")
         .accessibilityAddTraits(.isButton)
     }
@@ -357,5 +369,31 @@ struct PlaceRow: View {
         case "Work": return Palette.water
         default: return Palette.parchment.opacity(0.55)
         }
+    }
+}
+
+/// Overflow menu for place rename / future merge, shared by the Places list and map legend.
+struct PlaceActionsMenu: View {
+    let placeID: String
+    var onRename: () -> Void
+
+    var body: some View {
+        Menu {
+            Button("Rename…", action: onRename)
+            Button("Merge Places…") {}
+                .disabled(true)
+        } label: {
+            Image(systemName: "ellipsis.circle")
+                .font(.system(size: 16, weight: .regular))
+                .foregroundStyle(Palette.muted)
+                .frame(width: 28, height: 28)
+                .contentShape(Rectangle())
+        }
+        #if os(macOS)
+        .menuStyle(.borderlessButton)
+        #endif
+        .buttonStyle(.plain)
+        .accessibilityLabel("Place actions")
+        .accessibilityIdentifier("place-actions-\(placeID)")
     }
 }

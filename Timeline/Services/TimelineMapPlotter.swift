@@ -19,36 +19,71 @@ final class PathCasingPolyline: KindPolyline {}
 final class VisitAnnotation: MKPointAnnotation {
     var semantic: String?
     var visitID: String?
+    var placeKey: String?
 }
 
 enum TimelineMapPlotter {
-    static func install(on map: MKMapView, day: DayRecord?, place: PlaceRecord?, routed: [RoutedHop]) {
+    static func install(
+        on map: MKMapView,
+        day: DayRecord?,
+        place: PlaceRecord?,
+        routed: [RoutedHop],
+        titles: [String: String] = [:]
+    ) {
         if let day {
             addDayPaths(map: map, routed: routed)
             for visit in day.visits {
                 guard let coordinate = visit.coordinate else { continue }
-                map.addAnnotation(pin(visit: visit, coordinate: coordinate))
+                map.addAnnotation(pin(visit: visit, coordinate: coordinate, titles: titles))
             }
         } else if let place, let coordinate = place.coordinate {
-            map.addAnnotation(pin(place: place, coordinate: coordinate))
+            map.addAnnotation(pin(place: place, coordinate: coordinate, titles: titles))
         }
     }
 
-    static func pin(visit: TimelineVisit, coordinate: CLLocationCoordinate2D) -> VisitAnnotation {
+    static func pin(
+        visit: TimelineVisit,
+        coordinate: CLLocationCoordinate2D,
+        titles: [String: String] = [:]
+    ) -> VisitAnnotation {
         let pin = VisitAnnotation()
         pin.coordinate = coordinate
-        pin.title = TimelineParser.semanticTitle(visit.semanticType) ?? "Place"
+        pin.placeKey = visit.placeKey
+        pin.title = titles[visit.placeKey]
+            ?? TimelineParser.semanticTitle(visit.semanticType)
+            ?? "Unnamed place"
         pin.semantic = visit.semanticType
         pin.visitID = visit.id
         return pin
     }
 
-    static func pin(place: PlaceRecord, coordinate: CLLocationCoordinate2D) -> VisitAnnotation {
+    static func pin(
+        place: PlaceRecord,
+        coordinate: CLLocationCoordinate2D,
+        titles: [String: String] = [:]
+    ) -> VisitAnnotation {
         let pin = VisitAnnotation()
         pin.coordinate = coordinate
-        pin.title = TimelineParser.semanticTitle(place.semanticType) ?? "Place"
+        pin.placeKey = place.id
+        pin.title = titles[place.id]
+            ?? TimelineParser.semanticTitle(place.semanticType)
+            ?? "Unnamed place"
         pin.semantic = place.semanticType
         return pin
+    }
+
+    static func applyTitles(_ titles: [String: String], to map: MKMapView) {
+        for annotation in map.annotations {
+            guard let pin = annotation as? VisitAnnotation, let key = pin.placeKey else { continue }
+            let next = titles[key]
+                ?? TimelineParser.semanticTitle(pin.semantic)
+                ?? "Unnamed place"
+            guard pin.title != next else { continue }
+            pin.title = next
+            if let view = map.view(for: pin) as? VisitMarkerTitleUpdating {
+                view.apply(pin)
+            }
+        }
     }
 
     /// Stable bottom→top order so thinner / dashed modes paint above thicker drives.
@@ -155,6 +190,11 @@ enum TimelineMapPlotter {
         Palette.ns(color, alpha: alpha)
         #endif
     }
+}
+
+/// Shared hook so iOS/macOS marker views can refresh titles without a full rebuild.
+protocol VisitMarkerTitleUpdating: AnyObject {
+    func apply(_ annotation: VisitAnnotation?)
 }
 
 private extension TravelKind {

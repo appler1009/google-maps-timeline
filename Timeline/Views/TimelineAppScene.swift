@@ -135,14 +135,15 @@ struct TimelineAppScene: View {
                 .opacity(showingCompactMap ? 0 : 1)
                 .allowsHitTesting(!showingCompactMap)
                 .accessibilityHidden(showingCompactMap)
-                if showingCompactMap {
-                    MapCanvasView()
-                        .environment(\.compactMapDismiss, dismissCompactMap)
-                        .transition(.asymmetric(
-                            insertion: .move(edge: .trailing).combined(with: .opacity),
-                            removal: .move(edge: .trailing).combined(with: .opacity)
-                        ))
-                }
+                // Keep the map at full size off-screen instead of using a trailing
+                // move transition — that animates through 0-width and crashes MapKit
+                // under Metal API validation (CAMetalLayer drawable 0×0).
+                MapCanvasView()
+                    .environment(\.compactMapDismiss, dismissCompactMap)
+                    .offset(x: showingCompactMap ? 0 : geo.size.width)
+                    .opacity(showingCompactMap ? 1 : 0)
+                    .allowsHitTesting(showingCompactMap)
+                    .accessibilityHidden(!showingCompactMap)
             }
         }
     }

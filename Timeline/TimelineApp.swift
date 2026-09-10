@@ -2,6 +2,10 @@ import SwiftUI
 
 @main
 struct TimelineApp: App {
+    init() {
+        TimelineLog.start()
+    }
+
     var body: some Scene {
         WindowGroup {
             TimelineAppScene()

@@ -4,6 +4,59 @@ import MapKit
 import UIKit
 import QuartzCore
 
+/// Holds space in the SwiftUI hierarchy and only mounts `MKMapView` once layout has a
+/// non-empty size. Creating MapKit at 0×0 trips Debug Metal validation fatally.
+final class TimelineMapHostView: UIView {
+    private(set) var mapView: MKMapView?
+    var onMapReady: ((MKMapView) -> Void)?
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        backgroundColor = .black
+        isOpaque = true
+        clipsToBounds = true
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        // Require a comfortable size — mid-animation frames of a few points still
+        // produce invalid Metal drawables under MapKit.
+        guard bounds.width >= 32, bounds.height >= 32 else {
+            tearDownMap()
+            return
+        }
+        if mapView == nil {
+            let map = MKMapView(frame: bounds)
+            map.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+            map.isPitchEnabled = false
+            map.isRotateEnabled = false
+            map.showsCompass = true
+            map.showsScale = false
+            map.overrideUserInterfaceStyle = .dark
+            TimelineMapChrome.apply(to: map)
+            addSubview(map)
+            mapView = map
+            onMapReady?(map)
+            TimelineLog.debug("ios map mounted", ["w": "\(Int(bounds.width))", "h": "\(Int(bounds.height))"])
+        }
+        mapView?.frame = bounds
+        mapView?.isHidden = false
+    }
+
+    private func tearDownMap() {
+        guard let map = mapView else { return }
+        map.delegate = nil
+        map.removeFromSuperview()
+        mapView = nil
+        TimelineLog.debug("ios map torn down (undersized host)")
+    }
+}
+
 struct TimelineKitMap: UIViewRepresentable {
     var generation: UInt64
     var region: MKCoordinateRegion
@@ -17,6 +70,8 @@ struct TimelineKitMap: UIViewRepresentable {
     var routed: [RoutedHop]
     var routeGeneration: UInt64
     var visitFocusID: String?
+    var placeNameGeneration: UInt64
+    var annotationTitles: [String: String]
     var onSelectVisit: (String) -> Void
     /// Points of map the legend sheet covers at the bottom.
     var legendCoverage: CGFloat
@@ -27,23 +82,16 @@ struct TimelineKitMap: UIViewRepresentable {
 
     /// Clearance below the safe area for the day title / day-step chrome.
     private static let topChromeClearance: CGFloat = 56
+    private static let scaleTag = 917_001
 
-    func makeUIView(context: Context) -> MKMapView {
-        let map = MKMapView(frame: .zero)
-        map.delegate = context.coordinator
-        map.isPitchEnabled = false
-        map.isRotateEnabled = false
-        map.showsCompass = true
-        // Built-in scale pins top-leading under the day chrome; place our own below it.
-        map.showsScale = false
-        map.overrideUserInterfaceStyle = .dark
-        TimelineMapChrome.apply(to: map)
-        Self.installScale(on: map)
-        return map
+    func makeUIView(context: Context) -> TimelineMapHostView {
+        TimelineMapHostView()
     }
 
     private static func installScale(on map: MKMapView) {
+        guard map.viewWithTag(Self.scaleTag) == nil else { return }
         let scale = MKScaleView(mapView: map)
+        scale.tag = Self.scaleTag
         scale.legendAlignment = .leading
         scale.scaleVisibility = .adaptive
         scale.translatesAutoresizingMaskIntoConstraints = false
@@ -55,24 +103,38 @@ struct TimelineKitMap: UIViewRepresentable {
         ])
     }
 
-    func updateUIView(_ map: MKMapView, context: Context) {
-        context.coordinator.sync(
-            map: map,
-            generation: generation,
-            region: region,
-            animated: animated,
-            dayID: dayID,
-            placeID: placeID,
-            hoverID: hoverID,
-            day: day,
-            place: place,
-            hovered: hovered,
-            routed: routed,
-            routeGeneration: routeGeneration,
-            visitFocusID: visitFocusID,
-            onSelectVisit: onSelectVisit,
-            legendCoverage: legendCoverage
-        )
+    func updateUIView(_ host: TimelineMapHostView, context: Context) {
+        let apply: (MKMapView) -> Void = { map in
+            if map.delegate !== context.coordinator {
+                map.delegate = context.coordinator
+                Self.installScale(on: map)
+            }
+            guard map.bounds.width >= 2, map.bounds.height >= 2 else { return }
+            context.coordinator.sync(
+                map: map,
+                generation: generation,
+                region: region,
+                animated: animated,
+                dayID: dayID,
+                placeID: placeID,
+                hoverID: hoverID,
+                day: day,
+                place: place,
+                hovered: hovered,
+                routed: routed,
+                routeGeneration: routeGeneration,
+                visitFocusID: visitFocusID,
+                placeNameGeneration: placeNameGeneration,
+                annotationTitles: annotationTitles,
+                onSelectVisit: onSelectVisit,
+                legendCoverage: legendCoverage
+            )
+        }
+        if let map = host.mapView {
+            apply(map)
+        } else {
+            host.onMapReady = apply
+        }
     }
 
     final class Coordinator: NSObject, MKMapViewDelegate {
@@ -84,6 +146,7 @@ struct TimelineKitMap: UIViewRepresentable {
         private var lastHoverID: String?
         private var lastRouteGeneration: UInt64 = 0
         private var lastVisitFocusID: String?
+        private var lastPlaceNameGeneration: UInt64 = .max
         private var lastRegion: MKCoordinateRegion?
         private var lastLegendCoverage: CGFloat = -1
         /// Set once the user pans or zooms by hand: from then on the map is
@@ -100,6 +163,7 @@ struct TimelineKitMap: UIViewRepresentable {
         private var latestRouted: [RoutedHop] = []
         private var latestRouteGeneration: UInt64 = 0
         private var latestVisitFocusID: String?
+        private var latestTitles: [String: String] = [:]
         var onSelectVisit: ((String) -> Void)?
 
         func sync(
@@ -116,19 +180,24 @@ struct TimelineKitMap: UIViewRepresentable {
             routed: [RoutedHop],
             routeGeneration: UInt64,
             visitFocusID: String?,
+            placeNameGeneration: UInt64,
+            annotationTitles: [String: String],
             onSelectVisit: @escaping (String) -> Void,
             legendCoverage: CGFloat
         ) {
+            guard map.bounds.width >= 2, map.bounds.height >= 2 else { return }
             self.onSelectVisit = onSelectVisit
             latestDay = day
             latestPlace = place
             latestRouted = routed
             latestRouteGeneration = routeGeneration
             latestVisitFocusID = visitFocusID
+            latestTitles = annotationTitles
             if dayID != lastDayID || placeID != lastPlaceID {
                 lastDayID = dayID
                 lastPlaceID = placeID
                 lastHoverID = nil
+                lastPlaceNameGeneration = placeNameGeneration
                 pathTick &+= 1
                 contentInFlight = true
                 crossfade(map: map) {
@@ -137,7 +206,8 @@ struct TimelineKitMap: UIViewRepresentable {
                         map: map,
                         day: self.latestDay,
                         place: self.latestPlace,
-                        routed: self.latestRouted
+                        routed: self.latestRouted,
+                        titles: self.latestTitles
                     )
                     self.lastRouteGeneration = self.latestRouteGeneration
                     self.lastVisitFocusID = self.latestVisitFocusID
@@ -147,6 +217,12 @@ struct TimelineKitMap: UIViewRepresentable {
                 lastRouteGeneration = routeGeneration
                 lastVisitFocusID = visitFocusID
                 crossfadePaths(map: map, day: latestDay, routed: latestRouted)
+            }
+            if placeNameGeneration != lastPlaceNameGeneration {
+                lastPlaceNameGeneration = placeNameGeneration
+                if !contentInFlight {
+                    TimelineMapPlotter.applyTitles(annotationTitles, to: map)
+                }
             }
             if generation != lastGeneration {
                 lastGeneration = generation
@@ -168,8 +244,10 @@ struct TimelineKitMap: UIViewRepresentable {
         }
 
         private func applyRegion(map: MKMapView, region: MKCoordinateRegion, animated: Bool) {
+            guard map.bounds.width >= 2, map.bounds.height >= 2 else { return }
             let apply = { [weak self] in
                 guard let self else { return }
+                guard map.bounds.width >= 2, map.bounds.height >= 2 else { return }
                 self.programmaticChanges += 1
                 map.setVisibleMapRect(
                     Self.mapRect(for: region),
@@ -300,16 +378,22 @@ struct TimelineKitMap: UIViewRepresentable {
             frame()
         }
 
-        private func rebuild(map: MKMapView, day: DayRecord?, place: PlaceRecord?, routed: [RoutedHop]) {
+        private func rebuild(
+            map: MKMapView,
+            day: DayRecord?,
+            place: PlaceRecord?,
+            routed: [RoutedHop],
+            titles: [String: String]
+        ) {
             overlayRenderers.removeAll(keepingCapacity: true)
             map.removeOverlays(map.overlays)
             map.removeAnnotations(map.annotations)
             hoverOverlay = nil
 
             if let day {
-                TimelineMapPlotter.install(on: map, day: day, place: nil, routed: routed)
+                TimelineMapPlotter.install(on: map, day: day, place: nil, routed: routed, titles: titles)
             } else if let place {
-                TimelineMapPlotter.install(on: map, day: nil, place: place, routed: [])
+                TimelineMapPlotter.install(on: map, day: nil, place: place, routed: [], titles: titles)
             }
         }
 
@@ -386,32 +470,19 @@ struct TimelineKitMap: UIViewRepresentable {
     }
 }
 
-private final class VisitMarkerView: MKAnnotationView {
-    private let dot = UIView()
-    private let glyph = UIImageView()
-    private let label = UILabel()
+private final class VisitMarkerView: MKAnnotationView, VisitMarkerTitleUpdating {
+    private let hostingController = UIHostingController(rootView: MapVisitPinChrome(title: nil, semantic: nil))
 
     override init(annotation: MKAnnotation?, reuseIdentifier: String?) {
         super.init(annotation: annotation, reuseIdentifier: reuseIdentifier)
         displayPriority = .required
         collisionMode = .none
         canShowCallout = false
-        dot.layer.cornerRadius = 6
-        dot.layer.borderWidth = 1.5
-        dot.layer.borderColor = UIColor(red: 0.93, green: 0.89, blue: 0.82, alpha: 0.9).cgColor
-        glyph.contentMode = .scaleAspectFit
-        glyph.preferredSymbolConfiguration = .init(pointSize: 13, weight: .semibold)
-        label.font = .systemFont(ofSize: 10, weight: .semibold)
-        label.textColor = UIColor(red: 0.93, green: 0.89, blue: 0.82, alpha: 1)
-        label.backgroundColor = UIColor.black.withAlphaComponent(0.45)
-        label.layer.cornerRadius = 8
-        label.layer.masksToBounds = true
-        label.textAlignment = .center
         clipsToBounds = false
-        addSubview(dot)
-        addSubview(glyph)
-        addSubview(label)
-        bounds.size = CGSize(width: 12, height: 12)
+        hostingController.view.backgroundColor = .clear
+        hostingController.view.isUserInteractionEnabled = false
+        addSubview(hostingController.view)
+        bounds.size = CGSize(width: MapVisitPinChrome.pinSpan, height: MapVisitPinChrome.pinSpan)
     }
 
     required init?(coder: NSCoder) {
@@ -429,43 +500,19 @@ private final class VisitMarkerView: MKAnnotationView {
             accessibilityIdentifier = "map-marker"
             accessibilityValue = nil
         }
-        label.text = annotation?.title ?? "Place"
-        let color: UIColor
-        switch annotation?.semantic {
-        case "Home": color = Palette.ui(Palette.copper)
-        case "Work": color = Palette.ui(Palette.water)
-        default: color = Palette.ui(Palette.path)
-        }
-        if let name = TimelineParser.symbolName(annotation?.semantic) {
-            glyph.image = UIImage(systemName: name)
-            glyph.tintColor = color
-            glyph.isHidden = false
-            dot.isHidden = true
-        } else {
-            glyph.isHidden = true
-            dot.isHidden = false
-            dot.backgroundColor = color
-        }
+        hostingController.rootView = MapVisitPinChrome(title: annotation?.title, semantic: annotation?.semantic)
         setNeedsLayout()
     }
 
     override func layoutSubviews() {
         super.layoutSubviews()
-        let pin: CGFloat = glyph.isHidden ? 12 : 16
-        bounds.size = CGSize(width: pin, height: pin)
-        let pinFrame = CGRect(x: 0, y: 0, width: pin, height: pin)
-        dot.frame = pinFrame
-        glyph.frame = pinFrame
-        let labelSize = label.intrinsicContentSize
-        let labelWidth = labelSize.width + 8
-        let labelHeight = labelSize.height + 2
-        label.frame = CGRect(
-            x: (pin - labelWidth) / 2,
-            y: pin + 4,
-            width: labelWidth,
-            height: labelHeight
-        )
-        centerOffset = .zero
+        let size = hostingController.sizeThatFits(in: CGSize(width: 320, height: 200))
+        let width = max(MapVisitPinChrome.pinSpan, size.width)
+        let height = max(MapVisitPinChrome.pinSpan, size.height)
+        bounds.size = CGSize(width: width, height: height)
+        hostingController.view.frame = bounds
+        // Keep the glass pin centered on the coordinate; label hangs below.
+        centerOffset = CGPoint(x: 0, y: height / 2 - MapVisitPinChrome.pinSpan / 2)
     }
 }
 #endif
