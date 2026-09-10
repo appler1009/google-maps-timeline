@@ -207,6 +207,8 @@ private struct TimelineKitMapHost: View {
             routed: store.routesForDisplay,
             routeGeneration: store.routeGeneration,
             visitFocusID: store.selectedVisitID,
+            placeNameGeneration: store.placeNameGeneration,
+            annotationTitles: store.mapAnnotationTitles(),
             onSelectVisit: { store.focusVisit(id: $0) },
             legendCoverage: store.legendCoverage
         )
@@ -244,6 +246,8 @@ struct TimelineKitMap: NSViewRepresentable {
     var routed: [RoutedHop]
     var routeGeneration: UInt64
     var visitFocusID: String?
+    var placeNameGeneration: UInt64
+    var annotationTitles: [String: String]
     var onSelectVisit: (String) -> Void
     /// Unused on macOS, where the legend sits beside the map rather than over it.
     var legendCoverage: CGFloat
@@ -280,6 +284,8 @@ struct TimelineKitMap: NSViewRepresentable {
             routed: routed,
             routeGeneration: routeGeneration,
             visitFocusID: visitFocusID,
+            placeNameGeneration: placeNameGeneration,
+            annotationTitles: annotationTitles,
             onSelectVisit: onSelectVisit
         )
     }
@@ -293,6 +299,7 @@ struct TimelineKitMap: NSViewRepresentable {
         private var lastHoverID: String?
         private var lastRouteGeneration: UInt64 = 0
         private var lastVisitFocusID: String?
+        private var lastPlaceNameGeneration: UInt64 = .max
         private var overlayRenderers: [ObjectIdentifier: MKOverlayRenderer] = [:]
         private var contentTick: UInt64 = 0
         private var pathTick: UInt64 = 0
@@ -303,6 +310,7 @@ struct TimelineKitMap: NSViewRepresentable {
         private var latestRouted: [RoutedHop] = []
         private var latestRouteGeneration: UInt64 = 0
         private var latestVisitFocusID: String?
+        private var latestTitles: [String: String] = [:]
         var onSelectVisit: ((String) -> Void)?
 
         func sync(
@@ -319,6 +327,8 @@ struct TimelineKitMap: NSViewRepresentable {
             routed: [RoutedHop],
             routeGeneration: UInt64,
             visitFocusID: String?,
+            placeNameGeneration: UInt64,
+            annotationTitles: [String: String],
             onSelectVisit: @escaping (String) -> Void
         ) {
             self.onSelectVisit = onSelectVisit
@@ -327,11 +337,13 @@ struct TimelineKitMap: NSViewRepresentable {
             latestRouted = routed
             latestRouteGeneration = routeGeneration
             latestVisitFocusID = visitFocusID
+            latestTitles = annotationTitles
             if dayID != lastDayID || placeID != lastPlaceID {
                 lastDayID = dayID
                 lastPlaceID = placeID
                 lastRouteGeneration = routeGeneration
                 lastVisitFocusID = visitFocusID
+                lastPlaceNameGeneration = placeNameGeneration
                 lastHoverID = nil
                 pathTick &+= 1
                 contentInFlight = true
@@ -341,7 +353,8 @@ struct TimelineKitMap: NSViewRepresentable {
                         map: map,
                         day: self.latestDay,
                         place: self.latestPlace,
-                        routed: self.latestRouted
+                        routed: self.latestRouted,
+                        titles: self.latestTitles
                     )
                     self.lastRouteGeneration = self.latestRouteGeneration
                     self.lastVisitFocusID = self.latestVisitFocusID
@@ -351,6 +364,12 @@ struct TimelineKitMap: NSViewRepresentable {
                 lastVisitFocusID = visitFocusID
                 if contentInFlight { return }
                 crossfadePaths(map: map, day: latestDay, routed: latestRouted)
+            }
+            if placeNameGeneration != lastPlaceNameGeneration {
+                lastPlaceNameGeneration = placeNameGeneration
+                if !contentInFlight {
+                    TimelineMapPlotter.applyTitles(annotationTitles, to: map)
+                }
             }
             if generation != lastGeneration {
                 lastGeneration = generation
@@ -447,16 +466,22 @@ struct TimelineKitMap: NSViewRepresentable {
             frame()
         }
 
-        private func rebuild(map: MKMapView, day: DayRecord?, place: PlaceRecord?, routed: [RoutedHop]) {
+        private func rebuild(
+            map: MKMapView,
+            day: DayRecord?,
+            place: PlaceRecord?,
+            routed: [RoutedHop],
+            titles: [String: String]
+        ) {
             overlayRenderers.removeAll(keepingCapacity: true)
             map.removeOverlays(map.overlays)
             map.removeAnnotations(map.annotations)
             hoverOverlay = nil
 
             if let day {
-                TimelineMapPlotter.install(on: map, day: day, place: nil, routed: routed)
+                TimelineMapPlotter.install(on: map, day: day, place: nil, routed: routed, titles: titles)
             } else if let place {
-                TimelineMapPlotter.install(on: map, day: nil, place: place, routed: [])
+                TimelineMapPlotter.install(on: map, day: nil, place: place, routed: [], titles: titles)
             }
         }
 
@@ -548,33 +573,17 @@ enum TimelineMapChrome {
 }
 
 #if os(macOS)
-private final class VisitMarkerView: MKAnnotationView {
-    private let dot = NSView()
-    private let glyph = NSImageView()
-    private let label = NSTextField(labelWithString: "")
+private final class VisitMarkerView: MKAnnotationView, VisitMarkerTitleUpdating {
+    private let hosting = NSHostingView(rootView: MapVisitPinChrome(title: nil, semantic: nil))
 
     override init(annotation: MKAnnotation?, reuseIdentifier: String?) {
         super.init(annotation: annotation, reuseIdentifier: reuseIdentifier)
         displayPriority = .required
         collisionMode = .none
         canShowCallout = false
-        dot.wantsLayer = true
-        dot.layer?.cornerRadius = 6
-        dot.layer?.borderWidth = 1.5
-        dot.layer?.borderColor = NSColor(red: 0.93, green: 0.89, blue: 0.82, alpha: 0.9).cgColor
-        glyph.imageScaling = .scaleProportionallyUpOrDown
-        glyph.symbolConfiguration = .init(pointSize: 13, weight: .semibold)
-        label.font = .systemFont(ofSize: 10, weight: .semibold)
-        label.textColor = NSColor(red: 0.93, green: 0.89, blue: 0.82, alpha: 1)
-        label.backgroundColor = NSColor.black.withAlphaComponent(0.45)
-        label.drawsBackground = true
-        label.wantsLayer = true
-        label.layer?.cornerRadius = 8
-        label.layer?.masksToBounds = true
-        addSubview(dot)
-        addSubview(glyph)
-        addSubview(label)
-        bounds.size = CGSize(width: 12, height: 12)
+        hosting.frame = .zero
+        addSubview(hosting)
+        bounds.size = CGSize(width: MapVisitPinChrome.pinSpan, height: MapVisitPinChrome.pinSpan)
     }
 
     required init?(coder: NSCoder) {
@@ -584,50 +593,27 @@ private final class VisitMarkerView: MKAnnotationView {
     override var isFlipped: Bool { true }
 
     func apply(_ annotation: VisitAnnotation?) {
-        label.stringValue = annotation?.title ?? "Place"
-        let color: NSColor
-        switch annotation?.semantic {
-        case "Home": color = Palette.ns(Palette.copper)
-        case "Work": color = Palette.ns(Palette.water)
-        default: color = Palette.ns(Palette.path)
-        }
-        if let name = TimelineParser.symbolName(annotation?.semantic) {
-            glyph.image = NSImage(systemSymbolName: name, accessibilityDescription: annotation?.title)
-            glyph.contentTintColor = color
-            glyph.isHidden = false
-            dot.isHidden = true
-        } else {
-            glyph.isHidden = true
-            dot.isHidden = false
-            dot.layer?.backgroundColor = color.cgColor
-        }
+        hosting.rootView = MapVisitPinChrome(title: annotation?.title, semantic: annotation?.semantic)
         needsLayout = true
     }
 
     override func layout() {
         super.layout()
-        let pin: CGFloat = glyph.isHidden ? 12 : 16
-        bounds.size = CGSize(width: pin, height: pin)
-        let pinFrame = CGRect(x: 0, y: 0, width: pin, height: pin)
-        dot.frame = pinFrame
-        glyph.frame = pinFrame
-        label.sizeToFit()
-        let labelSize = label.frame.size
-        let labelWidth = labelSize.width + 8
-        let labelHeight = labelSize.height + 2
-        label.frame = CGRect(
-            x: (pin - labelWidth) / 2,
-            y: -labelHeight - 4,
-            width: labelWidth,
-            height: labelHeight
-        )
-        centerOffset = .zero
+        let size = hosting.fittingSize
+        let width = max(MapVisitPinChrome.pinSpan, size.width)
+        let height = max(MapVisitPinChrome.pinSpan, size.height)
+        bounds.size = CGSize(width: width, height: height)
+        hosting.frame = CGRect(origin: .zero, size: bounds.size)
+        // Keep the glass pin centered on the coordinate; label hangs below.
+        centerOffset = CGPoint(x: 0, y: height / 2 - MapVisitPinChrome.pinSpan / 2)
     }
 }
 #endif
 
 struct SelectionCard: View {
     @Environment(TimelineStore.self) private var store
+    @State private var renamingPlaceID: String?
+    @State private var renameDraft = ""
     #if os(iOS)
     @State private var collapsed = true
     @State private var drag: CGFloat = 0
@@ -650,9 +636,17 @@ struct SelectionCard: View {
                             .allowsHitTesting(sheetExpansion > 0.35)
                     }
                 } else if let place = store.selectedPlace {
-                    Text(store.subtitle(for: place))
-                        .font(.system(size: 12))
-                        .foregroundStyle(Palette.muted)
+                    HStack(alignment: .center, spacing: 8) {
+                        Text(store.subtitle(for: place))
+                            .font(.system(size: 12))
+                            .foregroundStyle(Palette.muted)
+                        Spacer(minLength: 8)
+                        if store.canRename(place) {
+                            PlaceActionsMenu(placeID: place.id) {
+                                beginRename(place)
+                            }
+                        }
+                    }
                 }
             }
             .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { headerHeight = $0 }
@@ -696,6 +690,12 @@ struct SelectionCard: View {
         #endif
         .foregroundStyle(Palette.parchment)
         .onDisappear { store.hoveredVisitID = nil }
+        .placeRenameAlert(
+            placeID: $renamingPlaceID,
+            draft: $renameDraft
+        ) { id, name in
+            store.renamePlace(id: id, to: name)
+        }
     }
 
     #if os(iOS)
@@ -885,16 +885,32 @@ struct SelectionCard: View {
 
     @ViewBuilder
     private func placeHeader(_ place: PlaceRecord) -> some View {
-        Text(store.displayName(for: place))
-            .font(.system(size: 20, weight: .regular, design: .serif))
-        Text(store.subtitle(for: place))
-            .font(.system(size: 12))
-            .foregroundStyle(Palette.muted)
-        if let first = place.firstVisit, let last = place.lastVisit {
-            Text("From \(first.formatted(date: .abbreviated, time: .omitted)) to \(last.formatted(date: .abbreviated, time: .omitted))")
-                .font(.system(size: 12))
-                .foregroundStyle(Palette.muted)
+        HStack(alignment: .top, spacing: 8) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(store.displayName(for: place))
+                    .font(.system(size: 20, weight: .regular, design: .serif))
+                Text(store.subtitle(for: place))
+                    .font(.system(size: 12))
+                    .foregroundStyle(Palette.muted)
+                if let first = place.firstVisit, let last = place.lastVisit {
+                    Text("From \(first.formatted(date: .abbreviated, time: .omitted)) to \(last.formatted(date: .abbreviated, time: .omitted))")
+                        .font(.system(size: 12))
+                        .foregroundStyle(Palette.muted)
+                }
+            }
+            Spacer(minLength: 8)
+            if store.canRename(place) {
+                PlaceActionsMenu(placeID: place.id) {
+                    beginRename(place)
+                }
+            }
         }
+    }
+
+    private func beginRename(_ place: PlaceRecord) {
+        let current = store.displayName(for: place)
+        renameDraft = current == "Unnamed place" ? "" : current
+        renamingPlaceID = place.id
     }
 
     @ViewBuilder

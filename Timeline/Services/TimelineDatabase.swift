@@ -140,6 +140,56 @@ actor TimelineDatabase {
         sqlite3_step(statement)
     }
 
+    func loadPlaceNames() throws -> [String: String] {
+        guard let db else { return [:] }
+        var statement: OpaquePointer?
+        defer { sqlite3_finalize(statement) }
+        guard sqlite3_prepare_v2(
+            db,
+            "SELECT place_key, name FROM place_names",
+            -1,
+            &statement,
+            nil
+        ) == SQLITE_OK else { throw TimelineDatabaseError.execute(errmsg()) }
+        var names: [String: String] = [:]
+        while sqlite3_step(statement) == SQLITE_ROW {
+            guard let key = text(statement, 0), let name = text(statement, 1) else { continue }
+            names[key] = name
+        }
+        return names
+    }
+
+    /// Empty / whitespace `name` clears the override so the place falls back to its semantic title.
+    func setPlaceName(placeKey: String, name: String) throws {
+        guard let db else { throw TimelineDatabaseError.open }
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty {
+            try exec("DELETE FROM place_names WHERE place_key = \(quote(placeKey))")
+            return
+        }
+        var statement: OpaquePointer?
+        defer { sqlite3_finalize(statement) }
+        guard sqlite3_prepare_v2(
+            db,
+            """
+            INSERT INTO place_names (place_key, name, updated_at)
+            VALUES (?, ?, ?)
+            ON CONFLICT(place_key) DO UPDATE SET
+                name = excluded.name,
+                updated_at = excluded.updated_at
+            """,
+            -1,
+            &statement,
+            nil
+        ) == SQLITE_OK else { throw TimelineDatabaseError.execute(errmsg()) }
+        sqlite3_bind_text(statement, 1, placeKey, -1, Self.transient)
+        sqlite3_bind_text(statement, 2, trimmed, -1, Self.transient)
+        sqlite3_bind_double(statement, 3, Date().timeIntervalSince1970)
+        guard sqlite3_step(statement) == SQLITE_DONE else {
+            throw TimelineDatabaseError.execute(errmsg())
+        }
+    }
+
     private static func migrate(_ db: OpaquePointer?) throws {
         try exec(
             db,
@@ -190,6 +240,11 @@ actor TimelineDatabase {
             CREATE TABLE IF NOT EXISTS path_routes (
                 path_id TEXT PRIMARY KEY,
                 points BLOB NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS place_names (
+                place_key TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                updated_at REAL NOT NULL
             );
             CREATE TRIGGER IF NOT EXISTS paths_points_changed AFTER UPDATE OF points ON paths
             BEGIN

@@ -44,6 +44,10 @@ final class TimelineStore {
     private var routesByDay: [Date: [RoutedHop]] = [:]
     private var daysByID: [Date: DayRecord] = [:]
     private var placesByID: [String: PlaceRecord] = [:]
+    /// Custom display names keyed by place id / placeKey; survive re-import.
+    private var placeNames: [String: String] = [:]
+    /// Bumped when a place is renamed so the map refreshes annotation titles.
+    private(set) var placeNameGeneration: UInt64 = 0
     private(set) var monthGroups: [(month: Date, days: [DayRecord])] = []
     private(set) var yearOptions: [Int] = []
     private(set) var monthOptions: [Int] = []
@@ -154,7 +158,46 @@ final class TimelineStore {
     }
 
     func displayName(placeKey: String, semanticType: String?) -> String {
-        TimelineParser.semanticTitle(semanticType) ?? "Unnamed place"
+        if let custom = placeNames[placeKey], !custom.isEmpty {
+            return custom
+        }
+        return TimelineParser.semanticTitle(semanticType) ?? "Unnamed place"
+    }
+
+    func canRename(_ place: PlaceRecord) -> Bool {
+        switch place.semanticType {
+        case "Home", "Work": return false
+        default: return true
+        }
+    }
+
+    func renamePlace(id: String, to name: String) {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty {
+            placeNames.removeValue(forKey: id)
+        } else {
+            placeNames[id] = trimmed
+        }
+        // Reassign so Observation always notices dictionary edits.
+        placeNames = placeNames
+        placeNameGeneration &+= 1
+        Task {
+            try? await database.setPlaceName(placeKey: id, name: trimmed)
+        }
+    }
+
+    /// Titles for the currently visible map annotations (day visits and/or selected place).
+    func mapAnnotationTitles() -> [String: String] {
+        var titles: [String: String] = [:]
+        if let day = selectedDay {
+            for visit in day.visits {
+                titles[visit.placeKey] = displayName(placeKey: visit.placeKey, semanticType: visit.semanticType)
+            }
+        }
+        if let place = selectedPlace {
+            titles[place.id] = displayName(for: place)
+        }
+        return titles
     }
 
     func selectTab(_ tab: SidebarTab) {
@@ -190,6 +233,7 @@ final class TimelineStore {
     func restoreLastOpenedFile() {
         Task {
             if isLoading { return }
+            await refreshPlaceNames()
             if let batch = try? await database.loadBatch() {
                 if isLoading { return }
                 let name = (try? await database.latestSourceName()) ?? "Library"
@@ -226,6 +270,7 @@ final class TimelineStore {
                 try await database.upsert(batch: batch, sourceName: name)
                 let merged = try await database.loadBatch() ?? batch
                 let source = (try? await database.latestSourceName()) ?? name
+                await refreshPlaceNames()
                 apply(TimelineParser.assemble(merged, sourceName: source))
             } catch {
                 loadError = error.localizedDescription
@@ -296,6 +341,10 @@ final class TimelineStore {
             requestRoutes(for: day)
         }
         #endif
+    }
+
+    private func refreshPlaceNames() async {
+        placeNames = (try? await database.loadPlaceNames()) ?? placeNames
     }
 
     func select(day: DayRecord) {
