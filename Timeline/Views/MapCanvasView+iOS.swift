@@ -25,16 +25,34 @@ struct TimelineKitMap: UIViewRepresentable {
         Coordinator()
     }
 
+    /// Clearance below the safe area for the day title / day-step chrome.
+    private static let topChromeClearance: CGFloat = 56
+
     func makeUIView(context: Context) -> MKMapView {
         let map = MKMapView(frame: .zero)
         map.delegate = context.coordinator
         map.isPitchEnabled = false
         map.isRotateEnabled = false
         map.showsCompass = true
-        map.showsScale = true
+        // Built-in scale pins top-leading under the day chrome; place our own below it.
+        map.showsScale = false
         map.overrideUserInterfaceStyle = .dark
         TimelineMapChrome.apply(to: map)
+        Self.installScale(on: map)
         return map
+    }
+
+    private static func installScale(on map: MKMapView) {
+        let scale = MKScaleView(mapView: map)
+        scale.legendAlignment = .leading
+        scale.scaleVisibility = .adaptive
+        scale.translatesAutoresizingMaskIntoConstraints = false
+        map.addSubview(scale)
+        NSLayoutConstraint.activate([
+            scale.leadingAnchor.constraint(equalTo: map.safeAreaLayoutGuide.leadingAnchor, constant: 12),
+            scale.topAnchor.constraint(equalTo: map.safeAreaLayoutGuide.topAnchor, constant: topChromeClearance),
+            scale.trailingAnchor.constraint(lessThanOrEqualTo: map.safeAreaLayoutGuide.centerXAnchor),
+        ])
     }
 
     func updateUIView(_ map: MKMapView, context: Context) {
@@ -174,7 +192,7 @@ struct TimelineKitMap: UIViewRepresentable {
         private func edgePadding(for map: MKMapView) -> UIEdgeInsets {
             let bottom = min(lastLegendCoverage, map.bounds.height * 0.6)
             return UIEdgeInsets(
-                top: map.safeAreaInsets.top + 56,
+                top: map.safeAreaInsets.top + TimelineKitMap.topChromeClearance,
                 left: 24,
                 bottom: max(map.safeAreaInsets.bottom, bottom),
                 right: 24
