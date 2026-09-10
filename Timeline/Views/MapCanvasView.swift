@@ -194,24 +194,31 @@ private struct TimelineKitMapHost: View {
     @Environment(TimelineStore.self) private var store
 
     var body: some View {
-            TimelineKitMap(
-            generation: store.focusGeneration,
-            region: store.focusRegion,
-            animated: store.focusAnimated,
-            dayID: store.selectedDayID,
-            placeID: store.selectedPlaceID,
-            hoverID: store.hoveredVisitID,
-            day: store.selectedDay,
-            place: store.selectedPlace,
-            hovered: store.hoveredVisit,
-            routed: store.routesForDisplay,
-            routeGeneration: store.routeGeneration,
-            visitFocusID: store.selectedVisitID,
-            placeNameGeneration: store.placeNameGeneration,
-            annotationTitles: store.mapAnnotationTitles(),
-            onSelectVisit: { store.focusVisit(id: $0) },
-            legendCoverage: store.legendCoverage
-        )
+        // Avoid creating MKMapView at 0×0 — Debug Metal validation asserts when MapKit
+        // tries to draw into a CAMetalLayer with an empty drawable.
+        GeometryReader { geo in
+            if geo.size.width > 1, geo.size.height > 1 {
+                TimelineKitMap(
+                    generation: store.focusGeneration,
+                    region: store.focusRegion,
+                    animated: store.focusAnimated,
+                    dayID: store.selectedDayID,
+                    placeID: store.selectedPlaceID,
+                    hoverID: store.hoveredVisitID,
+                    day: store.selectedDay,
+                    place: store.selectedPlace,
+                    hovered: store.hoveredVisit,
+                    routed: store.routesForDisplay,
+                    routeGeneration: store.routeGeneration,
+                    visitFocusID: store.selectedVisitID,
+                    placeNameGeneration: store.placeNameGeneration,
+                    annotationTitles: store.mapAnnotationTitles(),
+                    onSelectVisit: { store.focusVisit(id: $0) },
+                    legendCoverage: store.legendCoverage
+                )
+                .frame(width: geo.size.width, height: geo.size.height)
+            }
+        }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .accessibilityIdentifier("timeline-map")
         .accessibilityValue("\(store.routesForDisplay.count) routes")

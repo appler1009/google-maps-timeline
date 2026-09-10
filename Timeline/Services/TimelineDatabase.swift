@@ -142,32 +142,35 @@ actor TimelineDatabase {
     }
 
     func loadPlaceNames() throws -> [String: String] {
+        try loadPlaceNameRecords()
+            .filter { !$0.value.name.isEmpty }
+            .mapValues(\.name)
+    }
+
+    func loadPlaceNameRecords() throws -> [String: PlaceIdentityName] {
         guard let db else { return [:] }
         var statement: OpaquePointer?
         defer { sqlite3_finalize(statement) }
         guard sqlite3_prepare_v2(
             db,
-            "SELECT place_key, name FROM place_names",
+            "SELECT place_key, name, updated_at FROM place_names",
             -1,
             &statement,
             nil
         ) == SQLITE_OK else { throw TimelineDatabaseError.execute(errmsg()) }
-        var names: [String: String] = [:]
+        var names: [String: PlaceIdentityName] = [:]
         while sqlite3_step(statement) == SQLITE_ROW {
             guard let key = text(statement, 0), let name = text(statement, 1) else { continue }
-            names[key] = name
+            names[key] = PlaceIdentityName(name: name, updatedAt: sqlite3_column_double(statement, 2))
         }
         return names
     }
 
-    /// Empty / whitespace `name` clears the override so the place falls back to its semantic title.
-    func setPlaceName(placeKey: String, name: String) throws {
+    /// Empty / whitespace `name` stores a tombstone so iCloud sync can clear other devices.
+    func setPlaceName(placeKey: String, name: String, updatedAt: TimeInterval? = nil) throws {
         guard let db else { throw TimelineDatabaseError.open }
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmed.isEmpty {
-            try exec("DELETE FROM place_names WHERE place_key = \(quote(placeKey))")
-            return
-        }
+        let stamp = updatedAt ?? Date().timeIntervalSince1970
         var statement: OpaquePointer?
         defer { sqlite3_finalize(statement) }
         guard sqlite3_prepare_v2(
@@ -178,6 +181,7 @@ actor TimelineDatabase {
             ON CONFLICT(place_key) DO UPDATE SET
                 name = excluded.name,
                 updated_at = excluded.updated_at
+            WHERE excluded.updated_at >= place_names.updated_at
             """,
             -1,
             &statement,
@@ -185,36 +189,69 @@ actor TimelineDatabase {
         ) == SQLITE_OK else { throw TimelineDatabaseError.execute(errmsg()) }
         sqlite3_bind_text(statement, 1, placeKey, -1, Self.transient)
         sqlite3_bind_text(statement, 2, trimmed, -1, Self.transient)
-        sqlite3_bind_double(statement, 3, Date().timeIntervalSince1970)
+        sqlite3_bind_double(statement, 3, stamp)
         guard sqlite3_step(statement) == SQLITE_DONE else {
             throw TimelineDatabaseError.execute(errmsg())
         }
     }
 
+    /// Apply a remote name when it is strictly newer than the local row.
+    func applyPlaceNameIfNewer(placeKey: String, name: String, updatedAt: TimeInterval) throws -> Bool {
+        let local = try loadPlaceNameRecords()[placeKey]
+        if let local, local.updatedAt >= updatedAt { return false }
+        try setPlaceName(placeKey: placeKey, name: name, updatedAt: updatedAt)
+        return true
+    }
+
     /// `from_key → to_key` aliases. Values are already resolved through chains.
     func loadPlaceMerges() throws -> [String: String] {
+        try loadPlaceMergeRecords().mapValues(\.toKey).resolvedMerges()
+    }
+
+    func loadPlaceMergeRecords() throws -> [String: PlaceIdentityMerge] {
         guard let db else { return [:] }
         var statement: OpaquePointer?
         defer { sqlite3_finalize(statement) }
         guard sqlite3_prepare_v2(
             db,
-            "SELECT from_key, to_key FROM place_merges",
+            "SELECT from_key, to_key, updated_at FROM place_merges",
             -1,
             &statement,
             nil
         ) == SQLITE_OK else { throw TimelineDatabaseError.execute(errmsg()) }
-        var raw: [String: String] = [:]
+        var raw: [String: PlaceIdentityMerge] = [:]
         while sqlite3_step(statement) == SQLITE_ROW {
             guard let from = text(statement, 0), let to = text(statement, 1) else { continue }
-            raw[from] = to
+            raw[from] = PlaceIdentityMerge(toKey: to, updatedAt: sqlite3_column_double(statement, 2))
         }
-        return Self.resolveMerges(raw)
+        return raw
+    }
+
+    /// Apply a remote merge when it is newer; remaps visits like a local merge.
+    func applyPlaceMergeIfNewer(
+        from fromKey: String,
+        into toKey: String,
+        updatedAt: TimeInterval,
+        targetSemantic: String?
+    ) throws -> Bool {
+        guard fromKey != toKey else { return false }
+        if let local = try loadPlaceMergeRecords()[fromKey], local.updatedAt >= updatedAt {
+            return false
+        }
+        try mergePlace(from: fromKey, into: toKey, targetSemantic: targetSemantic, updatedAt: updatedAt)
+        return true
     }
 
     /// Fold `fromKey` into `toKey`: remap visits, record the alias, drop the old custom name.
-    func mergePlace(from fromKey: String, into toKey: String, targetSemantic: String?) throws {
+    func mergePlace(
+        from fromKey: String,
+        into toKey: String,
+        targetSemantic: String?,
+        updatedAt: TimeInterval? = nil
+    ) throws {
         guard fromKey != toKey else { return }
         guard let db else { throw TimelineDatabaseError.open }
+        let stamp = updatedAt ?? Date().timeIntervalSince1970
         try exec("BEGIN IMMEDIATE")
         do {
             var update: OpaquePointer?
@@ -260,6 +297,7 @@ actor TimelineDatabase {
                 ON CONFLICT(from_key) DO UPDATE SET
                     to_key = excluded.to_key,
                     updated_at = excluded.updated_at
+                WHERE excluded.updated_at >= place_merges.updated_at
                 """,
                 -1,
                 &insert,
@@ -267,7 +305,7 @@ actor TimelineDatabase {
             ) == SQLITE_OK else { throw TimelineDatabaseError.execute(errmsg()) }
             sqlite3_bind_text(insert, 1, fromKey, -1, Self.transient)
             sqlite3_bind_text(insert, 2, toKey, -1, Self.transient)
-            sqlite3_bind_double(insert, 3, Date().timeIntervalSince1970)
+            sqlite3_bind_double(insert, 3, stamp)
             guard sqlite3_step(insert) == SQLITE_DONE else {
                 throw TimelineDatabaseError.execute(errmsg())
             }
@@ -276,32 +314,16 @@ actor TimelineDatabase {
             try exec(
                 """
                 UPDATE place_merges
-                SET to_key = \(quote(toKey)), updated_at = \(Date().timeIntervalSince1970)
+                SET to_key = \(quote(toKey)), updated_at = \(stamp)
                 WHERE to_key = \(quote(fromKey))
                 """
             )
-            try exec("DELETE FROM place_names WHERE place_key = \(quote(fromKey))")
+            try setPlaceName(placeKey: fromKey, name: "", updatedAt: stamp)
             try exec("COMMIT")
         } catch {
             sqlite3_exec(db, "ROLLBACK", nil, nil, nil)
             throw error
         }
-    }
-
-    private static func resolveMerges(_ raw: [String: String]) -> [String: String] {
-        var resolved: [String: String] = [:]
-        for key in raw.keys {
-            var current = key
-            var seen: Set<String> = [key]
-            while let next = raw[current], !seen.contains(next) {
-                seen.insert(next)
-                current = next
-            }
-            if current != key {
-                resolved[key] = current
-            }
-        }
-        return resolved
     }
 
     private static func remapped(_ visit: TimelineVisit, merges: [String: String]) -> TimelineVisit {

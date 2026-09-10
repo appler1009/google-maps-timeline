@@ -31,7 +31,8 @@ struct TimelineKitMap: UIViewRepresentable {
     private static let topChromeClearance: CGFloat = 56
 
     func makeUIView(context: Context) -> MKMapView {
-        let map = MKMapView(frame: .zero)
+        // Non-empty initial frame avoids a 0×0 Metal drawable during the first layout pass.
+        let map = MKMapView(frame: CGRect(x: 0, y: 0, width: 1, height: 1))
         map.delegate = context.coordinator
         map.isPitchEnabled = false
         map.isRotateEnabled = false

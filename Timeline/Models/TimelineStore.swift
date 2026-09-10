@@ -39,6 +39,7 @@ final class TimelineStore {
 
     private let database: TimelineDatabase
     private let snapper: RouteSnapper
+    private let identitySync = PlaceIdentitySync.shared
     private var routeTask: Task<Void, Never>?
     private var throttleHideTask: Task<Void, Never>?
     private var routesByDay: [Date: [RoutedHop]] = [:]
@@ -48,6 +49,7 @@ final class TimelineStore {
     private var placeNames: [String: String] = [:]
     /// Bumped when a place is renamed so the map refreshes annotation titles.
     private(set) var placeNameGeneration: UInt64 = 0
+    private var isApplyingCloudIdentity = false
     private(set) var monthGroups: [(month: Date, days: [DayRecord])] = []
     private(set) var yearOptions: [Int] = []
     private(set) var monthOptions: [Int] = []
@@ -55,6 +57,13 @@ final class TimelineStore {
     init(database: TimelineDatabase = TimelineDatabase(), snapper: RouteSnapper? = nil) {
         self.database = database
         self.snapper = snapper ?? RouteSnapper(database: database)
+        if !TimelineLaunch.isUITesting {
+            identitySync.start { [weak self] in
+                Task { @MainActor in
+                    await self?.pullPlaceIdentityFromCloud()
+                }
+            }
+        }
     }
 
     static func uiTesting() -> TimelineStore {
@@ -192,6 +201,8 @@ final class TimelineStore {
         placeNameGeneration &+= 1
         Task {
             try? await database.setPlaceName(placeKey: id, name: trimmed)
+            TimelineLog.info("place renamed", ["placeKey": id, "name": trimmed])
+            await pushPlaceIdentityToCloud()
         }
     }
 
@@ -208,6 +219,7 @@ final class TimelineStore {
                 targetSemantic: target.semanticType
             )
             await refreshPlaceNames()
+            await pushPlaceIdentityToCloud()
             if let batch = try? await database.loadBatch() {
                 let name = (try? await database.latestSourceName()) ?? sourceName ?? "Library"
                 let timeline = TimelineParser.assemble(batch, sourceName: name)
@@ -281,6 +293,7 @@ final class TimelineStore {
         Task {
             if isLoading { return }
             await refreshPlaceNames()
+            await pullPlaceIdentityFromCloud()
             if let batch = try? await database.loadBatch() {
                 if isLoading { return }
                 let name = (try? await database.latestSourceName()) ?? "Library"
@@ -318,6 +331,7 @@ final class TimelineStore {
                 let merged = try await database.loadBatch() ?? batch
                 let source = (try? await database.latestSourceName()) ?? name
                 await refreshPlaceNames()
+                await pullPlaceIdentityFromCloud()
                 apply(TimelineParser.assemble(merged, sourceName: source))
             } catch {
                 loadError = error.localizedDescription
@@ -392,6 +406,82 @@ final class TimelineStore {
 
     private func refreshPlaceNames() async {
         placeNames = (try? await database.loadPlaceNames()) ?? placeNames
+    }
+
+    private func pushPlaceIdentityToCloud() async {
+        guard !TimelineLaunch.isUITesting, !isApplyingCloudIdentity else { return }
+        let names = (try? await database.loadPlaceNameRecords()) ?? [:]
+        let merges = (try? await database.loadPlaceMergeRecords()) ?? [:]
+        TimelineLog.debug("place-identity store push", ["names": "\(names.count)", "merges": "\(merges.count)"])
+        identitySync.push(PlaceIdentitySnapshot(names: names, merges: merges))
+    }
+
+    private func pullPlaceIdentityFromCloud() async {
+        guard !TimelineLaunch.isUITesting else { return }
+        guard !isApplyingCloudIdentity else { return }
+        isApplyingCloudIdentity = true
+        defer { isApplyingCloudIdentity = false }
+
+        TimelineLog.publishIntakeForPeersIfNeeded()
+        TimelineLog.refreshConfiguration()
+        identitySync.synchronize()
+        let remote = identitySync.pull()
+        TimelineLog.info(
+            "place-identity store pull",
+            ["names": "\(remote.names.count)", "merges": "\(remote.merges.count)"]
+        )
+        var mergesChanged = false
+        var namesApplied = 0
+        var mergesApplied = 0
+
+        for (key, record) in remote.names {
+            if let changed = try? await database.applyPlaceNameIfNewer(
+                placeKey: key,
+                name: record.name,
+                updatedAt: record.updatedAt
+            ), changed {
+                namesApplied += 1
+            }
+        }
+        for (fromKey, record) in remote.merges {
+            let semantic = placesByID[record.toKey]?.semanticType
+            if let changed = try? await database.applyPlaceMergeIfNewer(
+                from: fromKey,
+                into: record.toKey,
+                updatedAt: record.updatedAt,
+                targetSemantic: semantic
+            ), changed {
+                mergesChanged = true
+                mergesApplied += 1
+            }
+        }
+
+        TimelineLog.info(
+            "place-identity store applied",
+            ["namesApplied": "\(namesApplied)", "mergesApplied": "\(mergesApplied)"]
+        )
+
+        await refreshPlaceNames()
+        placeNameGeneration &+= 1
+
+        if mergesChanged, let batch = try? await database.loadBatch() {
+            let name = (try? await database.latestSourceName()) ?? sourceName ?? "Library"
+            let keepPlaceID = selectedPlaceID
+            let keepDayID = selectedDayID
+            let keepTab = tab
+            apply(TimelineParser.assemble(batch, sourceName: name))
+            tab = keepTab
+            if keepTab == .places, let id = keepPlaceID, let place = placesByID[id] {
+                select(place: place)
+            } else if keepTab == .dates, let id = keepDayID, let day = daysByID[id] {
+                select(day: day)
+            }
+        }
+
+        // Upload the merged local+remote snapshot so peers converge.
+        let names = (try? await database.loadPlaceNameRecords()) ?? [:]
+        let merges = (try? await database.loadPlaceMergeRecords()) ?? [:]
+        identitySync.push(PlaceIdentitySnapshot(names: names, merges: merges))
     }
 
     func select(day: DayRecord) {
