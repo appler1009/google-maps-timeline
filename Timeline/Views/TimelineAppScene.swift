@@ -117,7 +117,7 @@ struct TimelineAppScene: View {
                 NavigationStack {
                     SidebarView(importerPresented: $importerPresented)
                         .navigationTitle("Timeline")
-                        .navigationBarTitleDisplayMode(.large)
+                        .navigationBarTitleDisplayMode(.inline)
                         .toolbar(showingCompactMap ? .hidden : .automatic, for: .navigationBar)
                         .toolbar {
                             ToolbarItem(placement: .topBarTrailing) {
