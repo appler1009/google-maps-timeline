@@ -18,10 +18,20 @@ struct SidebarView: View {
                     loading
                 } else if store.parsed == nil {
                     emptyLibrary
-                } else if store.tab == .dates {
-                    datesList
                 } else {
-                    placesList
+                    ZStack {
+                        datesList
+                            .opacity(store.tab == .dates ? 1 : 0)
+                            .allowsHitTesting(store.tab == .dates)
+                            .accessibilityHidden(store.tab != .dates)
+                            .zIndex(store.tab == .dates ? 1 : 0)
+
+                        placesList
+                            .opacity(store.tab == .places ? 1 : 0)
+                            .allowsHitTesting(store.tab == .places)
+                            .accessibilityHidden(store.tab != .places)
+                            .zIndex(store.tab == .places ? 1 : 0)
+                    }
                 }
             }
         }
@@ -185,10 +195,19 @@ struct SidebarView: View {
                 store.handleDaySelectionChange()
             }
             .onChange(of: store.filterYear) { _, _ in
-                if let id = store.selectedDayID { proxy.scrollTo(id, anchor: .top) }
+                scrollDatesToSelection(proxy)
             }
             .onChange(of: store.filterMonth) { _, _ in
-                if let id = store.selectedDayID { proxy.scrollTo(id, anchor: .top) }
+                scrollDatesToSelection(proxy)
+            }
+        }
+    }
+
+    private func scrollDatesToSelection(_ proxy: ScrollViewProxy) {
+        guard let id = store.selectedDayID else { return }
+        DispatchQueue.main.async {
+            withAnimation(.easeInOut(duration: 0.2)) {
+                proxy.scrollTo(id, anchor: .center)
             }
         }
     }
@@ -220,6 +239,7 @@ struct SidebarView: View {
                     }
                 )
                     .tag(place.id)
+                    .id(place.id)
                     .listRowBackground(rowBackground(isSelected: store.selectedPlaceID == place.id))
                     .contentShape(Rectangle())
                     .onTapGesture {

@@ -24,10 +24,12 @@ struct MapCanvasView: View {
                 emptyMap
             }
             #if os(macOS)
-            if store.selectedDay != nil || store.selectedPlace != nil {
+            if store.activeDay != nil || store.activePlace != nil {
                 SelectionCard()
                     .padding(16)
-                    .id(store.selectedDayID ?? store.selectedPlaceID.map { _ in Date.distantPast })
+                    .id(store.tab == .dates
+                        ? (store.selectedDayID.map { "day-\($0.timeIntervalSince1970)" } ?? "day")
+                        : (store.selectedPlaceID.map { "place-\($0)" } ?? "place"))
                     .transition(.opacity)
             }
 
@@ -37,13 +39,17 @@ struct MapCanvasView: View {
         }
         .onChange(of: store.selectedDayID) { _, _ in
             // Paint cached strips before SelectionCard remounts its body.
-            lux.refreshPhotos(for: store.selectedDay)
+            lux.refreshPhotos(for: store.activeDay)
+            lux.dismissViewer()
+        }
+        .onChange(of: store.tab) { _, _ in
+            lux.refreshPhotos(for: store.activeDay)
             lux.dismissViewer()
         }
         #if os(iOS)
         .overlay(alignment: .top) { iosTopChrome }
         .overlay(alignment: .bottom) {
-            if store.selectedDay != nil || store.selectedPlace != nil {
+            if store.activeDay != nil || store.activePlace != nil {
                 SelectionCard()
                     .padding(.horizontal, 12)
                     .padding(.bottom, 8)
@@ -85,7 +91,7 @@ struct MapCanvasView: View {
                 .mapGlassChip()
             }
 
-            if let day = store.selectedDay {
+            if let day = store.activeDay {
                 Button {
                     store.clearVisitFocus()
                 } label: {
@@ -133,7 +139,7 @@ struct MapCanvasView: View {
                     .accessibilityLabel("Next day")
                 }
                 .mapGlassChip()
-            } else if let place = store.selectedPlace {
+            } else if let place = store.activePlace {
                 Button {
                     store.focus(place: place)
                 } label: {
@@ -230,11 +236,11 @@ private struct TimelineKitMapHost: View {
                     generation: store.focusGeneration,
                     region: store.focusRegion,
                     animated: store.focusAnimated,
-                    dayID: store.selectedDayID,
-                    placeID: store.selectedPlaceID,
+                    dayID: store.tab == .dates ? store.selectedDayID : nil,
+                    placeID: store.tab == .places ? store.selectedPlaceID : nil,
                     hoverID: store.hoveredVisitID,
-                    day: store.selectedDay,
-                    place: store.selectedPlace,
+                    day: store.activeDay,
+                    place: store.activePlace,
                     hovered: store.hoveredVisit,
                     routed: store.routesForDisplay,
                     routeGeneration: store.routeGeneration,
@@ -253,8 +259,8 @@ private struct TimelineKitMapHost: View {
         .overlay(alignment: .topLeading) {
             if TimelineLaunch.isUITesting {
                 UITestMapPins(
-                    day: store.selectedDay,
-                    place: store.selectedPlace,
+                    day: store.activeDay,
+                    place: store.activePlace,
                     routeCount: store.routesForDisplay.count
                 )
             }
@@ -672,7 +678,7 @@ struct SelectionCard: View {
             #if os(iOS)
             VStack(alignment: .leading, spacing: 10) {
                 grabber
-                if let day = store.selectedDay {
+                if let day = store.activeDay {
                     HStack {
                         Text(daySummary(day))
                             .font(.system(size: 12))
@@ -682,7 +688,7 @@ struct SelectionCard: View {
                             .opacity(sheetExpansion)
                             .allowsHitTesting(sheetExpansion > 0.35)
                     }
-                } else if let place = store.selectedPlace {
+                } else if let place = store.activePlace {
                     HStack(alignment: .center, spacing: 8) {
                         Text(store.subtitle(for: place))
                             .font(.system(size: 12))
@@ -701,20 +707,20 @@ struct SelectionCard: View {
             .gesture(iosCardGesture)
             VStack(alignment: .leading, spacing: 8) {
                 Divider().overlay(Palette.rule.opacity(0.5))
-                if let day = store.selectedDay {
+                if let day = store.activeDay {
                     dayVisits(day)
-                } else if let place = store.selectedPlace {
+                } else if let place = store.activePlace {
                     placeVisits(place)
                 }
             }
             .frame(height: Self.iosOpenBodyHeight, alignment: .top)
             .allowsHitTesting(sheetExpansion > 0.35)
             #else
-            if let day = store.selectedDay {
+            if let day = store.activeDay {
                 dayHeader(day)
                 Divider().overlay(Palette.rule.opacity(0.5))
                 dayVisits(day)
-            } else if let place = store.selectedPlace {
+            } else if let place = store.activePlace {
                 placeHeader(place)
                 Divider().overlay(Palette.rule.opacity(0.5))
                 placeVisits(place)
@@ -738,15 +744,18 @@ struct SelectionCard: View {
         .foregroundStyle(Palette.parchment)
         .onDisappear { store.hoveredVisitID = nil }
         .placeRenameSheet(placeID: $renamingPlaceID, store: store)
-        .onAppear { lux.refreshPhotos(for: store.selectedDay) }
+        .onAppear { lux.refreshPhotos(for: store.activeDay) }
         .onChange(of: store.selectedDayID) { _, _ in
-            lux.refreshPhotos(for: store.selectedDay)
+            lux.refreshPhotos(for: store.activeDay)
+        }
+        .onChange(of: store.tab) { _, _ in
+            lux.refreshPhotos(for: store.activeDay)
         }
         .onChange(of: lux.paired?.linkedLibraryIds) { _, _ in
-            lux.refreshPhotos(for: store.selectedDay)
+            lux.refreshPhotos(for: store.activeDay)
         }
         .onChange(of: lux.isConnected) { _, connected in
-            if connected { lux.refreshPhotos(for: store.selectedDay) }
+            if connected { lux.refreshPhotos(for: store.activeDay) }
         }
     }
 
@@ -798,7 +807,7 @@ struct SelectionCard: View {
                 let dx = value.translation.width
                 let dy = value.translation.height
                 let predicted = value.predictedEndTranslation.height
-                if abs(dx) > abs(dy), abs(dx) > 48, store.selectedDay != nil, abs(dy) < 50 {
+                if abs(dx) > abs(dy), abs(dx) > 48, store.activeDay != nil, abs(dy) < 50 {
                     drag = 0
                     store.stepDay(by: dx < 0 ? -1 : 1)
                     return
