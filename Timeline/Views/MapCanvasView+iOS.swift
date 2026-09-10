@@ -24,8 +24,10 @@ final class TimelineMapHostView: UIView {
 
     override func layoutSubviews() {
         super.layoutSubviews()
-        guard bounds.width >= 2, bounds.height >= 2 else {
-            mapView?.isHidden = true
+        // Require a comfortable size — mid-animation frames of a few points still
+        // produce invalid Metal drawables under MapKit.
+        guard bounds.width >= 32, bounds.height >= 32 else {
+            tearDownMap()
             return
         }
         if mapView == nil {
@@ -44,6 +46,14 @@ final class TimelineMapHostView: UIView {
         }
         mapView?.frame = bounds
         mapView?.isHidden = false
+    }
+
+    private func tearDownMap() {
+        guard let map = mapView else { return }
+        map.delegate = nil
+        map.removeFromSuperview()
+        mapView = nil
+        TimelineLog.debug("ios map torn down (undersized host)")
     }
 }
 
