@@ -94,10 +94,10 @@ final class TimelineStore {
 
     var hoveredVisit: TimelineVisit? {
         guard let hoveredVisitID else { return nil }
-        if let visit = selectedDay?.visits.first(where: { $0.id == hoveredVisitID }) {
+        if let visit = activeDay?.visits.first(where: { $0.id == hoveredVisitID }) {
             return visit
         }
-        return selectedPlace?.recentVisits.first(where: { $0.id == hoveredVisitID })
+        return activePlace?.recentVisits.first(where: { $0.id == hoveredVisitID })
     }
 
     var availableYears: [Int] { yearOptions }
@@ -248,12 +248,12 @@ final class TimelineStore {
     /// Titles for the currently visible map annotations (day visits and/or selected place).
     func mapAnnotationTitles() -> [String: String] {
         var titles: [String: String] = [:]
-        if let day = selectedDay {
+        if let day = activeDay {
             for visit in day.visits {
                 titles[visit.placeKey] = displayName(placeKey: visit.placeKey, semanticType: visit.semanticType)
             }
         }
-        if let place = selectedPlace {
+        if let place = activePlace {
             titles[place.id] = displayName(for: place)
         }
         return titles
@@ -271,13 +271,17 @@ final class TimelineStore {
         #else
         if tab == .dates {
             if selectedDay == nil, let day = parsed?.days.first {
-                select(day: day)
+                // First launch into Dates with nothing remembered yet.
+                selectedDayID = day.day
+                focus(day: day)
+                requestRoutes(for: day)
             } else if let day = selectedDay {
                 focus(day: day)
             }
         } else {
             if selectedPlace == nil, let place = parsed?.places.first {
-                select(place: place)
+                selectedPlaceID = place.id
+                focus(place: place)
             } else if let place = selectedPlace {
                 focus(place: place)
             }
@@ -494,7 +498,7 @@ final class TimelineStore {
         guard let day = selectedDay else { return }
         if hoveredVisitID != nil { hoveredVisitID = nil }
         if selectedVisitID != nil { selectedVisitID = nil }
-        if selectedPlaceID != nil { selectedPlaceID = nil }
+        // Keep selectedPlaceID so returning to Places restores the last place.
         mapRevealGeneration &+= 1
         focus(day: day)
         requestRoutes(for: day)
@@ -510,9 +514,19 @@ final class TimelineStore {
         guard let place = selectedPlace else { return }
         if hoveredVisitID != nil { hoveredVisitID = nil }
         if selectedVisitID != nil { selectedVisitID = nil }
-        if selectedDayID != nil { selectedDayID = nil }
+        // Keep selectedDayID so returning to Dates restores the last day.
         mapRevealGeneration &+= 1
         focus(place: place)
+    }
+
+    /// Day shown on the map / legend for the Dates tab (nil while browsing Places).
+    var activeDay: DayRecord? {
+        tab == .dates ? selectedDay : nil
+    }
+
+    /// Place shown on the map / legend for the Places tab (nil while browsing Dates).
+    var activePlace: PlaceRecord? {
+        tab == .places ? selectedPlace : nil
     }
 
     func focus(day: DayRecord) {
@@ -547,7 +561,7 @@ final class TimelineStore {
     }
 
     var routesForDisplay: [RoutedHop] {
-        guard snappedDayID == selectedDayID else { return [] }
+        guard tab == .dates, snappedDayID == selectedDayID else { return [] }
         return snappedRoutes
     }
 
