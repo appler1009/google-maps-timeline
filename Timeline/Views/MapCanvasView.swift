@@ -871,10 +871,16 @@ struct SelectionCard: View {
                 store.hoveredVisitID = hovering ? visit.id : nil
             }
             .onTapGesture {
-                store.hoveredVisitID = visit.id
-                store.focus(visit: visit)
+                if let place = store.place(for: visit.placeKey) {
+                    store.select(place: place)
+                } else {
+                    store.hoveredVisitID = visit.id
+                    store.focus(visit: visit)
+                }
             }
+            .help("Show this place")
             .accessibilityIdentifier("legend-visit-\(visit.id)")
+            .accessibilityHint("Opens the place for this stay")
         }
         #if os(iOS)
         ScrollView {
