@@ -4,7 +4,6 @@ struct SidebarView: View {
     @Environment(TimelineStore.self) private var store
     @Binding var importerPresented: Bool
     @State private var renamingPlaceID: String?
-    @State private var renameDraft = ""
 
     var body: some View {
         @Bindable var store = store
@@ -27,12 +26,7 @@ struct SidebarView: View {
             }
         }
         .foregroundStyle(Palette.parchment)
-        .placeRenameAlert(
-            placeID: $renamingPlaceID,
-            draft: $renameDraft
-        ) { id, name in
-            store.renamePlace(id: id, to: name)
-        }
+        .placeRenameSheet(placeID: $renamingPlaceID, store: store)
     }
 
     private var tabPicker: some View {
@@ -222,8 +216,6 @@ struct SidebarView: View {
                     subtitle: store.subtitle(for: place),
                     showsActions: store.canRename(place),
                     onRename: {
-                        let current = store.displayName(for: place)
-                        renameDraft = current == "Unnamed place" ? "" : current
                         renamingPlaceID = place.id
                     }
                 )
@@ -403,32 +395,5 @@ struct PlaceActionsMenu: View {
         .buttonStyle(.plain)
         .accessibilityLabel("Place actions")
         .accessibilityIdentifier("place-actions-\(placeID)")
-    }
-}
-
-extension View {
-    /// Alert used by Places list and map legend to rename a place.
-    func placeRenameAlert(
-        placeID: Binding<String?>,
-        draft: Binding<String>,
-        onSave: @escaping (String, String) -> Void
-    ) -> some View {
-        alert("Rename Place", isPresented: Binding(
-            get: { placeID.wrappedValue != nil },
-            set: { if !$0 { placeID.wrappedValue = nil } }
-        )) {
-            TextField("Place name", text: draft)
-            Button("Cancel", role: .cancel) {
-                placeID.wrappedValue = nil
-            }
-            Button("Save") {
-                if let id = placeID.wrappedValue {
-                    onSave(id, draft.wrappedValue)
-                }
-                placeID.wrappedValue = nil
-            }
-        } message: {
-            Text("Choose a name for this place. Clear the field to restore the default label.")
-        }
     }
 }

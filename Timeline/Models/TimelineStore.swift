@@ -186,6 +186,17 @@ final class TimelineStore {
         }
     }
 
+    /// Nearby rename suggestions prefer these frequently visited stays.
+    func visitedPlaceNameCandidates(
+        excluding placeID: String
+    ) -> [(id: String, title: String, visitCount: Int, coordinate: CLLocationCoordinate2D)] {
+        guard let parsed else { return [] }
+        return parsed.places.compactMap { place in
+            guard place.id != placeID, let coordinate = place.coordinate else { return nil }
+            return (place.id, displayName(for: place), place.visitCount, coordinate)
+        }
+    }
+
     /// Titles for the currently visible map annotations (day visits and/or selected place).
     func mapAnnotationTitles() -> [String: String] {
         var titles: [String: String] = [:]

@@ -613,7 +613,6 @@ private final class VisitMarkerView: MKAnnotationView, VisitMarkerTitleUpdating 
 struct SelectionCard: View {
     @Environment(TimelineStore.self) private var store
     @State private var renamingPlaceID: String?
-    @State private var renameDraft = ""
     #if os(iOS)
     @State private var collapsed = true
     @State private var drag: CGFloat = 0
@@ -643,7 +642,7 @@ struct SelectionCard: View {
                         Spacer(minLength: 8)
                         if store.canRename(place) {
                             PlaceActionsMenu(placeID: place.id) {
-                                beginRename(place)
+                                renamingPlaceID = place.id
                             }
                         }
                     }
@@ -690,12 +689,7 @@ struct SelectionCard: View {
         #endif
         .foregroundStyle(Palette.parchment)
         .onDisappear { store.hoveredVisitID = nil }
-        .placeRenameAlert(
-            placeID: $renamingPlaceID,
-            draft: $renameDraft
-        ) { id, name in
-            store.renamePlace(id: id, to: name)
-        }
+        .placeRenameSheet(placeID: $renamingPlaceID, store: store)
     }
 
     #if os(iOS)
@@ -901,16 +895,10 @@ struct SelectionCard: View {
             Spacer(minLength: 8)
             if store.canRename(place) {
                 PlaceActionsMenu(placeID: place.id) {
-                    beginRename(place)
+                    renamingPlaceID = place.id
                 }
             }
         }
-    }
-
-    private func beginRename(_ place: PlaceRecord) {
-        let current = store.displayName(for: place)
-        renameDraft = current == "Unnamed place" ? "" : current
-        renamingPlaceID = place.id
     }
 
     @ViewBuilder
