@@ -96,11 +96,12 @@ private struct StripThumbImage: View {
     }
 }
 
-/// Full-window dimmed photo viewer — tap outside or Esc to dismiss.
+/// macOS dimmed overlay. iOS uses `fullScreenCover` from `MapCanvasView` instead.
 struct LuxPhotoViewerOverlay: View {
     @Bindable private var lux = LuxPhotoLink.shared
 
     var body: some View {
+        #if os(macOS)
         if let photos = lux.viewerPhotos, !photos.isEmpty {
             ZStack {
                 Color.black.opacity(0.55)
@@ -118,10 +119,13 @@ struct LuxPhotoViewerOverlay: View {
             }
             .transition(.opacity)
         }
+        #else
+        EmptyView()
+        #endif
     }
 }
 
-private struct VisitPhotoViewer: View {
+struct VisitPhotoViewer: View {
     let photos: [LuxVisitPhoto]
     @Binding var index: Int
     var onDismiss: () -> Void
@@ -144,6 +148,77 @@ private struct VisitPhotoViewer: View {
     private var canGoNext: Bool { index < photos.count - 1 }
 
     var body: some View {
+        #if os(iOS)
+        iosBody
+        #else
+        macBody
+        #endif
+    }
+
+    #if os(iOS)
+    private var iosBody: some View {
+        NavigationStack {
+            ZStack {
+                Palette.ink.ignoresSafeArea()
+                content
+                    .id(photo.id)
+                    .transition(imageTransition)
+            }
+            .navigationTitle(photo.item.filename)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Done") { onDismiss() }
+                }
+                ToolbarItemGroup(placement: .topBarTrailing) {
+                    Button {
+                        goPrevious()
+                    } label: {
+                        Image(systemName: "chevron.left")
+                    }
+                    .disabled(!canGoPrevious)
+                    .accessibilityLabel("Previous photo")
+
+                    Button {
+                        goNext()
+                    } label: {
+                        Image(systemName: "chevron.right")
+                    }
+                    .disabled(!canGoNext)
+                    .accessibilityLabel("Next photo")
+                }
+            }
+            .toolbarBackground(Palette.ink, for: .navigationBar)
+            .toolbarColorScheme(.dark, for: .navigationBar)
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                if photos.count > 1 {
+                    Text("\(index + 1) of \(photos.count)")
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(Palette.parchment.opacity(0.7))
+                        .frame(maxWidth: .infinity)
+                        .padding(.bottom, 12)
+                }
+            }
+            .task(id: photo.id) {
+                await load()
+            }
+            .gesture(
+                DragGesture(minimumDistance: 40)
+                    .onEnded { value in
+                        if value.translation.width < -60 {
+                            goNext()
+                        } else if value.translation.width > 60 {
+                            goPrevious()
+                        }
+                    }
+            )
+        }
+        .preferredColorScheme(.dark)
+    }
+    #endif
+
+    #if os(macOS)
+    private var macBody: some View {
         VStack(spacing: 0) {
             header
             ZStack {
@@ -164,25 +239,18 @@ private struct VisitPhotoViewer: View {
         }
         .background(Palette.ink)
         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-        #if os(macOS)
         .overlay(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .strokeBorder(Palette.parchment.opacity(0.12), lineWidth: 1)
         )
         .frame(width: sheetSize.width, height: sheetSize.height)
         .animation(.spring(response: 0.38, dampingFraction: 0.86), value: sheetSize)
-        #else
-        .frame(maxWidth: 720, maxHeight: 640)
-        .padding(20)
-        #endif
         .focusable()
         .focused($isFocused)
         .focusEffectDisabled()
-        #if os(macOS)
         .onExitCommand {
             onDismiss()
         }
-        #endif
         .onKeyPress(.escape) {
             onDismiss()
             return .handled
@@ -204,18 +272,6 @@ private struct VisitPhotoViewer: View {
         .task(id: photo.id) {
             await load()
         }
-        #if os(iOS)
-        .gesture(
-            DragGesture(minimumDistance: 40)
-                .onEnded { value in
-                    if value.translation.width < -60 {
-                        goNext()
-                    } else if value.translation.width > 60 {
-                        goPrevious()
-                    }
-                }
-        )
-        #endif
     }
 
     private var header: some View {
@@ -262,6 +318,7 @@ private struct VisitPhotoViewer: View {
         .padding(.vertical, 10)
         .background(Palette.inkLift)
     }
+    #endif
 
     private var imageTransition: AnyTransition {
         switch navDirection {

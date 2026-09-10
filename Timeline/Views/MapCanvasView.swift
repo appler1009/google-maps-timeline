@@ -10,6 +10,7 @@ struct MapCanvasView: View {
     #if os(iOS)
     @Environment(\.compactMapDismiss) private var compactMapDismiss
     #endif
+    @Bindable private var lux = LuxPhotoLink.shared
 
     var body: some View {
         ZStack(alignment: .bottomLeading) {
@@ -29,15 +30,15 @@ struct MapCanvasView: View {
                     .id(store.selectedDayID ?? store.selectedPlaceID.map { _ in Date.distantPast })
                     .transition(.opacity)
             }
-            #endif
 
             LuxPhotoViewerOverlay()
                 .zIndex(100)
+            #endif
         }
         .onChange(of: store.selectedDayID) { _, _ in
             // Paint cached strips before SelectionCard remounts its body.
-            LuxPhotoLink.shared.refreshPhotos(for: store.selectedDay)
-            LuxPhotoLink.shared.dismissViewer()
+            lux.refreshPhotos(for: store.selectedDay)
+            lux.dismissViewer()
         }
         #if os(iOS)
         .overlay(alignment: .top) { iosTopChrome }
@@ -48,8 +49,26 @@ struct MapCanvasView: View {
                     .padding(.bottom, 8)
             }
         }
+        .fullScreenCover(isPresented: iosViewerPresented) {
+            if let photos = lux.viewerPhotos, !photos.isEmpty {
+                VisitPhotoViewer(
+                    photos: photos,
+                    index: $lux.viewerIndex,
+                    onDismiss: { lux.dismissViewer() }
+                )
+            }
+        }
         #endif
     }
+
+    #if os(iOS)
+    private var iosViewerPresented: Binding<Bool> {
+        Binding(
+            get: { lux.viewerPhotos != nil },
+            set: { if !$0 { lux.dismissViewer() } }
+        )
+    }
+    #endif
 
     #if os(iOS)
     private var iosTopChrome: some View {
