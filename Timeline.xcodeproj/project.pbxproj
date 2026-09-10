@@ -129,7 +129,7 @@
 		8EF9167F835586F0B2E5C8F5 /* MapCanvasView+iOS.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MapCanvasView+iOS.swift"; sourceTree = "<group>"; };
 		90632FA9D1FDE2C394D78D7E /* TimelineMacUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = TimelineMacUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		A6C2E6A823AF58F47F778B43 /* TimelineDatabase.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimelineDatabase.swift; sourceTree = "<group>"; };
-		A995DE7B2DF118DF18C41227 /* LogShip */ = {isa = PBXFileReference; lastKnownFileType = folder; name = LogShip; path = Packages/LogShip; sourceTree = SOURCE_ROOT; };
+		A995DE7B2DF118DF18C41227 /* LogShip */ = {isa = PBXFileReference; lastKnownFileType = folder; name = LogShip; path = Vendor/LogShip; sourceTree = SOURCE_ROOT; };
 		A9B7B68A2C5A47F130B19C06 /* MarkersAndRoutesUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkersAndRoutesUITests.swift; sourceTree = "<group>"; };
 		AAFD7CBAD5210FAA2FDF9FFA /* libsqlite3.tbd */ = {isa = PBXFileReference; lastKnownFileType = "sourcecode.text-based-dylib-definition"; name = libsqlite3.tbd; path = usr/lib/libsqlite3.tbd; sourceTree = SDKROOT; };
 		AD3B7EEBCFA7764518D9E18E /* RouteSnapper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RouteSnapper.swift; sourceTree = "<group>"; };
@@ -238,7 +238,7 @@
 			children = (
 				A995DE7B2DF118DF18C41227 /* LogShip */,
 			);
-			path = Packages;
+			name = Packages;
 			sourceTree = "<group>";
 		};
 		58E202DBD845B6E0207497FE /* Models */ = {
@@ -469,7 +469,7 @@
 			mainGroup = 7366D217432BBC83B4D391C1;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
-				3F157121382F99E9F4B757A2 /* XCLocalSwiftPackageReference "Packages/LogShip" */,
+				2D1B72C4D32D93E2849D31F7 /* XCLocalSwiftPackageReference "Vendor/LogShip" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 2CAD0800C2A5170A509B4CB6 /* Products */;
@@ -1132,9 +1132,9 @@
 /* End XCConfigurationList section */
 
 /* Begin XCLocalSwiftPackageReference section */
-		3F157121382F99E9F4B757A2 /* XCLocalSwiftPackageReference "Packages/LogShip" */ = {
+		2D1B72C4D32D93E2849D31F7 /* XCLocalSwiftPackageReference "Vendor/LogShip" */ = {
 			isa = XCLocalSwiftPackageReference;
-			relativePath = Packages/LogShip;
+			relativePath = Vendor/LogShip;
 		};
 /* End XCLocalSwiftPackageReference section */
 

@@ -18,7 +18,7 @@ settings:
     DEVELOPMENT_TEAM: TN2RQ5P647
 packages:
   LogShip:
-    path: Packages/LogShip
+    path: Vendor/LogShip
 targets:
   Timeline:
     type: application
