@@ -61,10 +61,10 @@ final class LuxPhotoLink {
     private static let defaultsKey = "lux.paired.session"
     private static let dayStripDefaultsPrefix = "lux.dayStrip.v5."
     /// Query / assign radius around the stay’s best coordinate.
-    private static let defaultRadiusMeters: Double = 100
-    private static let assignRadiusMeters: Double = 100
-    private static let timePadSeconds: TimeInterval = 10 * 60
-    private static let maxPhotosPerVisit = 24
+    private nonisolated static let defaultRadiusMeters: Double = 100
+    private nonisolated static let assignRadiusMeters: Double = 100
+    private nonisolated static let timePadSeconds: TimeInterval = 10 * 60
+    private nonisolated static let maxPhotosPerVisit = 24
 
     private init() {
         paired = Self.loadSession()
@@ -113,7 +113,7 @@ final class LuxPhotoLink {
             client = nil
             return
         }
-        var next = LuxCompanionClient(
+        let next = LuxCompanionClient(
             endpoint: host.endpoint,
             sessionToken: paired.sessionToken,
             pinnedFingerprint: paired.tlsFingerprint
