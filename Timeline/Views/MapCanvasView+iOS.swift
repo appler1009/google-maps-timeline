@@ -230,10 +230,11 @@ struct TimelineKitMap: UIViewRepresentable {
                 userAdjusted = false
                 lastLegendCoverage = legendCoverage
                 applyRegion(map: map, region: region, animated: animated)
-            } else if legendCoverage != lastLegendCoverage {
-                let first = lastLegendCoverage < 0
+            } else if abs(legendCoverage - lastLegendCoverage) > 0.5 {
                 lastLegendCoverage = legendCoverage
-                if !first, !userAdjusted, let region = lastRegion {
+                // Sheet tier changes the usable map frame — always refit the current
+                // focus into the visible gap (low / middle / high), even after a pan.
+                if let region = lastRegion {
                     applyRegion(map: map, region: region, animated: true)
                 }
             }
@@ -268,9 +269,14 @@ struct TimelineKitMap: UIViewRepresentable {
         /// Keep the day clear of the top chrome and the legend sheet, so it is
         /// centred in the part of the map you can actually see.
         private func edgePadding(for map: MKMapView) -> UIEdgeInsets {
-            let bottom = min(lastLegendCoverage, map.bounds.height * 0.6)
+            let top = map.safeAreaInsets.top + TimelineKitMap.topChromeClearance
+            // Leave a usable strip of map above a near-full sheet; don't flatten
+            // middle/high into the same 60% cap or tier changes won't rezoom.
+            let minVisibleMap: CGFloat = 140
+            let maxBottom = max(0, map.bounds.height - top - minVisibleMap)
+            let bottom = min(max(lastLegendCoverage, 0), maxBottom)
             return UIEdgeInsets(
-                top: map.safeAreaInsets.top + TimelineKitMap.topChromeClearance,
+                top: top,
                 left: 24,
                 bottom: max(map.safeAreaInsets.bottom, bottom),
                 right: 24
@@ -297,7 +303,7 @@ struct TimelineKitMap: UIViewRepresentable {
         func mapView(_ mapView: MKMapView, regionWillChangeAnimated animated: Bool) {
             guard programmaticChanges == 0 else { return }
             let touching = mapView.subviews.first?.gestureRecognizers?.contains {
-                $0.state == .began || $0.state == .changed || $0.state == .ended
+                $0.state == .began || $0.state == .changed
             }
             if touching == true { userAdjusted = true }
         }
