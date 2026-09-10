@@ -15,8 +15,7 @@ enum TimelineLog {
     private static let intakeDefaultsKey = "Timeline.logdock.intake"
     private static let kvsIntakeKey = "logdock.intake.v1"
     private static let defaultLocalURL = URL(string: "http://127.0.0.1:8737")!
-    private static let configureLock = NSLock()
-    private static var didStartConfigure = false
+    private static let configureGate = ConfigureGate()
 
     static func start() {
         Task { await bootstrap() }
@@ -83,11 +82,8 @@ enum TimelineLog {
 
     private static func configureIfPossible(force: Bool = false) async {
         if !force {
-            configureLock.lock()
-            let already = didStartConfigure
-            if !already { didStartConfigure = true }
-            configureLock.unlock()
-            if already, await LogShip.shared.status().isConfigured { return }
+            let alreadyStarted = await configureGate.noteStart()
+            if alreadyStarted, await LogShip.shared.status().isConfigured { return }
         }
         guard let resolved = resolveIntake() else { return }
         await LogShip.shared.configure(
@@ -171,5 +167,17 @@ enum TimelineLog {
             addresses[name] = host.withUnsafeBufferPointer { String(cString: $0.baseAddress!) }
         }
         return addresses["en0"] ?? addresses.values.first
+    }
+}
+
+/// Serializes first-configure bookkeeping without NSLock (unavailable in async Swift 6).
+private actor ConfigureGate {
+    private var started = false
+
+    /// Marks configure as started. Returns `true` if a prior caller already started it.
+    func noteStart() -> Bool {
+        let already = started
+        started = true
+        return already
     }
 }
