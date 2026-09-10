@@ -636,6 +636,9 @@ struct SelectionCard: View {
     @State private var headerHeight: CGFloat = 0
     #endif
 
+    /// Secondary legend copy — brighter than `Palette.muted` so times/dates stay readable on glass.
+    private static let secondary = Palette.parchment.opacity(0.95)
+
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             #if os(iOS)
@@ -645,7 +648,7 @@ struct SelectionCard: View {
                     HStack {
                         Text(daySummary(day))
                             .font(.system(size: 12))
-                            .foregroundStyle(Palette.muted)
+                            .foregroundStyle(Self.secondary)
                         Spacer(minLength: 8)
                         rerouteControl(for: day)
                             .opacity(sheetExpansion)
@@ -655,7 +658,7 @@ struct SelectionCard: View {
                     HStack(alignment: .center, spacing: 8) {
                         Text(store.subtitle(for: place))
                             .font(.system(size: 12))
-                            .foregroundStyle(Palette.muted)
+                            .foregroundStyle(Self.secondary)
                         Spacer(minLength: 8)
                         if store.canRename(place) {
                             PlaceActionsMenu(placeID: place.id) {
@@ -800,7 +803,7 @@ struct SelectionCard: View {
                     .onTapGesture { store.clearVisitFocus() }
                 Text(daySummary(day))
                     .font(.system(size: 12))
-                    .foregroundStyle(Palette.muted)
+                    .foregroundStyle(Self.secondary)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
@@ -825,7 +828,7 @@ struct SelectionCard: View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
             Text(daySummary(day))
                 .font(.system(size: 12))
-                .foregroundStyle(Palette.muted)
+                .foregroundStyle(Self.secondary)
             Spacer(minLength: 8)
             rerouteControl(for: day)
                 .help(store.directionsThrottled
@@ -912,11 +915,11 @@ struct SelectionCard: View {
                     .font(.system(size: 20, weight: .regular, design: .serif))
                 Text(store.subtitle(for: place))
                     .font(.system(size: 12))
-                    .foregroundStyle(Palette.muted)
+                    .foregroundStyle(Self.secondary)
                 if let first = place.firstVisit, let last = place.lastVisit {
                     Text("From \(first.formatted(date: .abbreviated, time: .omitted)) to \(last.formatted(date: .abbreviated, time: .omitted))")
                         .font(.system(size: 12))
-                        .foregroundStyle(Palette.muted)
+                        .foregroundStyle(Self.secondary)
                 }
             }
             Spacer(minLength: 8)
@@ -951,7 +954,7 @@ struct SelectionCard: View {
             if place.visitCount > place.recentVisits.count {
                 Text("\(place.visitCount - place.recentVisits.count) older visits")
                     .font(.system(size: 11))
-                    .foregroundStyle(Palette.muted)
+                    .foregroundStyle(Self.secondary)
                     .padding(.horizontal, 6)
                     .padding(.top, 4)
             }
@@ -977,7 +980,7 @@ struct SelectionCard: View {
         HStack(alignment: .firstTextBaseline) {
             Text(time)
                 .font(.system(size: 11, design: .monospaced))
-                .foregroundStyle(highlighted ? Palette.parchment : Palette.muted)
+                .foregroundStyle(highlighted ? Palette.parchment : Self.secondary)
                 .frame(width: title == nil ? 120 : 58, alignment: .leading)
             if let symbol {
                 Image(systemName: symbol)
@@ -987,12 +990,13 @@ struct SelectionCard: View {
             if let title {
                 Text(title)
                     .font(.system(size: 12, weight: highlighted ? .semibold : .medium))
+                    .foregroundStyle(Palette.parchment)
                     .lineLimit(1)
             }
             Spacer()
             Text(duration)
                 .font(.system(size: 11))
-                .foregroundStyle(highlighted ? Palette.parchment : Palette.muted)
+                .foregroundStyle(highlighted ? Palette.parchment : Self.secondary)
         }
         .padding(.horizontal, 6)
         .padding(.vertical, 5)
