@@ -16,6 +16,9 @@ settings:
     ENABLE_USER_SCRIPT_SANDBOXING: YES
     STRING_CATALOG_GENERATE_SYMBOLS: YES
     DEVELOPMENT_TEAM: TN2RQ5P647
+packages:
+  LogShip:
+    path: Packages/LogShip
 targets:
   Timeline:
     type: application
@@ -29,6 +32,7 @@ targets:
         buildPhase: resources
     dependencies:
       - sdk: libsqlite3.tbd
+      - package: LogShip
     configFiles:
       Debug: Config/Version.xcconfig
       Release: Config/Version.xcconfig
@@ -72,6 +76,9 @@ targets:
         UILaunchScreen: {}
         NSDownloadsFolderUsageDescription: Timeline reads a Timeline.json export from Downloads when you open it.
         NSDocumentsFolderUsageDescription: Timeline opens a Google Maps Timeline JSON export that you choose.
+        NSLocalNetworkUsageDescription: Timeline ships diagnostic logs to LogDock on your Mac when debugging.
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
         LSSupportsOpeningDocumentsInPlace: true
         CFBundleDocumentTypes:
           - CFBundleTypeName: Google Maps Timeline JSON
@@ -154,6 +161,8 @@ schemes:
         - TimelineUITests
     run:
       config: Debug
+      # Disabled: MapKit briefly hits 0×0 Metal drawables during layout.
+      enableGPUValidationMode: disabled
   Timeline_macOS:
     build:
       targets:
