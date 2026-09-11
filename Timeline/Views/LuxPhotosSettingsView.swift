@@ -40,7 +40,9 @@ struct LuxPhotosSettingsView: View {
             .navigationBarTitleDisplayMode(.inline)
             #endif
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
+                // Trailing, to match Tracking and iCloud Sync — "Done" confirms,
+                // it does not cancel.
+                ToolbarItem(placement: .confirmationAction) {
                     Button("Done") { dismiss() }
                 }
             }

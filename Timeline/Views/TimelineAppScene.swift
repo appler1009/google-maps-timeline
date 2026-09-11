@@ -5,9 +5,15 @@ struct TimelineAppScene: View {
     @State private var importerPresented = false
     @State private var luxSettingsPresented = false
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
+    #if os(macOS)
+    @State private var cloudSettingsPresented = false
+    #endif
     #if os(iOS)
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @Environment(\.scenePhase) private var scenePhase
     @State private var showingCompactMap = false
+    @State private var trackingSettingsPresented = false
+    @State private var renamingPlaceID: String?
     #endif
 
     var body: some View {
@@ -29,6 +35,35 @@ struct TimelineAppScene: View {
                     store.loadError = error.localizedDescription
                 }
             }
+            #if os(iOS)
+            .sheet(isPresented: $trackingSettingsPresented) {
+                TrackingSettingsView(store: store)
+            }
+            .placeRenameSheet(placeID: $renamingPlaceID, store: store)
+            .onReceive(NotificationCenter.default.publisher(for: .timelineLibraryChanged)) { _ in
+                store.refreshFromLibrary()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .visitNameChosen)) { _ in
+                applyPendingVisitChoice()
+            }
+            .onChange(of: scenePhase) { _, phase in
+                guard phase == .active, !TimelineLaunch.isUITesting else { return }
+                applyPendingVisitChoice()
+                Task { await TimelineRecorder.shared.catchUp() }
+            }
+            #endif
+            #if os(macOS)
+            .sheet(isPresented: $cloudSettingsPresented) {
+                MacCloudSyncSettingsView()
+                    .frame(width: 460, height: 320)
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .timelineLibraryChanged)) { _ in
+                store.refreshFromLibrary()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .cloudSyncSettingsRequested)) { _ in
+                cloudSettingsPresented = true
+            }
+            #endif
             .sheet(isPresented: $luxSettingsPresented) {
                 LuxPhotosSettingsView()
                     #if os(macOS)
@@ -43,7 +78,18 @@ struct TimelineAppScene: View {
                 #endif
                 if !TimelineLaunch.isUITesting {
                     LuxPhotoLink.shared.start()
+                    CloudSyncController.shared.startIfEnabled()
+                    #if os(iOS)
+                    VisitNotifier.shared.start()
+                    TimelineRecorder.shared.start()
+                    applyPendingVisitChoice()
+                    #endif
                 }
+                #if os(iOS)
+                if TimelineLaunch.showsTrackingAtLaunch {
+                    trackingSettingsPresented = true
+                }
+                #endif
                 Task { @MainActor in
                     await Task.yield()
                     if store.parsed == nil {
@@ -51,6 +97,10 @@ struct TimelineAppScene: View {
                             store.loadBundledFixture()
                         } else if !TimelineLaunch.isUITesting {
                             store.restoreLastOpenedFile()
+                        } else {
+                            // A UI test asking for an empty library: nothing will
+                            // load, so say so rather than spin.
+                            store.markLibraryChecked()
                         }
                     }
                 }
@@ -90,6 +140,23 @@ struct TimelineAppScene: View {
             #endif
     }
 
+    #if os(iOS)
+    /// A tap on a visit notification, applied once the scene exists — the tap may
+    /// well be what launched the app.
+    private func applyPendingVisitChoice() {
+        guard let choice = VisitNotifier.shared.takePendingChoice() else { return }
+        if let target = choice.mergeInto {
+            store.mergePlace(from: choice.placeKey, into: target)
+        } else if let name = choice.name {
+            store.applyRecordedPlaceName(name, forPlaceKey: choice.placeKey)
+        }
+        if choice.opensRenameSheet {
+            store.refreshFromLibrary()
+            renamingPlaceID = choice.placeKey
+        }
+    }
+    #endif
+
     private func presentLuxPhotos(source: String) {
         // NSLog so it shows in Console even when LogDock isn't configured yet.
         NSLog("[Timeline] presentLuxPhotos source=%@", source)
@@ -127,6 +194,30 @@ struct TimelineAppScene: View {
         }
         .navigationSplitViewStyle(.balanced)
         .toolbar {
+            #if os(macOS)
+            ToolbarItem(placement: .primaryAction) {
+                Button {
+                    cloudSettingsPresented = true
+                } label: {
+                    Label("iCloud Sync", systemImage: "icloud")
+                }
+                .help("Receive stays this Mac's companion iPhone recorded")
+                .accessibilityLabel("iCloud Sync")
+                .accessibilityIdentifier("cloud-sync-settings")
+            }
+            #endif
+            #if os(iOS)
+            ToolbarItem(placement: .primaryAction) {
+                Button {
+                    trackingSettingsPresented = true
+                } label: {
+                    Label("Tracking", systemImage: "location.circle")
+                }
+                .help("Record stays and movement on this iPhone")
+                .accessibilityLabel("Tracking")
+                .accessibilityIdentifier("tracking-settings")
+            }
+            #endif
             ToolbarItem(placement: .primaryAction) {
                 Button {
                     NSLog("[Timeline] lux photos toolbar button tapped")
@@ -163,6 +254,15 @@ struct TimelineAppScene: View {
                         .navigationBarTitleDisplayMode(.inline)
                         .toolbar(showingCompactMap ? .hidden : .automatic, for: .navigationBar)
                         .toolbar {
+                            ToolbarItem(placement: .topBarTrailing) {
+                                Button {
+                                    trackingSettingsPresented = true
+                                } label: {
+                                    Label("Tracking", systemImage: "location.circle")
+                                }
+                                .accessibilityLabel("Tracking")
+                                .accessibilityIdentifier("tracking-settings")
+                            }
                             ToolbarItem(placement: .topBarTrailing) {
                                 Button {
                                     presentLuxPhotos(source: "compact-toolbar")

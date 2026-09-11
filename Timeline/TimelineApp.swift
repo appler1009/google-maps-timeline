@@ -23,6 +23,9 @@ struct TimelineApp: App {
                 .keyboardShortcut("o", modifiers: [.command])
             }
             CommandGroup(after: .newItem) {
+                Button("iCloud Sync…") {
+                    NotificationCenter.default.post(name: .cloudSyncSettingsRequested, object: nil)
+                }
                 Button("Lux Photos…") {
                     NSLog("[Timeline] lux photos menu command")
                     TimelineLog.info("lux photos menu tapped")
@@ -42,4 +45,5 @@ struct TimelineApp: App {
 extension Notification.Name {
     static let openTimelineRequested = Notification.Name("openTimelineRequested")
     static let luxPhotosSettingsRequested = Notification.Name("luxPhotosSettingsRequested")
+    static let cloudSyncSettingsRequested = Notification.Name("cloudSyncSettingsRequested")
 }

@@ -18,6 +18,10 @@ final class TimelineStore {
     var selectedVisitID: String?
     var parsed: ParsedTimeline?
     var isLoading = false
+    /// False until the library has actually been read. The empty-library prompt
+    /// is a claim that there is nothing here, and it should not be made while we
+    /// are still finding out.
+    private(set) var hasCheckedLibrary = false
     var loadError: String?
     var sourceName: String?
     var focusRegion = MKCoordinateRegion(
@@ -51,7 +55,21 @@ final class TimelineStore {
     private var placeMerges: [String: String] = [:]
     /// Bumped when a place is renamed so the map refreshes annotation titles.
     private(set) var placeNameGeneration: UInt64 = 0
+    /// Imported stays the recorder superseded are hidden. Showing them is the
+    /// escape hatch if reconciliation ever gets a day wrong. Stored rather than
+    /// read straight from UserDefaults so the settings toggle redraws.
+    var showsShadowedImports: Bool = UserDefaults.standard.bool(forKey: TimelineStore.shadowedKey) {
+        didSet {
+            guard showsShadowedImports != oldValue else { return }
+            UserDefaults.standard.set(showsShadowedImports, forKey: TimelineStore.shadowedKey)
+            refreshFromLibrary()
+        }
+    }
+    private static let shadowedKey = "showsShadowedImports"
     private var isApplyingCloudIdentity = false
+    /// Opening straight onto today's map is a launch behaviour, not something to
+    /// redo every time a merge or a recorded stay reloads the library.
+    private var hasOpenedOnLaunch = false
     private(set) var monthGroups: [(month: Date, days: [DayRecord])] = []
     private(set) var yearOptions: [Int] = []
     private(set) var monthOptions: [Int] = []
@@ -76,9 +94,16 @@ final class TimelineStore {
         return TimelineStore(database: database, snapper: snapper)
     }
 
+    /// Marks the library as read without loading anything — for launches that
+    /// deliberately skip the loaders, so the sidebar can settle on an answer.
+    func markLibraryChecked() {
+        hasCheckedLibrary = true
+    }
+
     func loadBundledFixture() {
         guard let url = Bundle.main.url(forResource: "eiffel-tower-day", withExtension: "json") else {
             loadError = "Missing bundled test fixture."
+            hasCheckedLibrary = true
             return
         }
         open(url: url)
@@ -352,6 +377,9 @@ final class TimelineStore {
 
     func restoreLastOpenedFile() {
         Task {
+            // Every exit path has to settle `hasCheckedLibrary`, or the sidebar
+            // sits on a spinner forever.
+            defer { hasCheckedLibrary = true }
             if isLoading { return }
             await refreshPlaceNames()
             await pullPlaceIdentityFromCloud()
@@ -389,7 +417,10 @@ final class TimelineStore {
                     try TimelineParser.extract(data)
                 }.value
                 try await database.upsert(batch: batch, sourceName: name)
-                let merged = try await database.loadBatch() ?? batch
+                // Fold the export into whatever the phone recorded before the
+                // library is assembled, so the day view never shows both.
+                _ = try? await database.reconcileSources()
+                let merged = try await database.loadBatch(includingShadowed: showsShadowedImports) ?? batch
                 let source = (try? await database.latestSourceName()) ?? name
                 await refreshPlaceNames()
                 await pullPlaceIdentityFromCloud()
@@ -397,6 +428,7 @@ final class TimelineStore {
             } catch {
                 loadError = error.localizedDescription
                 isLoading = false
+                hasCheckedLibrary = true
             }
         }
     }
@@ -436,8 +468,69 @@ final class TimelineStore {
         return true
     }
 
+    /// Re-run the merge of recorded and imported days, then reload.
+    func reconcileLibrary() {
+        Task {
+            let plan = try? await database.reconcileSources()
+            TimelineLog.info(
+                "library reconciled",
+                ["shadowed": "\(plan?.shadowedVisitIDs.count ?? 0)", "aliases": "\(plan?.placeAliases.count ?? 0)"]
+            )
+            await refreshPlaceIdentity()
+            refreshFromLibrary()
+        }
+    }
+
+    /// Reload after the recorder wrote something. Unlike `apply`, this keeps the
+    /// day, place and filters the user is looking at — a stay recorded in the
+    /// background must not yank the map out from under them.
+    func refreshFromLibrary() {
+        guard !isLoading else { return }
+        Task {
+            guard let batch = try? await database.loadBatch(includingShadowed: showsShadowedImports) else { return }
+            await refreshPlaceIdentity()
+            let name = (try? await database.latestSourceName()) ?? sourceName ?? "This device"
+            let keptDay = selectedDayID
+            let keptPlace = selectedPlaceID
+            let keptTab = tab
+            let keptYear = filterYear
+            let keptMonth = filterMonth
+            let keptSearch = search
+            apply(TimelineParser.assemble(batch, sourceName: name))
+            tab = keptTab
+            search = keptSearch
+            filterYear = keptYear
+            filterMonth = keptMonth
+            clampDateFilters()
+            if let keptDay, daysByID[keptDay] != nil {
+                selectedDayID = keptDay
+            }
+            if let keptPlace, placesByID[keptPlace] != nil {
+                selectedPlaceID = keptPlace
+            }
+        }
+    }
+
+    /// Apply a name the user picked straight from a visit notification. The key
+    /// may be a place the app has not assembled yet, so this writes through to the
+    /// library and reloads rather than going via `placesByID`.
+    func applyRecordedPlaceName(_ name: String, forPlaceKey placeKey: String) {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        placeNames[placeKey] = trimmed
+        placeNames = placeNames
+        placeNameGeneration &+= 1
+        Task {
+            try? await database.setPlaceName(placeKey: placeKey, name: trimmed)
+            await pushPlaceIdentityToCloud()
+            TimelineLog.info("recorded place named", ["placeKey": placeKey, "name": trimmed])
+            refreshFromLibrary()
+        }
+    }
+
     func apply(_ parsed: ParsedTimeline) {
         self.parsed = parsed
+        hasCheckedLibrary = true
         sourceName = parsed.sourceName
         isLoading = false
         selectedPlaceID = nil
@@ -456,6 +549,7 @@ final class TimelineStore {
         routesByDay = [:]
         #if os(iOS)
         selectedDayID = nil
+        openTodayIfLaunching()
         #else
         selectedDayID = parsed.days.first?.day
         if let day = parsed.days.first {
@@ -464,6 +558,36 @@ final class TimelineStore {
         }
         #endif
     }
+
+    #if os(iOS)
+    /// Open on today, so a tracking app shows what it recorded rather than a list
+    /// of months. Falls back to the newest day there is — after a fresh import
+    /// that is usually a day in the past, which is still more useful than nothing.
+    private func openTodayIfLaunching() {
+        // One decision per process, taken whether or not it opens anything. iOS
+        // relaunches a tracking app in the background for every visit, and each
+        // of those loads the library too — without consuming the chance here, a
+        // stay recorded while the app was open would reveal the map underneath
+        // whatever the user was actually looking at.
+        guard !hasOpenedOnLaunch else { return }
+        hasOpenedOnLaunch = true
+        guard TimelineLaunch.opensOnToday else { return }
+        // A launch the user cannot see is not a launch to open a map for.
+        guard UIApplication.shared.applicationState != .background else { return }
+        let today = Calendar.current.startOfDay(for: Date())
+        guard let day = daysByID[today] ?? newestDay() else { return }
+        // Match the filters to the day being shown, or the sidebar would come
+        // back to a month that does not contain it.
+        filterYear = Calendar.current.component(.year, from: day.day)
+        filterMonth = 0
+        rebuildDateIndexes()
+        select(day: day)
+    }
+
+    private func newestDay() -> DayRecord? {
+        daysByID.values.max { $0.day < $1.day }
+    }
+    #endif
 
     private func refreshPlaceIdentity() async {
         placeNames = (try? await database.loadPlaceNames()) ?? placeNames

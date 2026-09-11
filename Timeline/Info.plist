@@ -6,6 +6,21 @@
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
 	<string>Timeline</string>
+	<key>CFBundleDocumentTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeName</key>
+			<string>Google Maps Timeline JSON</string>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>LSHandlerRank</key>
+			<string>Alternate</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>public.json</string>
+			</array>
+		</dict>
+	</array>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -22,40 +37,38 @@
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>14.0</string>
-	<key>CFBundleDocumentTypes</key>
-	<array>
-		<dict>
-			<key>CFBundleTypeName</key>
-			<string>Google Maps Timeline JSON</string>
-			<key>CFBundleTypeRole</key>
-			<string>Viewer</string>
-			<key>LSHandlerRank</key>
-			<string>Alternate</string>
-			<key>LSItemContentTypes</key>
-			<array>
-				<string>public.json</string>
-			</array>
-		</dict>
-	</array>
 	<key>LSSupportsOpeningDocumentsInPlace</key>
 	<true/>
-	<key>NSDocumentsFolderUsageDescription</key>
-	<string>Timeline opens a Google Maps Timeline JSON export that you choose.</string>
-	<key>NSDownloadsFolderUsageDescription</key>
-	<string>Timeline reads a Timeline.json export from Downloads when you open it.</string>
-	<key>NSLocalNetworkUsageDescription</key>
-	<string>Timeline connects to Lux on your Mac to match photos with visits, and may ship diagnostic logs to LogDock when debugging.</string>
-	<key>NSBonjourServices</key>
-	<array>
-		<string>_lux-library._tcp</string>
-	</array>
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_lux-library._tcp</string>
+	</array>
+	<key>NSDocumentsFolderUsageDescription</key>
+	<string>Timeline opens a Google Maps Timeline JSON export that you choose.</string>
+	<key>NSDownloadsFolderUsageDescription</key>
+	<string>Timeline reads a Timeline.json export from Downloads when you open it.</string>
+	<key>NSHealthShareUsageDescription</key>
+	<string>Timeline reads workouts your Apple Watch recorded so rides and runs show their real route.</string>
 	<key>NSHighResolutionCapable</key>
 	<true/>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Timeline connects to Lux on your Mac to match photos with visits, and may ship diagnostic logs to LogDock when debugging.</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>Timeline needs Always access to notice stays while it is closed. Nothing leaves your device.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Timeline records the places you stop at so your days fill in without an export.</string>
+	<key>NSMotionUsageDescription</key>
+	<string>Timeline reads the motion your iPhone already recorded so trips show as walking, cycling or driving.</string>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>location</string>
+		<string>remote-notification</string>
+	</array>
 	<key>UILaunchScreen</key>
 	<dict/>
 	<key>UTImportedTypeDeclarations</key>

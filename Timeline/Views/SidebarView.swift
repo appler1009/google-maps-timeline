@@ -14,7 +14,7 @@ struct SidebarView: View {
             }
             Divider().opacity(0.35)
             Group {
-                if store.isLoading {
+                if store.isLoading || !store.hasCheckedLibrary {
                     loading
                 } else if store.parsed == nil {
                     emptyLibrary
@@ -137,7 +137,7 @@ struct SidebarView: View {
     private var loading: some View {
         VStack(spacing: 12) {
             ProgressView()
-            Text("Reading export")
+            Text(store.isLoading ? "Reading export" : "Opening your library")
                 .foregroundStyle(Palette.muted)
                 .font(.callout)
         }

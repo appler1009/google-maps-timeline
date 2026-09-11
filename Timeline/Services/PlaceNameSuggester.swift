@@ -18,6 +18,11 @@ struct PlaceNameSuggestion: Identifiable, Hashable {
     let distanceMeters: Double
     /// When set, choosing this suggestion merges into that place instead of only renaming.
     let targetPlaceID: String?
+    /// Apple's point-of-interest category, stripped of its `MKPOICategory` prefix
+    /// — "Cafe", "Restaurant", "FitnessCenter". Nil for addresses and for places
+    /// you have already visited. Carried separately from `subtitle` because the
+    /// ranker reasons about it and the subtitle is display text.
+    var category: String? = nil
 
     var accessibilityLabel: String {
         if let subtitle, !subtitle.isEmpty {
@@ -35,23 +40,16 @@ final class PlaceNameSuggester: NSObject, MKLocalSearchCompleterDelegate {
     private(set) var isLoading = false
 
     private let completer = MKLocalSearchCompleter()
+    private let guesses = PlaceGuessService()
     private var coordinate = CLLocationCoordinate2D()
     private var excludingPlaceID = ""
-    private var visited: [VisitedCandidate] = []
+    private var visited: [PlaceNameSuggestion] = []
     private var nearbyMap: [PlaceNameSuggestion] = []
     private var addressHint: PlaceNameSuggestion?
     private var query = ""
     private var completerResults: [PlaceNameSuggestion] = []
     private var searchTask: Task<Void, Never>?
     private var requestID = UUID()
-
-    private struct VisitedCandidate {
-        let id: String
-        let title: String
-        let visitCount: Int
-        let coordinate: CLLocationCoordinate2D
-        let distanceMeters: Double
-    }
 
     override init() {
         super.init()
@@ -73,24 +71,11 @@ final class PlaceNameSuggester: NSObject, MKLocalSearchCompleterDelegate {
         )
         completer.region = region
 
-        visited = visitedPlaces.compactMap { place in
-            guard place.id != excludingPlaceID else { return nil }
-            let distance = RoutePlanner.meters(coordinate, place.coordinate)
-            guard distance <= 1_500 else { return nil }
-            let title = place.title.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !title.isEmpty, title != "Unnamed place", title != "Place" else { return nil }
-            return VisitedCandidate(
-                id: place.id,
-                title: title,
-                visitCount: place.visitCount,
-                coordinate: place.coordinate,
-                distanceMeters: distance
-            )
-        }
-        .sorted {
-            if $0.visitCount != $1.visitCount { return $0.visitCount > $1.visitCount }
-            return $0.distanceMeters < $1.distanceMeters
-        }
+        visited = PlaceGuessRanker.visitedRows(
+            near: coordinate,
+            places: visitedPlaces,
+            excluding: excludingPlaceID
+        )
 
         requestID = UUID()
         let token = requestID
@@ -138,8 +123,8 @@ final class PlaceNameSuggester: NSObject, MKLocalSearchCompleterDelegate {
             if token == requestID { isLoading = false }
         }
 
-        async let pois = fetchNearbyPointsOfInterest()
-        async let address = fetchReverseGeocode()
+        async let pois = guesses.pointsOfInterest(around: coordinate)
+        async let address = guesses.address(at: coordinate)
         let (poiSuggestions, reverse) = await (pois, address)
         guard token == requestID else { return }
         nearbyMap = poiSuggestions
@@ -147,87 +132,11 @@ final class PlaceNameSuggester: NSObject, MKLocalSearchCompleterDelegate {
         rebuild()
     }
 
-    private func fetchNearbyPointsOfInterest() async -> [PlaceNameSuggestion] {
-        let request = MKLocalPointsOfInterestRequest(center: coordinate, radius: 450)
-        request.pointOfInterestFilter = .includingAll
-        do {
-            let response = try await MKLocalSearch(request: request).start()
-            return response.mapItems.compactMap { item -> PlaceNameSuggestion? in
-                let title = item.name?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-                guard !title.isEmpty else { return nil }
-                let itemCoordinate = item.placemark.coordinate
-                let distance = RoutePlanner.meters(coordinate, itemCoordinate)
-                let category = item.pointOfInterestCategory?.rawValue
-                    .replacingOccurrences(of: "MKPOICategory", with: "")
-                let subtitleParts = [
-                    category,
-                    distance < .infinity ? Self.distanceLabel(distance) : nil,
-                ].compactMap { $0 }
-                return PlaceNameSuggestion(
-                    id: "poi:\(item.placemark.coordinate.latitude),\(item.placemark.coordinate.longitude):\(title)",
-                    title: title,
-                    subtitle: subtitleParts.isEmpty ? "Nearby place" : subtitleParts.joined(separator: " · "),
-                    source: .map,
-                    visitCount: 0,
-                    distanceMeters: distance,
-                    targetPlaceID: nil
-                )
-            }
-            .sorted { $0.distanceMeters < $1.distanceMeters }
-        } catch {
-            return []
-        }
-    }
-
-    private func fetchReverseGeocode() async -> PlaceNameSuggestion? {
-        let location = CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude)
-        do {
-            let marks = try await CLGeocoder().reverseGeocodeLocation(location)
-            guard let mark = marks.first else { return nil }
-            let title = [
-                mark.name,
-                mark.thoroughfare.map { street in
-                    if let number = mark.subThoroughfare { return "\(number) \(street)" }
-                    return street
-                },
-            ]
-            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .first { !$0.isEmpty }
-            guard let title, !title.isEmpty else { return nil }
-            let subtitle = [mark.locality, mark.administrativeArea]
-                .compactMap { $0 }
-                .joined(separator: ", ")
-            return PlaceNameSuggestion(
-                id: "address:\(title)",
-                title: title,
-                subtitle: subtitle.isEmpty ? "Address" : subtitle,
-                source: .address,
-                visitCount: 0,
-                distanceMeters: 0,
-                targetPlaceID: nil
-            )
-        } catch {
-            return nil
-        }
-    }
-
     private func rebuild() {
         let needle = query.lowercased()
-        var visitedRows = visited.map { candidate in
-            PlaceNameSuggestion(
-                id: "visited:\(candidate.id)",
-                title: candidate.title,
-                subtitle: "\(candidate.visitCount) visit\(candidate.visitCount == 1 ? "" : "s") · \(Self.distanceLabel(candidate.distanceMeters)) · Merge",
-                source: .visited,
-                visitCount: candidate.visitCount,
-                distanceMeters: candidate.distanceMeters,
-                targetPlaceID: candidate.id
-            )
-        }
+        var visitedRows = visited
         if !needle.isEmpty {
-            visitedRows = visitedRows.filter {
-                $0.title.lowercased().contains(needle)
-            }
+            visitedRows = visitedRows.filter { $0.title.lowercased().contains(needle) }
         }
 
         var mapRows: [PlaceNameSuggestion]
@@ -248,23 +157,8 @@ final class PlaceNameSuggester: NSObject, MKLocalSearchCompleterDelegate {
             mapRows = matchingNearby + mapRows
         }
 
-        var seen = Set<String>()
-        var merged: [PlaceNameSuggestion] = []
-        // Visited stays first, then map / address.
-        for row in visitedRows + mapRows {
-            let key = row.title.lowercased()
-            guard seen.insert(key).inserted else { continue }
-            guard row.title.lowercased() != "unnamed place" else { continue }
-            merged.append(row)
-            if merged.count >= 20 { break }
-        }
-        suggestions = merged
-    }
-
-    private static func distanceLabel(_ meters: Double) -> String {
-        if meters < 1_000 {
-            return String(format: "%.0f m", meters)
-        }
-        return String(format: "%.1f km", meters / 1_000)
+        // Visited stays first, then map / address — the same ranking the recorder
+        // uses for notification guesses, so the two can never disagree.
+        suggestions = PlaceGuessRanker.merge(visited: visitedRows, map: mapRows)
     }
 }
