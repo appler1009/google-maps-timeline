@@ -84,6 +84,7 @@ targets:
         NSLocationAlwaysAndWhenInUseUsageDescription: Timeline needs Always access to notice stays while it is closed. Nothing leaves your device.
         NSMotionUsageDescription: Timeline reads the motion your iPhone already recorded so trips show as walking, cycling or driving.
         UIBackgroundModes: [location]
+        NSHealthShareUsageDescription: Timeline reads workouts your Apple Watch recorded so rides and runs show their real route.
         NSBonjourServices:
           - _lux-library._tcp
         NSAppTransportSecurity:

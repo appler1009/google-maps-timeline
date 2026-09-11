@@ -28,6 +28,7 @@ final class TimelineRecorder {
     private let stops: StopSource
     private let motion: MotionSource
     private let settings: TrackingSettings
+    private let health: HealthSource?
     private let guesser: PlaceGuessService
     private var fixBuffer: [CapturedFix] = []
     private var flushTask: Task<Void, Never>?
@@ -43,6 +44,7 @@ final class TimelineRecorder {
         stops: StopSource? = nil,
         motion: MotionSource? = nil,
         settings: TrackingSettings? = nil,
+        health: HealthSource? = nil,
         guesser: PlaceGuessService = PlaceGuessService()
     ) {
         self.database = database ?? TimelineDatabase()
@@ -51,11 +53,13 @@ final class TimelineRecorder {
         #if os(iOS)
         self.stops = stops ?? DeviceLocationSource()
         self.motion = motion ?? DeviceMotionSource()
+        self.health = health ?? DeviceHealthSource()
         #else
         // The Mac reads the library but cannot record; without injected sources
         // this recorder is inert by construction.
         self.stops = stops ?? InertStopSource()
         self.motion = motion ?? InertMotionSource()
+        self.health = health
         #endif
         self.stops.onStop = { [weak self] stop in
             Task { @MainActor in await self?.handle(stop: stop) }
@@ -105,6 +109,8 @@ final class TimelineRecorder {
         guard settings.mode.isRecording else { return }
         await backfillMotion()
         await flushFixes()
+        await enrichFromHealth()
+        await reconcileIfDue()
         try? await database.pruneFixes(before: Date().addingTimeInterval(-Self.fixRetention))
         await deliverHeldSummaryIfNeeded()
     }
@@ -259,6 +265,71 @@ final class TimelineRecorder {
         } catch {
             TimelineLog.error("movement write failed", ["error": error.localizedDescription])
         }
+    }
+
+    /// Ask HealthKit for permission, and start watching for workouts if granted.
+    @discardableResult
+    func enableHealth() async -> Bool {
+        guard let health, health.isAvailable else { return false }
+        let granted = await health.requestAuthorization()
+        settings.usesHealth = granted
+        if granted {
+            #if os(iOS)
+            (health as? DeviceHealthSource)?.startObserving {
+                Task { @MainActor in await TimelineRecorder.shared.catchUp() }
+            }
+            #endif
+            await enrichFromHealth()
+        }
+        return granted
+    }
+
+    /// The Watch's actual contribution: exact routes for workouts, and the
+    /// passive cycling distance that overrules Core Motion's worst guess.
+    private func enrichFromHealth() async {
+        guard settings.usesHealth, settings.mode.tracksMovement, let health, health.isAvailable else { return }
+        let now = Date()
+        let mark = (try? await database.captureMark(CaptureMark.health)) ?? nil
+        let from = mark ?? now.addingTimeInterval(-Self.maximumBackfill)
+        guard now.timeIntervalSince(from) > 60 else { return }
+
+        let workouts = await health.workouts(from: from, to: now)
+        let batch = HealthEnrichment.batch(for: workouts)
+        if !batch.activities.isEmpty {
+            try? await database.record(batch: batch)
+        }
+
+        let samples = await health.distances(from: from, to: now)
+        let stored = (try? await database.activities(from: from, to: now)) ?? []
+        let corrected = HealthEnrichment.corrected(stored, using: samples)
+        let original = Dictionary(uniqueKeysWithValues: stored.map { ($0.id, $0.kind.stored) })
+        let changed = corrected.filter { original[$0.id] != $0.kind.stored }
+        if !changed.isEmpty {
+            try? await database.record(batch: TimelineBatch(visits: [], activities: changed, paths: []))
+        }
+
+        try? await database.setCaptureMark(CaptureMark.health, through: now)
+        guard !batch.activities.isEmpty || !changed.isEmpty else { return }
+        TimelineLog.info(
+            "health enrichment",
+            ["workouts": "\(batch.activities.count)", "recategorised": "\(changed.count)"]
+        )
+        NotificationCenter.default.post(name: .timelineLibraryChanged, object: nil)
+    }
+
+    /// Reconciliation reads the whole visit table, so it runs daily rather than on
+    /// every wake. Imports reconcile immediately on their own path.
+    private func reconcileIfDue() async {
+        let last = (try? await database.captureMark(CaptureMark.reconcile)) ?? nil
+        if let last, Date().timeIntervalSince(last) < 20 * 60 * 60 { return }
+        guard let plan = try? await database.reconcileSources() else { return }
+        try? await database.setCaptureMark(CaptureMark.reconcile, through: Date())
+        guard !plan.isEmpty else { return }
+        TimelineLog.info(
+            "library reconciled",
+            ["shadowed": "\(plan.shadowedVisitIDs.count)", "aliases": "\(plan.placeAliases.count)"]
+        )
+        NotificationCenter.default.post(name: .timelineLibraryChanged, object: nil)
     }
 
     private func deliverHeldSummaryIfNeeded() async {

@@ -582,3 +582,237 @@ final class TimelineRecorderTests: XCTestCase {
         XCTAssertTrue(activities.isEmpty)
     }
 }
+
+// MARK: - Reconciliation with imported exports
+
+final class TimelineReconcilerTests: XCTestCase {
+    private let day = Date(timeIntervalSince1970: 1_700_000_000)
+
+    private func visit(
+        id: String,
+        placeKey: String,
+        offsetHours: Double,
+        hours: Double,
+        coordinate: CLLocationCoordinate2D = home
+    ) -> TimelineVisit {
+        let start = day.addingTimeInterval(offsetHours * 3_600)
+        return TimelineVisit(
+            id: id,
+            start: start,
+            end: start.addingTimeInterval(hours * 3_600),
+            coordinate: coordinate,
+            semanticType: nil,
+            placeKey: placeKey
+        )
+    }
+
+    func testImportedDaysTheDeviceRecordedAreShadowed() {
+        let device = [visit(id: "d1", placeKey: "49.2765,-123.0680", offsetHours: 0, hours: 2)]
+        let imported = [
+            visit(id: "g1", placeKey: "ChIJ_home", offsetHours: 0.5, hours: 1),
+            // A week later, with no recording of its own: untouched.
+            visit(id: "g2", placeKey: "ChIJ_other", offsetHours: 24 * 7, hours: 1),
+        ]
+        let plan = TimelineReconciler.plan(device: device, imported: imported)
+        XCTAssertEqual(plan.shadowedVisitIDs, ["g1"])
+    }
+
+    func testAnOverlappingImportLendsItsGooglePlaceID() {
+        let device = [visit(id: "d1", placeKey: "49.2765,-123.0680", offsetHours: 0, hours: 2)]
+        let imported = [visit(
+            id: "g1",
+            placeKey: "ChIJ_home",
+            offsetHours: 0.5,
+            hours: 1,
+            coordinate: offset(home, metersNorth: 60)
+        )]
+        let plan = TimelineReconciler.plan(device: device, imported: imported)
+        XCTAssertEqual(plan.placeAliases["49.2765,-123.0680"], "ChIJ_home")
+    }
+
+    func testFarApartStaysAreNotTheSamePlace() {
+        let device = [visit(id: "d1", placeKey: "49.2765,-123.0680", offsetHours: 0, hours: 2)]
+        let imported = [visit(
+            id: "g1",
+            placeKey: "ChIJ_elsewhere",
+            offsetHours: 0.5,
+            hours: 1,
+            coordinate: offset(home, metersNorth: 900)
+        )]
+        let plan = TimelineReconciler.plan(device: device, imported: imported)
+        XCTAssertTrue(plan.placeAliases.isEmpty)
+        // Same day, so the import is still shadowed — only the identity is refused.
+        XCTAssertEqual(plan.shadowedVisitIDs, ["g1"])
+    }
+
+    func testACoordinateKeyIsNotWorthFoldingInto() {
+        let device = [visit(id: "d1", placeKey: "49.2765,-123.0680", offsetHours: 0, hours: 2)]
+        let imported = [visit(id: "g1", placeKey: "49.2764,-123.0681", offsetHours: 0.5, hours: 1)]
+        XCTAssertTrue(TimelineReconciler.plan(device: device, imported: imported).placeAliases.isEmpty)
+    }
+
+    func testTheLongerOverlapClaimsTheDeviceKey() {
+        let device = [visit(id: "d1", placeKey: "49.2765,-123.0680", offsetHours: 0, hours: 4)]
+        let imported = [
+            visit(id: "g1", placeKey: "ChIJ_brief", offsetHours: 0, hours: 0.25),
+            visit(id: "g2", placeKey: "ChIJ_real", offsetHours: 1, hours: 3),
+        ]
+        let plan = TimelineReconciler.plan(device: device, imported: imported)
+        XCTAssertEqual(plan.placeAliases["49.2765,-123.0680"], "ChIJ_real")
+    }
+
+    func testNothingToDoWithoutBothSources() {
+        let device = [visit(id: "d1", placeKey: "k", offsetHours: 0, hours: 2)]
+        XCTAssertTrue(TimelineReconciler.plan(device: device, imported: []).isEmpty)
+        XCTAssertTrue(TimelineReconciler.plan(device: [], imported: device).isEmpty)
+    }
+}
+
+final class ReconciliationDatabaseTests: XCTestCase {
+    func testShadowedImportsAreHiddenButRecoverable() async throws {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("reconcile-\(UUID().uuidString).sqlite")
+        defer { try? FileManager.default.removeItem(at: url) }
+        let db = TimelineDatabase(fileURL: url)
+
+        let start = Date(timeIntervalSince1970: 1_700_000_000)
+        let imported = TimelineVisit(
+            id: "g1",
+            start: start.addingTimeInterval(1_800),
+            end: start.addingTimeInterval(5_400),
+            coordinate: offset(home, metersNorth: 50),
+            semanticType: "Home",
+            placeKey: "ChIJ_home"
+        )
+        try await db.upsert(
+            batch: TimelineBatch(visits: [imported], activities: [], paths: []),
+            sourceName: "Timeline.json"
+        )
+        let recorded = PlaceClusterer.visit(
+            for: stop(start: start, minutes: 180),
+            placeKey: "49.2765,-123.0680"
+        )!
+        try await db.record(batch: TimelineBatch(visits: [recorded], activities: [], paths: []))
+
+        let plan = try await db.reconcileSources()
+        XCTAssertEqual(plan.shadowedVisitIDs, ["g1"])
+
+        let shown = try await db.loadBatch()?.visits ?? []
+        XCTAssertEqual(shown.count, 1)
+        // The device visit now wears Google's place id, courtesy of the alias.
+        XCTAssertEqual(shown.first?.placeKey, "ChIJ_home")
+
+        let everything = try await db.loadBatch(includingShadowed: true)?.visits ?? []
+        XCTAssertEqual(everything.count, 2, "shadowing must be reversible")
+        let hidden = try await db.shadowedVisitCount()
+        XCTAssertEqual(hidden, 1)
+    }
+}
+
+// MARK: - Apple Watch
+
+final class ScriptedHealthSource: HealthSource {
+    var workoutsToReturn: [HealthWorkout] = []
+    var distancesToReturn: [HealthDistanceSample] = []
+    var isAvailable: Bool { true }
+    func requestAuthorization() async -> Bool { true }
+    func workouts(from: Date, to: Date) async -> [HealthWorkout] { workoutsToReturn }
+    func distances(from: Date, to: Date) async -> [HealthDistanceSample] { distancesToReturn }
+}
+
+final class HealthEnrichmentTests: XCTestCase {
+    private let origin = Date(timeIntervalSince1970: 1_700_000_000)
+
+    func testAWorkoutRouteBecomesAPathAndATypedActivity() {
+        let workout = HealthWorkout(
+            id: "abc",
+            start: origin,
+            end: origin.addingTimeInterval(45 * 60),
+            kind: .cycling,
+            distanceMeters: 12_400,
+            route: (0..<20).map { offset(home, metersNorth: Double($0) * 400) }
+        )
+        let batch = HealthEnrichment.batch(for: [workout])
+        XCTAssertEqual(batch.activities.count, 1)
+        XCTAssertEqual(batch.activities[0].kind.stored, "cycling")
+        XCTAssertEqual(batch.activities[0].distance, 12_400)
+        XCTAssertEqual(batch.paths.count, 1)
+        XCTAssertEqual(batch.paths[0].points.count, 20)
+    }
+
+    func testAWorkoutWithoutARouteStillCounts() {
+        let workout = HealthWorkout(
+            id: "abc",
+            start: origin,
+            end: origin.addingTimeInterval(30 * 60),
+            kind: .running,
+            distanceMeters: 5_000,
+            route: []
+        )
+        let batch = HealthEnrichment.batch(for: [workout])
+        XCTAssertEqual(batch.activities.count, 1)
+        XCTAssertTrue(batch.paths.isEmpty)
+    }
+
+    func testWatchCyclingDistanceOverrulesCoreMotionsDrivingCall() {
+        let driving = TimelineActivity(
+            id: "a1",
+            start: origin,
+            end: origin.addingTimeInterval(20 * 60),
+            distance: 3_000,
+            startCoordinate: home,
+            endCoordinate: offset(home, metersNorth: 3_000),
+            kind: .automobile
+        )
+        let samples = [
+            HealthDistanceSample(
+                start: origin,
+                end: origin.addingTimeInterval(20 * 60),
+                meters: 3_200,
+                kind: .cycling
+            )
+        ]
+        let corrected = HealthEnrichment.corrected([driving], using: samples)
+        XCTAssertEqual(corrected[0].kind.stored, "cycling")
+        XCTAssertEqual(corrected[0].id, driving.id, "the correction must update the row, not add one")
+    }
+
+    func testARealDriveIsLeftAlone() {
+        let driving = TimelineActivity(
+            id: "a1",
+            start: origin,
+            end: origin.addingTimeInterval(20 * 60),
+            distance: 18_000,
+            startCoordinate: home,
+            endCoordinate: offset(home, metersNorth: 18_000),
+            kind: .automobile
+        )
+        // A short walk to the car is not evidence of a bike ride.
+        let samples = [
+            HealthDistanceSample(
+                start: origin,
+                end: origin.addingTimeInterval(3 * 60),
+                meters: 120,
+                kind: .walking
+            )
+        ]
+        XCTAssertEqual(HealthEnrichment.corrected([driving], using: samples)[0].kind.stored, "automobile")
+    }
+
+    func testDistanceIsProRatedAcrossTheEdgeOfATrip() {
+        let samples = [
+            HealthDistanceSample(
+                start: origin.addingTimeInterval(-10 * 60),
+                end: origin.addingTimeInterval(10 * 60),
+                meters: 2_000,
+                kind: .cycling
+            )
+        ]
+        let meters = HealthEnrichment.overlappingMeters(
+            samples,
+            from: origin,
+            to: origin.addingTimeInterval(10 * 60)
+        )
+        XCTAssertEqual(meters, 1_000, accuracy: 1)
+    }
+}

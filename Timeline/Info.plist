@@ -52,6 +52,8 @@
 	<string>Timeline opens a Google Maps Timeline JSON export that you choose.</string>
 	<key>NSDownloadsFolderUsageDescription</key>
 	<string>Timeline reads a Timeline.json export from Downloads when you open it.</string>
+	<key>NSHealthShareUsageDescription</key>
+	<string>Timeline reads workouts your Apple Watch recorded so rides and runs show their real route.</string>
 	<key>NSHighResolutionCapable</key>
 	<true/>
 	<key>NSLocalNetworkUsageDescription</key>

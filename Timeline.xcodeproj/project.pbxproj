@@ -10,6 +10,7 @@
 		0DF0BD019DFFBC79EDB55041 /* LiquidChrome.swift in Sources */ = {isa = PBXBuildFile; fileRef = 15F9427D76A38D8FFCE30323 /* LiquidChrome.swift */; };
 		106DE14DFAE09F84A5FA0DFF /* DeviceLocationSource.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC0D5BCA07B8225C963230A4 /* DeviceLocationSource.swift */; };
 		10EA88841A4ED1F827A9CD4F /* Palette.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9E1B28FC5BF045913929FD4 /* Palette.swift */; };
+		11AF1B6F32E8950126340FB4 /* HealthEnrichment.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20FA85C7156F368DF009D964 /* HealthEnrichment.swift */; };
 		1206EA7A74C5A49A16618591 /* LuxCompanionTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0FE6242695DDA947697A34B /* LuxCompanionTransport.swift */; };
 		18B9EA1106022C3C35237159 /* RouteSnapperTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 71B4F471B4A574BC0ABB38C6 /* RouteSnapperTests.swift */; };
 		18E2A4AA27EBF3384CC2D4CB /* PlaceClusterer.swift in Sources */ = {isa = PBXBuildFile; fileRef = E62991B0B2E82A1FDD015746 /* PlaceClusterer.swift */; };
@@ -60,6 +61,7 @@
 		886D2DB443AF6A8852FE2B57 /* TimelineParserTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E04A92A7BC968DEE2C1E98C7 /* TimelineParserTests.swift */; };
 		893BAC3E9EAA11C4E9636968 /* GeoTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F3D570FD3C06A7239A56A812 /* GeoTests.swift */; };
 		8B41061A72C59A939D87F86D /* PlaceGuess.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4781B5D31C58B47CB454B42F /* PlaceGuess.swift */; };
+		8CB5FE05412BF29C5A1D4B90 /* TimelineReconciler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 010CFC73A281BD14E50E36E1 /* TimelineReconciler.swift */; };
 		92296AD651C936956782CEE7 /* PlaceRenameView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 75D604A7F0EBB14A8B11077A /* PlaceRenameView.swift */; };
 		931622D8BC51D41E309E61BE /* RoutePlanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 76BAF0A4F92F29FA98081ADB /* RoutePlanner.swift */; };
 		95EA13D19A7AB0E40AC0B1A6 /* LuxShared in Frameworks */ = {isa = PBXBuildFile; productRef = 56441B4179519CBFCCD9DF5B /* LuxShared */; };
@@ -78,6 +80,7 @@
 		A1909CDF7C749AC78BBADA24 /* TimelineLaunch.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8DF68F06E1121E88E519C9BC /* TimelineLaunch.swift */; };
 		A53B974C529FA6F939C78E8C /* DeviceMotionSource.swift in Sources */ = {isa = PBXBuildFile; fileRef = F89F6191AD676D10FB26A5F6 /* DeviceMotionSource.swift */; };
 		A6BA2897597E991E130F6C2C /* PlaceGuess.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4781B5D31C58B47CB454B42F /* PlaceGuess.swift */; };
+		AB040CC697384D49ED0FF8DB /* HealthEnrichment.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20FA85C7156F368DF009D964 /* HealthEnrichment.swift */; };
 		AB29EA130D7513D0A3492EFE /* CaptureModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 23DA5434853946FA3CE2CEE8 /* CaptureModels.swift */; };
 		AB4BA78FE075A27C51398F99 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = F38FDE28A77697434B262F4C /* Assets.xcassets */; };
 		ACDB06C09F4926234980A27E /* TimelineLaunch.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8DF68F06E1121E88E519C9BC /* TimelineLaunch.swift */; };
@@ -87,6 +90,7 @@
 		B5F3E018B2F13F222DB203FC /* TimelineRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3C9897691FC0C05406D4C21 /* TimelineRecorder.swift */; };
 		BB7C9FA0BF2D8C97366EC640 /* MarkersAndRoutesUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9B7B68A2C5A47F130B19C06 /* MarkersAndRoutesUITests.swift */; };
 		BC4C501347FBABBDEDEF86D0 /* LiquidChrome.swift in Sources */ = {isa = PBXBuildFile; fileRef = 15F9427D76A38D8FFCE30323 /* LiquidChrome.swift */; };
+		BE33E41276AB920A3D9B547A /* DeviceHealthSource.swift in Sources */ = {isa = PBXBuildFile; fileRef = 23A862CFA6951F8FB80E7E1D /* DeviceHealthSource.swift */; };
 		BE5A3265749B32A8E4661A68 /* MapCanvasView+iOS.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8EF9167F835586F0B2E5C8F5 /* MapCanvasView+iOS.swift */; };
 		BE71455F71F539A0E487FA4D /* Palette.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9E1B28FC5BF045913929FD4 /* Palette.swift */; };
 		C29BAA64427740392049CADD /* LuxBonjourBrowser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6AD31226AF36728CA62510E2 /* LuxBonjourBrowser.swift */; };
@@ -100,8 +104,10 @@
 		D3A7619A930F8160FB9D2A07 /* CaptureTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B79901C791A24DE1AB1AEA0 /* CaptureTests.swift */; };
 		D3FE925EC69D1014ADE3817B /* Landmark.swift in Sources */ = {isa = PBXBuildFile; fileRef = 89C557260FF448CAE3747FD8 /* Landmark.swift */; };
 		D6A7FF8397BE356AD52900B5 /* RouteSnapper.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD3B7EEBCFA7764518D9E18E /* RouteSnapper.swift */; };
+		D77E48A3EAA0CC94AF859972 /* DeviceHealthSource.swift in Sources */ = {isa = PBXBuildFile; fileRef = 23A862CFA6951F8FB80E7E1D /* DeviceHealthSource.swift */; };
 		E2C517938A94BCFC60717CC9 /* PlaceNameSuggester.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A19F7BC9CF304A702197F76 /* PlaceNameSuggester.swift */; };
 		E42C562EEF12DBE097E9C21B /* VisitNotifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = 65CCC73028B6C647F56ABDDB /* VisitNotifier.swift */; };
+		EC1E9AFE0B8D4CB37D47DEF7 /* TimelineReconciler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 010CFC73A281BD14E50E36E1 /* TimelineReconciler.swift */; };
 		EE77B27F0E6DF16DDF11864E /* RouteSnapper.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD3B7EEBCFA7764518D9E18E /* RouteSnapper.swift */; };
 		F63AEA2289CFB6250D530B40 /* PlaceNameSuggester.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A19F7BC9CF304A702197F76 /* PlaceNameSuggester.swift */; };
 		F6C8B4F9899829F0BA97927E /* LuxCompanionClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 779DB6859B7B0D720B7E4A39 /* LuxCompanionClient.swift */; };
@@ -147,11 +153,14 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		010CFC73A281BD14E50E36E1 /* TimelineReconciler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimelineReconciler.swift; sourceTree = "<group>"; };
 		15F9427D76A38D8FFCE30323 /* LiquidChrome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiquidChrome.swift; sourceTree = "<group>"; };
 		174CA6AC718EC8110BFA031B /* MotionSegmenter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MotionSegmenter.swift; sourceTree = "<group>"; };
 		1752D9250320F1FA1FA6BC7C /* LuxPhotosSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LuxPhotosSettingsView.swift; sourceTree = "<group>"; };
 		19D6BC5356EA89FD2F53C904 /* VisitPhotoStrip.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VisitPhotoStrip.swift; sourceTree = "<group>"; };
 		1B79901C791A24DE1AB1AEA0 /* CaptureTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaptureTests.swift; sourceTree = "<group>"; };
+		20FA85C7156F368DF009D964 /* HealthEnrichment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthEnrichment.swift; sourceTree = "<group>"; };
+		23A862CFA6951F8FB80E7E1D /* DeviceHealthSource.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceHealthSource.swift; sourceTree = "<group>"; };
 		23DA5434853946FA3CE2CEE8 /* CaptureModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaptureModels.swift; sourceTree = "<group>"; };
 		27A603B8D2E85569C4F2AC40 /* TimelineApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimelineApp.swift; sourceTree = "<group>"; };
 		27DB2D73BEF1B63C8278F73E /* TimelineMacTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = TimelineMacTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -339,11 +348,14 @@
 			isa = PBXGroup;
 			children = (
 				23DA5434853946FA3CE2CEE8 /* CaptureModels.swift */,
+				23A862CFA6951F8FB80E7E1D /* DeviceHealthSource.swift */,
 				EC0D5BCA07B8225C963230A4 /* DeviceLocationSource.swift */,
 				F89F6191AD676D10FB26A5F6 /* DeviceMotionSource.swift */,
+				20FA85C7156F368DF009D964 /* HealthEnrichment.swift */,
 				174CA6AC718EC8110BFA031B /* MotionSegmenter.swift */,
 				E62991B0B2E82A1FDD015746 /* PlaceClusterer.swift */,
 				4781B5D31C58B47CB454B42F /* PlaceGuess.swift */,
+				010CFC73A281BD14E50E36E1 /* TimelineReconciler.swift */,
 				C3C9897691FC0C05406D4C21 /* TimelineRecorder.swift */,
 				668EEBFE37A08864E7B86FB0 /* TrackingSettings.swift */,
 				CD803A969D6C0BD2EF6C8543 /* VisitNotificationPolicy.swift */,
@@ -618,8 +630,10 @@
 			buildActionMask = 2147483647;
 			files = (
 				AB29EA130D7513D0A3492EFE /* CaptureModels.swift in Sources */,
+				BE33E41276AB920A3D9B547A /* DeviceHealthSource.swift in Sources */,
 				9F77A9BFE9B78FD5CCD3B1CB /* DeviceLocationSource.swift in Sources */,
 				61A7622A1EE76C1FD1F53995 /* DeviceMotionSource.swift in Sources */,
+				11AF1B6F32E8950126340FB4 /* HealthEnrichment.swift in Sources */,
 				477A2CC104A37B7156AAB707 /* Landmark.swift in Sources */,
 				BC4C501347FBABBDEDEF86D0 /* LiquidChrome.swift in Sources */,
 				C29BAA64427740392049CADD /* LuxBonjourBrowser.swift in Sources */,
@@ -650,6 +664,7 @@
 				6606ECAF7069BB8248A5FB1A /* TimelineMapPlotter.swift in Sources */,
 				440BDDFA36C5E534D7EA8F21 /* TimelineModels.swift in Sources */,
 				C7A96D4167ED6038915F5C02 /* TimelineParser.swift in Sources */,
+				EC1E9AFE0B8D4CB37D47DEF7 /* TimelineReconciler.swift in Sources */,
 				73E631A74E00F2CE83BC3DAE /* TimelineRecorder.swift in Sources */,
 				D043A1DCB7AAD23D56E7DA4D /* TimelineStore.swift in Sources */,
 				3C62B2B7DB23AE3083A859E7 /* TrackingSettings.swift in Sources */,
@@ -665,8 +680,10 @@
 			buildActionMask = 2147483647;
 			files = (
 				3E4D415C25F38653CD8E3894 /* CaptureModels.swift in Sources */,
+				D77E48A3EAA0CC94AF859972 /* DeviceHealthSource.swift in Sources */,
 				106DE14DFAE09F84A5FA0DFF /* DeviceLocationSource.swift in Sources */,
 				A53B974C529FA6F939C78E8C /* DeviceMotionSource.swift in Sources */,
+				AB040CC697384D49ED0FF8DB /* HealthEnrichment.swift in Sources */,
 				D3FE925EC69D1014ADE3817B /* Landmark.swift in Sources */,
 				0DF0BD019DFFBC79EDB55041 /* LiquidChrome.swift in Sources */,
 				38867026F11CB6844108148E /* LuxBonjourBrowser.swift in Sources */,
@@ -697,6 +714,7 @@
 				64875FF0A0A90DE354A8EFD1 /* TimelineMapPlotter.swift in Sources */,
 				FDE6839E49CA511377389692 /* TimelineModels.swift in Sources */,
 				F9C703A7EFE5B97ADD61970B /* TimelineParser.swift in Sources */,
+				8CB5FE05412BF29C5A1D4B90 /* TimelineReconciler.swift in Sources */,
 				B5F3E018B2F13F222DB203FC /* TimelineRecorder.swift in Sources */,
 				5B404FEF0895D6CF64249ADF /* TimelineStore.swift in Sources */,
 				703D4BE2FDCEC6A644E9F46A /* TrackingSettings.swift in Sources */,

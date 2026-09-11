@@ -51,6 +51,17 @@ final class TimelineStore {
     private var placeMerges: [String: String] = [:]
     /// Bumped when a place is renamed so the map refreshes annotation titles.
     private(set) var placeNameGeneration: UInt64 = 0
+    /// Imported stays the recorder superseded are hidden. Showing them is the
+    /// escape hatch if reconciliation ever gets a day wrong. Stored rather than
+    /// read straight from UserDefaults so the settings toggle redraws.
+    var showsShadowedImports: Bool = UserDefaults.standard.bool(forKey: TimelineStore.shadowedKey) {
+        didSet {
+            guard showsShadowedImports != oldValue else { return }
+            UserDefaults.standard.set(showsShadowedImports, forKey: TimelineStore.shadowedKey)
+            refreshFromLibrary()
+        }
+    }
+    private static let shadowedKey = "showsShadowedImports"
     private var isApplyingCloudIdentity = false
     private(set) var monthGroups: [(month: Date, days: [DayRecord])] = []
     private(set) var yearOptions: [Int] = []
@@ -389,7 +400,10 @@ final class TimelineStore {
                     try TimelineParser.extract(data)
                 }.value
                 try await database.upsert(batch: batch, sourceName: name)
-                let merged = try await database.loadBatch() ?? batch
+                // Fold the export into whatever the phone recorded before the
+                // library is assembled, so the day view never shows both.
+                try? await database.reconcileSources()
+                let merged = try await database.loadBatch(includingShadowed: showsShadowedImports) ?? batch
                 let source = (try? await database.latestSourceName()) ?? name
                 await refreshPlaceNames()
                 await pullPlaceIdentityFromCloud()
@@ -436,13 +450,26 @@ final class TimelineStore {
         return true
     }
 
+    /// Re-run the merge of recorded and imported days, then reload.
+    func reconcileLibrary() {
+        Task {
+            let plan = try? await database.reconcileSources()
+            TimelineLog.info(
+                "library reconciled",
+                ["shadowed": "\(plan?.shadowedVisitIDs.count ?? 0)", "aliases": "\(plan?.placeAliases.count ?? 0)"]
+            )
+            await refreshPlaceIdentity()
+            refreshFromLibrary()
+        }
+    }
+
     /// Reload after the recorder wrote something. Unlike `apply`, this keeps the
     /// day, place and filters the user is looking at — a stay recorded in the
     /// background must not yank the map out from under them.
     func refreshFromLibrary() {
         guard !isLoading else { return }
         Task {
-            guard let batch = try? await database.loadBatch() else { return }
+            guard let batch = try? await database.loadBatch(includingShadowed: showsShadowedImports) else { return }
             await refreshPlaceIdentity()
             let name = (try? await database.latestSourceName()) ?? sourceName ?? "This device"
             let keptDay = selectedDayID

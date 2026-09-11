@@ -15,6 +15,7 @@ final class TrackingSettings {
         static let sentDay = "trackingNotifySentDay"
         static let sentCount = "trackingNotifySentCount"
         static let held = "trackingNotifyHeld"
+        static let health = "trackingUsesHealth"
     }
 
     private let defaults: UserDefaults
@@ -24,6 +25,7 @@ final class TrackingSettings {
         let raw = defaults.string(forKey: Key.mode) ?? TrackingMode.off.rawValue
         mode = TrackingMode(rawValue: raw) ?? .off
         notifiesVisits = defaults.object(forKey: Key.notifyVisits) as? Bool ?? true
+        usesHealth = defaults.bool(forKey: Key.health)
     }
 
     /// Stored, not computed: `@Observable` only tracks stored properties, and the
@@ -39,6 +41,15 @@ final class TrackingSettings {
         didSet {
             guard notifiesVisits != oldValue else { return }
             defaults.set(notifiesVisits, forKey: Key.notifyVisits)
+        }
+    }
+
+    /// Off until asked for: HealthKit means an extra permission prompt that would
+    /// be a surprise in a maps app, and everything works without it.
+    var usesHealth: Bool {
+        didSet {
+            guard usesHealth != oldValue else { return }
+            defaults.set(usesHealth, forKey: Key.health)
         }
     }
 

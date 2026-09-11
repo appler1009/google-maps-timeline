@@ -16,6 +16,9 @@ final class DeviceLocationSource: NSObject, StopSource, CLLocationManagerDelegat
     private let manager = CLLocationManager()
     private var mode: TrackingMode = .off
     private var isTracing = false
+    /// Held only while fine tracing is on. Its lifetime is what tells iOS the
+    /// background updates are deliberate, and what lights the status indicator.
+    private var backgroundSession: CLBackgroundActivitySession?
 
     override init() {
         super.init()
@@ -81,9 +84,12 @@ final class DeviceLocationSource: NSObject, StopSource, CLLocationManagerDelegat
             manager.desiredAccuracy = kCLLocationAccuracyNearestTenMeters
             manager.distanceFilter = 25
             manager.allowsBackgroundLocationUpdates = true
+            backgroundSession = CLBackgroundActivitySession()
             manager.startUpdatingLocation()
         } else {
             manager.stopUpdatingLocation()
+            backgroundSession?.invalidate()
+            backgroundSession = nil
             manager.allowsBackgroundLocationUpdates = false
             manager.desiredAccuracy = kCLLocationAccuracyHundredMeters
             manager.distanceFilter = 50
@@ -99,6 +105,9 @@ final class DeviceLocationSource: NSObject, StopSource, CLLocationManagerDelegat
         // .distantFuture / .distantPast as open ends.
         let arrival = visit.arrivalDate == .distantPast ? Date() : visit.arrivalDate
         let departure = visit.departureDate == .distantFuture ? nil : visit.departureDate
+        // Arriving somewhere ends the trip: stop burning the radio even if Core
+        // Motion has not admitted we are stationary yet.
+        if departure == nil { setLiveTracing(false) }
         onStop?(
             CapturedStop(
                 coordinate: visit.coordinate,

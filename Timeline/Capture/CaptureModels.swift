@@ -171,6 +171,8 @@ struct PlaceAnchor: Equatable {
 enum CaptureMark {
     static let motion = "motion"
     static let fixes = "fixes"
+    static let reconcile = "reconcile"
+    static let health = "health"
 }
 
 /// Sources the recorder pulls from. Concrete implementations wrap CoreLocation and

@@ -55,11 +55,11 @@ actor TimelineDatabase {
         try string("SELECT source_name FROM imports ORDER BY imported_at DESC LIMIT 1")
     }
 
-    func loadBatch() throws -> TimelineBatch? {
+    func loadBatch(includingShadowed: Bool = false) throws -> TimelineBatch? {
         if try isEmpty() { return nil }
         let merges = try loadPlaceMerges()
         return TimelineBatch(
-            visits: try loadVisits().map { Self.remapped($0, merges: merges) },
+            visits: try loadVisits(includingShadowed: includingShadowed).map { Self.remapped($0, merges: merges) },
             activities: try loadActivities(),
             paths: try loadPaths()
         )
@@ -100,6 +100,49 @@ actor TimelineDatabase {
             sqlite3_exec(db, "ROLLBACK", nil, nil, nil)
             throw error
         }
+    }
+
+    /// Fold recorded days and imported days into one library.
+    ///
+    /// Runs after every import and once a day in the background — not on every
+    /// write, since it reads the whole visit table.
+    @discardableResult
+    func reconcileSources(calendar: Calendar = .current) throws -> ReconciliationPlan {
+        let device = try loadVisits(source: .device)
+        let imported = try loadVisits(source: .google)
+        let plan = TimelineReconciler.plan(device: device, imported: imported, calendar: calendar)
+
+        try setShadowed(plan.shadowedVisitIDs)
+        let stamp = Date().timeIntervalSince1970
+        for (from, to) in plan.placeAliases {
+            let semantic = imported.first { $0.placeKey == to }?.semanticType
+            _ = try applyPlaceMergeIfNewer(from: from, into: to, updatedAt: stamp, targetSemantic: semantic)
+        }
+        return plan
+    }
+
+    /// Exactly the given imported visits are hidden; everything else is shown, so
+    /// a re-run after a device visit is deleted puts the import back.
+    private func setShadowed(_ ids: Set<String>) throws {
+        try exec("UPDATE visits SET shadowed = 0 WHERE shadowed = 1")
+        guard !ids.isEmpty, let db else { return }
+        var statement: OpaquePointer?
+        defer { sqlite3_finalize(statement) }
+        guard sqlite3_prepare_v2(db, "UPDATE visits SET shadowed = 1 WHERE id = ?", -1, &statement, nil) == SQLITE_OK else {
+            throw TimelineDatabaseError.execute(errmsg())
+        }
+        for id in ids {
+            sqlite3_reset(statement)
+            sqlite3_clear_bindings(statement)
+            sqlite3_bind_text(statement, 1, id, -1, Self.transient)
+            guard sqlite3_step(statement) == SQLITE_DONE else {
+                throw TimelineDatabaseError.execute(errmsg())
+            }
+        }
+    }
+
+    func shadowedVisitCount() throws -> Int {
+        try scalar("SELECT COUNT(*) FROM visits WHERE shadowed = 1")
     }
 
     /// Every place we could snap a new stay onto, with how often it was visited
@@ -731,6 +774,8 @@ actor TimelineDatabase {
         for table in ["visits", "activities", "paths"] {
             try addColumn(db, table: table, column: "source TEXT NOT NULL DEFAULT 'google'")
         }
+        // Imported rows a recording supersedes are hidden, never deleted.
+        try addColumn(db, table: "visits", column: "shadowed INTEGER NOT NULL DEFAULT 0")
     }
 
     /// `ALTER TABLE ADD COLUMN` has no `IF NOT EXISTS`, so ask first.
@@ -857,13 +902,17 @@ actor TimelineDatabase {
         }
     }
 
-    private func loadVisits() throws -> [TimelineVisit] {
+    private func loadVisits(includingShadowed: Bool = true, source: RecordSource? = nil) throws -> [TimelineVisit] {
         guard let db else { return [] }
+        var clauses: [String] = []
+        if !includingShadowed { clauses.append("shadowed = 0") }
+        if let source { clauses.append("source = '\(source.rawValue)'") }
+        let filter = clauses.isEmpty ? "" : " WHERE " + clauses.joined(separator: " AND ")
         var statement: OpaquePointer?
         defer { sqlite3_finalize(statement) }
         guard sqlite3_prepare_v2(
             db,
-            "SELECT id, start, end, lat, lon, place_key, semantic_type FROM visits",
+            "SELECT id, start, end, lat, lon, place_key, semantic_type FROM visits" + filter,
             -1,
             &statement,
             nil
@@ -882,6 +931,11 @@ actor TimelineDatabase {
             )
         }
         return rows
+    }
+
+    /// Activities overlapping a window, for the HealthKit correction pass.
+    func activities(from: Date, to: Date) throws -> [TimelineActivity] {
+        try loadActivities().filter { $0.end > from && $0.start < to }
     }
 
     private func loadActivities() throws -> [TimelineActivity] {

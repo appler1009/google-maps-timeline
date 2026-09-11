@@ -7,6 +7,7 @@ import CoreMotion
 /// and the only place the permission escalation is explained.
 struct TrackingSettingsView: View {
     @Bindable private var settings = TrackingSettings.shared
+    @Environment(TimelineStore.self) private var store
     @Environment(\.dismiss) private var dismiss
 
     @State private var locationStatus = CLLocationManager().authorizationStatus
@@ -63,6 +64,27 @@ struct TrackingSettingsView: View {
                         )
                     }
 
+                    Section {
+                        Toggle("Use Apple Watch workouts", isOn: healthBinding)
+                            .accessibilityIdentifier("tracking-health-toggle")
+                    } header: {
+                        Text("Apple Watch")
+                    } footer: {
+                        Text("Walks, runs and rides the Watch recorded come in with their exact route, and the cycling distance it logs corrects trips Core Motion read as driving. Timeline only reads this data.")
+                    }
+
+                    Section {
+                        Toggle("Show imported copies of recorded days", isOn: shadowBinding)
+                            .accessibilityIdentifier("tracking-shadow-toggle")
+                        Button("Merge exports with recordings now") {
+                            store.reconcileLibrary()
+                        }
+                    } header: {
+                        Text("Google Takeout")
+                    } footer: {
+                        Text("On a day this iPhone recorded, the export's version of the same stays is hidden rather than deleted. Turn this on to see both.")
+                    }
+
                     Section("Status") {
                         LabeledContent("Recording") {
                             Text(recorder.isRunning ? "On" : "Off")
@@ -86,6 +108,26 @@ struct TrackingSettingsView: View {
             }
             .task { await refreshPermissions() }
         }
+    }
+
+    private var healthBinding: Binding<Bool> {
+        Binding(
+            get: { settings.usesHealth },
+            set: { wanted in
+                guard wanted else {
+                    settings.usesHealth = false
+                    return
+                }
+                Task { await recorder.enableHealth() }
+            }
+        )
+    }
+
+    private var shadowBinding: Binding<Bool> {
+        Binding(
+            get: { store.showsShadowedImports },
+            set: { store.showsShadowedImports = $0 }
+        )
     }
 
     private func modeRow(_ mode: TrackingMode) -> some View {
