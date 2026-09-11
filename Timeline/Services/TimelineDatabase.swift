@@ -201,6 +201,189 @@ actor TimelineDatabase {
         return Array(anchors.values)
     }
 
+    // MARK: - Change tracking
+
+    /// Set only for the duration of a remote apply. Every function that reaches it
+    /// is synchronous, so there is no suspension point at which another caller
+    /// could observe the wrong value.
+    private var changeOrigin: ChangeOrigin = .local
+
+    private func applyingRemotely<T>(_ body: () throws -> T) rethrows -> T {
+        let previous = changeOrigin
+        changeOrigin = .remote
+        defer { changeOrigin = previous }
+        return try body()
+    }
+
+    /// Note that a row needs sending. Callers run this inside the same transaction
+    /// as the write wherever they have one; `setPlaceName` is a single statement
+    /// with no transaction of its own, so a crash in the gap can lose an entry.
+    /// `markEverythingPending()` is the recovery path for that.
+    private func logChange(_ kind: ChangeKind, _ rowID: String, _ operation: ChangeOperation = .upsert) throws {
+        guard changeOrigin == .local, let db, !rowID.isEmpty else { return }
+        let seq = try nextChangeSeq()
+        var statement: OpaquePointer?
+        defer { sqlite3_finalize(statement) }
+        guard sqlite3_prepare_v2(
+            db,
+            """
+            INSERT INTO change_log (kind, row_id, op, seq, changed_at)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(kind, row_id) DO UPDATE SET
+                op = excluded.op,
+                seq = excluded.seq,
+                changed_at = excluded.changed_at
+            """,
+            -1,
+            &statement,
+            nil
+        ) == SQLITE_OK else { throw TimelineDatabaseError.execute(errmsg()) }
+        sqlite3_bind_text(statement, 1, kind.rawValue, -1, Self.transient)
+        sqlite3_bind_text(statement, 2, rowID, -1, Self.transient)
+        sqlite3_bind_text(statement, 3, operation.rawValue, -1, Self.transient)
+        sqlite3_bind_int64(statement, 4, seq)
+        sqlite3_bind_double(statement, 5, Date().timeIntervalSince1970)
+        guard sqlite3_step(statement) == SQLITE_DONE else {
+            throw TimelineDatabaseError.execute(errmsg())
+        }
+    }
+
+    /// Never reuses a number, even after the log empties, so a stale acknowledgement
+    /// can never match a newer entry.
+    private func nextChangeSeq() throws -> Int64 {
+        guard let db else { throw TimelineDatabaseError.open }
+        try exec(
+            """
+            INSERT INTO sync_state (key, int_value) VALUES ('changeSeq', 1)
+            ON CONFLICT(key) DO UPDATE SET int_value = sync_state.int_value + 1
+            """
+        )
+        var statement: OpaquePointer?
+        defer { sqlite3_finalize(statement) }
+        guard sqlite3_prepare_v2(db, "SELECT int_value FROM sync_state WHERE key = 'changeSeq'", -1, &statement, nil) == SQLITE_OK,
+              sqlite3_step(statement) == SQLITE_ROW else {
+            throw TimelineDatabaseError.execute(errmsg())
+        }
+        return sqlite3_column_int64(statement, 0)
+    }
+
+    func pendingChangeCount() throws -> Int {
+        try scalar("SELECT COUNT(*) FROM change_log")
+    }
+
+    /// Oldest first, so a backlog drains in the order it happened.
+    func pendingChanges(limit: Int = 200) throws -> [PendingChange] {
+        guard let db, limit > 0 else { return [] }
+        var statement: OpaquePointer?
+        defer { sqlite3_finalize(statement) }
+        guard sqlite3_prepare_v2(
+            db,
+            "SELECT kind, row_id, op, seq, changed_at FROM change_log ORDER BY seq LIMIT ?",
+            -1,
+            &statement,
+            nil
+        ) == SQLITE_OK else { throw TimelineDatabaseError.execute(errmsg()) }
+        sqlite3_bind_int(statement, 1, Int32(limit))
+        var rows: [PendingChange] = []
+        while sqlite3_step(statement) == SQLITE_ROW {
+            guard let rawKind = text(statement, 0), let kind = ChangeKind(rawValue: rawKind),
+                  let rowID = text(statement, 1) else { continue }
+            rows.append(
+                PendingChange(
+                    kind: kind,
+                    rowID: rowID,
+                    operation: ChangeOperation(rawValue: text(statement, 2) ?? "") ?? .upsert,
+                    seq: sqlite3_column_int64(statement, 3),
+                    changedAt: Date(timeIntervalSince1970: sqlite3_column_double(statement, 4))
+                )
+            )
+        }
+        return rows
+    }
+
+    /// Pending changes together with the rows they point at.
+    func changeBatch(limit: Int = 200) throws -> ChangeBatch {
+        let changes = try pendingChanges(limit: limit)
+        guard !changes.isEmpty else { return ChangeBatch() }
+        var batch = ChangeBatch(changes: changes)
+
+        func ids(_ kind: ChangeKind) -> Set<String> {
+            Set(changes.filter { $0.kind == kind && $0.operation == .upsert }.map(\.rowID))
+        }
+
+        let visitIDs = ids(.visit)
+        if !visitIDs.isEmpty {
+            batch.visits = try loadVisits().filter { visitIDs.contains($0.id) }
+        }
+        let activityIDs = ids(.activity)
+        if !activityIDs.isEmpty {
+            batch.activities = try loadActivities().filter { activityIDs.contains($0.id) }
+        }
+        let pathIDs = ids(.path)
+        if !pathIDs.isEmpty {
+            batch.paths = try loadPaths().filter { pathIDs.contains($0.id) }
+        }
+        let nameKeys = ids(.placeName)
+        if !nameKeys.isEmpty {
+            batch.names = try loadPlaceNameRecords().filter { nameKeys.contains($0.key) }
+        }
+        let mergeKeys = ids(.placeMerge)
+        if !mergeKeys.isEmpty {
+            batch.merges = try loadPlaceMergeRecords().filter { mergeKeys.contains($0.key) }
+        }
+        return batch
+    }
+
+    /// Clear entries that have been sent. A row edited again after the batch was
+    /// read has a higher seq by then, so it survives its own acknowledgement.
+    func acknowledge(_ changes: [PendingChange]) throws {
+        guard let db, !changes.isEmpty else { return }
+        var statement: OpaquePointer?
+        defer { sqlite3_finalize(statement) }
+        guard sqlite3_prepare_v2(
+            db,
+            "DELETE FROM change_log WHERE kind = ? AND row_id = ? AND seq <= ?",
+            -1,
+            &statement,
+            nil
+        ) == SQLITE_OK else { throw TimelineDatabaseError.execute(errmsg()) }
+        for change in changes {
+            sqlite3_reset(statement)
+            sqlite3_clear_bindings(statement)
+            sqlite3_bind_text(statement, 1, change.kind.rawValue, -1, Self.transient)
+            sqlite3_bind_text(statement, 2, change.rowID, -1, Self.transient)
+            sqlite3_bind_int64(statement, 3, change.seq)
+            guard sqlite3_step(statement) == SQLITE_DONE else {
+                throw TimelineDatabaseError.execute(errmsg())
+            }
+        }
+    }
+
+    /// Queue the whole library. This is the first sync, and the repair for a log
+    /// entry lost to a crash.
+    @discardableResult
+    func markEverythingPending() throws -> Int {
+        guard let db else { throw TimelineDatabaseError.open }
+        try exec("BEGIN IMMEDIATE")
+        do {
+            for visit in try loadVisits() { try logChange(.visit, visit.id) }
+            for activity in try loadActivities() { try logChange(.activity, activity.id) }
+            for path in try loadPaths() { try logChange(.path, path.id) }
+            for key in try loadPlaceNameRecords().keys { try logChange(.placeName, key) }
+            for key in try loadPlaceMergeRecords().keys { try logChange(.placeMerge, key) }
+            try exec("COMMIT")
+        } catch {
+            sqlite3_exec(db, "ROLLBACK", nil, nil, nil)
+            throw error
+        }
+        return try pendingChangeCount()
+    }
+
+    /// Drop the queue without sending it — for "stop syncing and forget".
+    func clearChangeLog() throws {
+        try exec("DELETE FROM change_log")
+    }
+
     // MARK: - Recorder state
 
     func openStop() throws -> OpenStop? {
@@ -466,13 +649,16 @@ actor TimelineDatabase {
         guard sqlite3_step(statement) == SQLITE_DONE else {
             throw TimelineDatabaseError.execute(errmsg())
         }
+        try logChange(.placeName, placeKey)
     }
 
     /// Apply a remote name when it is strictly newer than the local row.
     func applyPlaceNameIfNewer(placeKey: String, name: String, updatedAt: TimeInterval) throws -> Bool {
         let local = try loadPlaceNameRecords()[placeKey]
         if let local, local.updatedAt >= updatedAt { return false }
-        try setPlaceName(placeKey: placeKey, name: name, updatedAt: updatedAt)
+        try applyingRemotely {
+            try setPlaceName(placeKey: placeKey, name: name, updatedAt: updatedAt)
+        }
         return true
     }
 
@@ -517,7 +703,9 @@ actor TimelineDatabase {
         if let local = try loadPlaceMergeRecords()[fromKey], local.updatedAt >= updatedAt {
             return false
         }
-        try mergePlace(from: fromKey, into: toKey, targetSemantic: targetSemantic, updatedAt: updatedAt)
+        try applyingRemotely {
+            try mergePlace(from: fromKey, into: toKey, targetSemantic: targetSemantic, updatedAt: updatedAt)
+        }
         return true
     }
 
@@ -525,7 +713,9 @@ actor TimelineDatabase {
         if let local = try loadPlaceMergeRecords()[fromKey], local.updatedAt >= updatedAt {
             return false
         }
-        try unmergePlace(from: fromKey, updatedAt: updatedAt)
+        try applyingRemotely {
+            try unmergePlace(from: fromKey, updatedAt: updatedAt)
+        }
         return true
     }
 
@@ -566,6 +756,7 @@ actor TimelineDatabase {
             guard sqlite3_step(insert) == SQLITE_DONE else {
                 throw TimelineDatabaseError.execute(errmsg())
             }
+            try logChange(.placeMerge, fromKey)
 
             // Anything that pointed at fromKey should now point at toKey.
             try exec(
@@ -618,6 +809,7 @@ actor TimelineDatabase {
             guard sqlite3_step(insert) == SQLITE_DONE else {
                 throw TimelineDatabaseError.execute(errmsg())
             }
+            try logChange(.placeMerge, fromKey)
             try exec("COMMIT")
         } catch {
             sqlite3_exec(db, "ROLLBACK", nil, nil, nil)
@@ -763,6 +955,19 @@ actor TimelineDatabase {
                 name TEXT PRIMARY KEY,
                 through REAL NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS change_log (
+                kind TEXT NOT NULL,
+                row_id TEXT NOT NULL,
+                op TEXT NOT NULL,
+                seq INTEGER NOT NULL,
+                changed_at REAL NOT NULL,
+                PRIMARY KEY (kind, row_id)
+            );
+            CREATE INDEX IF NOT EXISTS change_log_seq ON change_log(seq);
+            CREATE TABLE IF NOT EXISTS sync_state (
+                key TEXT PRIMARY KEY,
+                int_value INTEGER NOT NULL DEFAULT 0
+            );
             CREATE TRIGGER IF NOT EXISTS paths_points_changed AFTER UPDATE OF points ON paths
             BEGIN
                 DELETE FROM path_routes WHERE path_id = NEW.id;
@@ -838,6 +1043,7 @@ actor TimelineDatabase {
             guard sqlite3_step(statement) == SQLITE_DONE else {
                 throw TimelineDatabaseError.execute(errmsg())
             }
+            try logChange(.visit, visit.id)
         }
     }
 
@@ -868,6 +1074,7 @@ actor TimelineDatabase {
             guard sqlite3_step(statement) == SQLITE_DONE else {
                 throw TimelineDatabaseError.execute(errmsg())
             }
+            try logChange(.activity, activity.id)
         }
     }
 
@@ -899,6 +1106,7 @@ actor TimelineDatabase {
             guard sqlite3_step(statement) == SQLITE_DONE else {
                 throw TimelineDatabaseError.execute(errmsg())
             }
+            try logChange(.path, path.id)
         }
     }
 

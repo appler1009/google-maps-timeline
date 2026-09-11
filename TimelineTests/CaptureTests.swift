@@ -816,3 +816,238 @@ final class HealthEnrichmentTests: XCTestCase {
         XCTAssertEqual(meters, 1_000, accuracy: 1)
     }
 }
+
+// MARK: - Change tracking
+
+final class ChangeLogTests: XCTestCase {
+    private func database() -> (TimelineDatabase, URL) {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("changelog-\(UUID().uuidString).sqlite")
+        return (TimelineDatabase(fileURL: url), url)
+    }
+
+    private func sampleVisit(_ id: String, offsetDays: Double = 0) -> TimelineVisit {
+        let start = Date(timeIntervalSince1970: 1_700_000_000 + offsetDays * 86_400)
+        return TimelineVisit(
+            id: id,
+            start: start,
+            end: start.addingTimeInterval(3_600),
+            coordinate: home,
+            semanticType: nil,
+            placeKey: "cafe"
+        )
+    }
+
+    func testRecordingAStayQueuesIt() async throws {
+        let (db, url) = database()
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        try await db.record(batch: TimelineBatch(visits: [sampleVisit("v1")], activities: [], paths: []))
+        let pending = try await db.pendingChanges()
+        XCTAssertEqual(pending.count, 1)
+        XCTAssertEqual(pending[0].kind, .visit)
+        XCTAssertEqual(pending[0].rowID, "v1")
+        XCTAssertEqual(pending[0].operation, .upsert)
+    }
+
+    func testImportingAlsoQueues() async throws {
+        let (db, url) = database()
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        try await db.upsert(
+            batch: TimelineBatch(visits: [sampleVisit("v1"), sampleVisit("v2", offsetDays: 1)], activities: [], paths: []),
+            sourceName: "Timeline.json"
+        )
+        let count = try await db.pendingChangeCount()
+        XCTAssertEqual(count, 2)
+    }
+
+    func testRenamingAPlaceQueuesTheName() async throws {
+        let (db, url) = database()
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        try await db.setPlaceName(placeKey: "cafe", name: "Continental Coffee")
+        let pending = try await db.pendingChanges()
+        XCTAssertEqual(pending.map(\.kind), [.placeName])
+        XCTAssertEqual(pending[0].rowID, "cafe")
+    }
+
+    func testRemoteAppliesDoNotQueue() async throws {
+        let (db, url) = database()
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        // A name and a merge arriving from iCloud must not be queued straight
+        // back out again — that is the echo loop.
+        let applied = try await db.applyPlaceNameIfNewer(
+            placeKey: "cafe",
+            name: "From another device",
+            updatedAt: Date().timeIntervalSince1970
+        )
+        XCTAssertTrue(applied)
+        let merged = try await db.applyPlaceMergeIfNewer(
+            from: "annex",
+            into: "cafe",
+            updatedAt: Date().timeIntervalSince1970,
+            targetSemantic: nil
+        )
+        XCTAssertTrue(merged)
+
+        let count = try await db.pendingChangeCount()
+        XCTAssertEqual(count, 0, "remote writes must never queue themselves for sending")
+    }
+
+    func testALocalMergeDoesQueue() async throws {
+        let (db, url) = database()
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        try await db.mergePlace(from: "annex", into: "cafe", targetSemantic: nil)
+        let kinds = Set(try await db.pendingChanges().map(\.kind))
+        XCTAssertTrue(kinds.contains(.placeMerge))
+    }
+
+    func testAcknowledgingClearsTheQueue() async throws {
+        let (db, url) = database()
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        try await db.record(batch: TimelineBatch(visits: [sampleVisit("v1")], activities: [], paths: []))
+        let pending = try await db.pendingChanges()
+        try await db.acknowledge(pending)
+        let after = try await db.pendingChangeCount()
+        XCTAssertEqual(after, 0)
+    }
+
+    func testAnEditDuringSendingSurvivesItsOwnAcknowledgement() async throws {
+        let (db, url) = database()
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        try await db.record(batch: TimelineBatch(visits: [sampleVisit("v1")], activities: [], paths: []))
+        let inFlight = try await db.pendingChanges()
+
+        // The row changes again while the batch is being sent.
+        var edited = sampleVisit("v1")
+        edited = TimelineVisit(
+            id: edited.id,
+            start: edited.start,
+            end: edited.end.addingTimeInterval(1_800),
+            coordinate: edited.coordinate,
+            semanticType: edited.semanticType,
+            placeKey: edited.placeKey
+        )
+        try await db.record(batch: TimelineBatch(visits: [edited], activities: [], paths: []))
+
+        try await db.acknowledge(inFlight)
+        let still = try await db.pendingChangeCount()
+        XCTAssertEqual(still, 1, "the newer edit must not be swallowed by the older ack")
+    }
+
+    func testSequenceNumbersAreNeverReused() async throws {
+        let (db, url) = database()
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        try await db.record(batch: TimelineBatch(visits: [sampleVisit("v1")], activities: [], paths: []))
+        let first = try await db.pendingChanges()
+        try await db.acknowledge(first)
+        // Queue is empty; the counter must not restart.
+        try await db.record(batch: TimelineBatch(visits: [sampleVisit("v2", offsetDays: 1)], activities: [], paths: []))
+        let second = try await db.pendingChanges()
+        XCTAssertGreaterThan(second[0].seq, first[0].seq)
+    }
+
+    func testTheBatchCarriesTheRowsThemselves() async throws {
+        let (db, url) = database()
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let start = Date(timeIntervalSince1970: 1_700_000_000)
+        try await db.record(
+            batch: TimelineBatch(
+                visits: [sampleVisit("v1")],
+                activities: [
+                    TimelineActivity(
+                        id: "a1",
+                        start: start,
+                        end: start.addingTimeInterval(900),
+                        distance: 2_000,
+                        startCoordinate: home,
+                        endCoordinate: offset(home, metersNorth: 2_000),
+                        kind: .cycling
+                    )
+                ],
+                paths: [
+                    TimelinePath(
+                        id: "p1",
+                        start: start,
+                        end: start.addingTimeInterval(900),
+                        points: [home, offset(home, metersNorth: 2_000)],
+                        kind: .cycling
+                    )
+                ]
+            )
+        )
+        try await db.setPlaceName(placeKey: "cafe", name: "Continental Coffee")
+
+        let batch = try await db.changeBatch()
+        XCTAssertEqual(batch.count, 4)
+        XCTAssertEqual(batch.visits.map(\.id), ["v1"])
+        XCTAssertEqual(batch.activities.map(\.id), ["a1"])
+        XCTAssertEqual(batch.paths.map(\.id), ["p1"])
+        XCTAssertEqual(batch.names["cafe"]?.name, "Continental Coffee")
+    }
+
+    func testBatchesDrainOldestFirst() async throws {
+        let (db, url) = database()
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        for index in 0..<5 {
+            try await db.record(
+                batch: TimelineBatch(
+                    visits: [sampleVisit("v\(index)", offsetDays: Double(index))],
+                    activities: [],
+                    paths: []
+                )
+            )
+        }
+        let first = try await db.changeBatch(limit: 2)
+        XCTAssertEqual(first.changes.map(\.rowID), ["v0", "v1"])
+        try await db.acknowledge(first.changes)
+        let next = try await db.changeBatch(limit: 2)
+        XCTAssertEqual(next.changes.map(\.rowID), ["v2", "v3"])
+    }
+
+    func testMarkEverythingPendingQueuesTheWholeLibrary() async throws {
+        let (db, url) = database()
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        try await db.record(
+            batch: TimelineBatch(
+                visits: [sampleVisit("v1"), sampleVisit("v2", offsetDays: 1)],
+                activities: [],
+                paths: []
+            )
+        )
+        try await db.setPlaceName(placeKey: "cafe", name: "Continental Coffee")
+        try await db.clearChangeLog()
+        let empty = try await db.pendingChangeCount()
+        XCTAssertEqual(empty, 0)
+
+        let queued = try await db.markEverythingPending()
+        XCTAssertEqual(queued, 3, "two visits and one name")
+    }
+
+    func testDerivedStateIsNotTracked() async throws {
+        let (db, url) = database()
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        // Fixes, capture marks and the open stay are all device-local scaffolding;
+        // syncing them would be pure noise.
+        try await db.appendFixes([
+            CapturedFix(coordinate: home, timestamp: Date(), horizontalAccuracy: 10, speed: 3)
+        ])
+        try await db.setCaptureMark(CaptureMark.motion, through: Date())
+        try await db.setOpenStop(
+            CapturedStop(coordinate: home, horizontalAccuracy: 50, start: Date(), end: nil),
+            placeKey: "cafe"
+        )
+        let count = try await db.pendingChangeCount()
+        XCTAssertEqual(count, 0)
+    }
+}
