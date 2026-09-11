@@ -47,6 +47,8 @@ final class TimelineStore {
     private var placesByID: [String: PlaceRecord] = [:]
     /// Custom display names keyed by place id / placeKey; survive re-import.
     private var placeNames: [String: String] = [:]
+    /// Active merge aliases `fromKey → toKey` (tombstones omitted).
+    private var placeMerges: [String: String] = [:]
     /// Bumped when a place is renamed so the map refreshes annotation titles.
     private(set) var placeNameGeneration: UInt64 = 0
     private var isApplyingCloudIdentity = false
@@ -189,6 +191,11 @@ final class TimelineStore {
         }
     }
 
+    /// Rename and/or unmerge overflow for a place.
+    func showsPlaceActions(_ place: PlaceRecord) -> Bool {
+        canRename(place) || !sourcesMerged(into: place.id).isEmpty
+    }
+
     func renamePlace(id: String, to name: String) {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.isEmpty {
@@ -218,7 +225,7 @@ final class TimelineStore {
                 into: targetID,
                 targetSemantic: target.semanticType
             )
-            await refreshPlaceNames()
+            await refreshPlaceIdentity()
             await pushPlaceIdentityToCloud()
             if let batch = try? await database.loadBatch() {
                 let name = (try? await database.latestSourceName()) ?? sourceName ?? "Library"
@@ -232,6 +239,56 @@ final class TimelineStore {
             }
             placeNameGeneration &+= 1
         }
+    }
+
+    /// Places previously folded into `placeID` (for Unmerge in the place menu).
+    func sourcesMerged(into placeID: String) -> [(id: String, title: String)] {
+        placeMerges.compactMap { fromKey, toKey -> (id: String, title: String)? in
+            guard toKey == placeID else { return nil }
+            return (fromKey, mergeSourceTitle(fromKey))
+        }
+        .sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
+    }
+
+    /// Split `sourceID` back out of whatever it was merged into.
+    func unmergePlace(from sourceID: String) {
+        guard placeMerges[sourceID] != nil else { return }
+        isLoading = true
+        Task {
+            try? await database.unmergePlace(from: sourceID)
+            await refreshPlaceIdentity()
+            await pushPlaceIdentityToCloud()
+            if let batch = try? await database.loadBatch() {
+                let name = (try? await database.latestSourceName()) ?? sourceName ?? "Library"
+                let keepPlaceID = selectedPlaceID
+                apply(TimelineParser.assemble(batch, sourceName: name))
+                if let id = keepPlaceID, let place = placesByID[id] {
+                    select(place: place)
+                } else if let restored = placesByID[sourceID] {
+                    select(place: restored)
+                }
+            } else {
+                isLoading = false
+            }
+            placeNameGeneration &+= 1
+            TimelineLog.info("place unmerged", ["placeKey": sourceID])
+        }
+    }
+
+    private func mergeSourceTitle(_ fromKey: String) -> String {
+        if let custom = placeNames[fromKey], !custom.isEmpty {
+            return custom
+        }
+        if let title = TimelineParser.semanticTitle(placesByID[fromKey]?.semanticType) {
+            return title
+        }
+        if fromKey.contains(",") {
+            return "Place at \(fromKey)"
+        }
+        if fromKey.count > 12 {
+            return "Merged place (\(fromKey.prefix(8))…)"
+        }
+        return "Merged place"
     }
 
     /// Nearby rename suggestions prefer these frequently visited stays.
@@ -408,8 +465,13 @@ final class TimelineStore {
         #endif
     }
 
-    private func refreshPlaceNames() async {
+    private func refreshPlaceIdentity() async {
         placeNames = (try? await database.loadPlaceNames()) ?? placeNames
+        placeMerges = (try? await database.loadPlaceMerges()) ?? placeMerges
+    }
+
+    private func refreshPlaceNames() async {
+        await refreshPlaceIdentity()
     }
 
     private func pushPlaceIdentityToCloud() async {

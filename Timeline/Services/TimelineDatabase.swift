@@ -203,9 +203,12 @@ actor TimelineDatabase {
         return true
     }
 
-    /// `from_key → to_key` aliases. Values are already resolved through chains.
+    /// Active `from_key → to_key` aliases (tombstones omitted). Values are chain-resolved.
     func loadPlaceMerges() throws -> [String: String] {
-        try loadPlaceMergeRecords().mapValues(\.toKey).resolvedMerges()
+        try loadPlaceMergeRecords()
+            .filter { !$0.value.isTombstone }
+            .mapValues(\.toKey)
+            .resolvedMerges()
     }
 
     func loadPlaceMergeRecords() throws -> [String: PlaceIdentityMerge] {
@@ -227,13 +230,16 @@ actor TimelineDatabase {
         return raw
     }
 
-    /// Apply a remote merge when it is newer; remaps visits like a local merge.
+    /// Apply a remote merge or unmerge tombstone when it is newer.
     func applyPlaceMergeIfNewer(
         from fromKey: String,
         into toKey: String,
         updatedAt: TimeInterval,
         targetSemantic: String?
     ) throws -> Bool {
+        if toKey.isEmpty {
+            return try applyPlaceUnmergeIfNewer(from: fromKey, updatedAt: updatedAt)
+        }
         guard fromKey != toKey else { return false }
         if let local = try loadPlaceMergeRecords()[fromKey], local.updatedAt >= updatedAt {
             return false
@@ -242,51 +248,29 @@ actor TimelineDatabase {
         return true
     }
 
-    /// Fold `fromKey` into `toKey`: remap visits, record the alias, drop the old custom name.
+    func applyPlaceUnmergeIfNewer(from fromKey: String, updatedAt: TimeInterval) throws -> Bool {
+        if let local = try loadPlaceMergeRecords()[fromKey], local.updatedAt >= updatedAt {
+            return false
+        }
+        try unmergePlace(from: fromKey, updatedAt: updatedAt)
+        return true
+    }
+
+    /// Fold `fromKey` into `toKey` via an alias. Visits keep their original `place_key`;
+    /// `loadBatch` remaps through `place_merges`. Older libraries may still have hard-remapped
+    /// rows — `unmergePlace` restores those by matching visit ids.
     func mergePlace(
         from fromKey: String,
         into toKey: String,
         targetSemantic: String?,
         updatedAt: TimeInterval? = nil
     ) throws {
-        guard fromKey != toKey else { return }
+        guard fromKey != toKey, !toKey.isEmpty else { return }
         guard let db else { throw TimelineDatabaseError.open }
         let stamp = updatedAt ?? Date().timeIntervalSince1970
+        _ = targetSemantic // Soft merge keeps each visit's semantic; target titles come from assembly.
         try exec("BEGIN IMMEDIATE")
         do {
-            var update: OpaquePointer?
-            defer { sqlite3_finalize(update) }
-            guard sqlite3_prepare_v2(
-                db,
-                """
-                UPDATE visits
-                SET place_key = ?,
-                    semantic_type = CASE
-                        WHEN ? IS NOT NULL AND ? NOT IN ('', 'Unknown', 'unknown')
-                        THEN ?
-                        ELSE semantic_type
-                    END
-                WHERE place_key = ?
-                """,
-                -1,
-                &update,
-                nil
-            ) == SQLITE_OK else { throw TimelineDatabaseError.execute(errmsg()) }
-            sqlite3_bind_text(update, 1, toKey, -1, Self.transient)
-            if let targetSemantic, !targetSemantic.isEmpty {
-                sqlite3_bind_text(update, 2, targetSemantic, -1, Self.transient)
-                sqlite3_bind_text(update, 3, targetSemantic, -1, Self.transient)
-                sqlite3_bind_text(update, 4, targetSemantic, -1, Self.transient)
-            } else {
-                sqlite3_bind_null(update, 2)
-                sqlite3_bind_null(update, 3)
-                sqlite3_bind_null(update, 4)
-            }
-            sqlite3_bind_text(update, 5, fromKey, -1, Self.transient)
-            guard sqlite3_step(update) == SQLITE_DONE else {
-                throw TimelineDatabaseError.execute(errmsg())
-            }
-
             var insert: OpaquePointer?
             defer { sqlite3_finalize(insert) }
             guard sqlite3_prepare_v2(
@@ -323,6 +307,94 @@ actor TimelineDatabase {
         } catch {
             sqlite3_exec(db, "ROLLBACK", nil, nil, nil)
             throw error
+        }
+    }
+
+    /// Undo a merge: tombstone the alias and restore any hard-remapped visits whose
+    /// id was minted from `fromKey` (SHA segment id includes the original place key).
+    func unmergePlace(from fromKey: String, updatedAt: TimeInterval? = nil) throws {
+        guard let db else { throw TimelineDatabaseError.open }
+        let stamp = updatedAt ?? Date().timeIntervalSince1970
+        let prior = try loadPlaceMergeRecords()[fromKey]
+        let toKey = prior?.isTombstone == false ? prior?.toKey : nil
+
+        try exec("BEGIN IMMEDIATE")
+        do {
+            if let toKey, !toKey.isEmpty {
+                try restoreHardMergedVisits(fromKey: fromKey, toKey: toKey, db: db)
+            }
+
+            var insert: OpaquePointer?
+            defer { sqlite3_finalize(insert) }
+            guard sqlite3_prepare_v2(
+                db,
+                """
+                INSERT INTO place_merges (from_key, to_key, updated_at)
+                VALUES (?, '', ?)
+                ON CONFLICT(from_key) DO UPDATE SET
+                    to_key = '',
+                    updated_at = excluded.updated_at
+                WHERE excluded.updated_at >= place_merges.updated_at
+                """,
+                -1,
+                &insert,
+                nil
+            ) == SQLITE_OK else { throw TimelineDatabaseError.execute(errmsg()) }
+            sqlite3_bind_text(insert, 1, fromKey, -1, Self.transient)
+            sqlite3_bind_double(insert, 2, stamp)
+            guard sqlite3_step(insert) == SQLITE_DONE else {
+                throw TimelineDatabaseError.execute(errmsg())
+            }
+            try exec("COMMIT")
+        } catch {
+            sqlite3_exec(db, "ROLLBACK", nil, nil, nil)
+            throw error
+        }
+    }
+
+    /// Visits rewritten by older hard merges keep a segment id hashed with the source place key.
+    private func restoreHardMergedVisits(fromKey: String, toKey: String, db: OpaquePointer) throws {
+        var select: OpaquePointer?
+        defer { sqlite3_finalize(select) }
+        guard sqlite3_prepare_v2(
+            db,
+            "SELECT id, start, end FROM visits WHERE place_key = ?",
+            -1,
+            &select,
+            nil
+        ) == SQLITE_OK else { throw TimelineDatabaseError.execute(errmsg()) }
+        sqlite3_bind_text(select, 1, toKey, -1, Self.transient)
+
+        var restoreIDs: [String] = []
+        while sqlite3_step(select) == SQLITE_ROW {
+            guard let id = text(select, 0) else { continue }
+            let start = Date(timeIntervalSince1970: sqlite3_column_double(select, 1))
+            let end = Date(timeIntervalSince1970: sqlite3_column_double(select, 2))
+            let expected = Geo.segmentID("v", Geo.millis(start), Geo.millis(end), fromKey)
+            if id == expected {
+                restoreIDs.append(id)
+            }
+        }
+
+        guard !restoreIDs.isEmpty else { return }
+
+        var update: OpaquePointer?
+        defer { sqlite3_finalize(update) }
+        guard sqlite3_prepare_v2(
+            db,
+            "UPDATE visits SET place_key = ? WHERE id = ?",
+            -1,
+            &update,
+            nil
+        ) == SQLITE_OK else { throw TimelineDatabaseError.execute(errmsg()) }
+        for id in restoreIDs {
+            sqlite3_reset(update)
+            sqlite3_clear_bindings(update)
+            sqlite3_bind_text(update, 1, fromKey, -1, Self.transient)
+            sqlite3_bind_text(update, 2, id, -1, Self.transient)
+            guard sqlite3_step(update) == SQLITE_DONE else {
+                throw TimelineDatabaseError.execute(errmsg())
+            }
         }
     }
 
@@ -416,6 +488,7 @@ actor TimelineDatabase {
             ON CONFLICT(id) DO UPDATE SET
                 lat = COALESCE(excluded.lat, visits.lat),
                 lon = COALESCE(excluded.lon, visits.lon),
+                place_key = excluded.place_key,
                 semantic_type = CASE
                     WHEN excluded.semantic_type IS NOT NULL
                          AND excluded.semantic_type NOT IN ('', 'Unknown', 'unknown')
