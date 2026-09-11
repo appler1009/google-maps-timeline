@@ -3,6 +3,8 @@ import SwiftUI
 import Observation
 #if os(iOS)
 import UIKit
+#elseif os(macOS)
+import AppKit
 #endif
 
 /// Owns the sync actor and keeps it fed.
@@ -62,10 +64,13 @@ final class CloudSyncController {
                 try await sync.start()
                 status = .on
                 await refreshPendingCount()
-                #if os(iOS)
                 // CKSyncEngine keeps its own subscription, but the app still has
-                // to be registered before those pushes can arrive.
+                // to be registered before those pushes can arrive. Without this
+                // the Mac only learned about changes when it was relaunched.
+                #if os(iOS)
                 UIApplication.shared.registerForRemoteNotifications()
+                #elseif os(macOS)
+                NSApplication.shared.registerForRemoteNotifications()
                 #endif
             } catch {
                 status = .failed(error.localizedDescription)
