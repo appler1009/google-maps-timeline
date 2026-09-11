@@ -73,6 +73,8 @@ struct TrackingSettingsView: View {
                         Text("Walks, runs and rides the Watch recorded come in with their exact route, and the cycling distance it logs corrects trips Core Motion read as driving. Timeline only reads this data.")
                     }
 
+                    CloudSyncSettingsView()
+
                     Section {
                         Toggle("Show imported copies of recorded days", isOn: shadowBinding)
                             .accessibilityIdentifier("tracking-shadow-toggle")

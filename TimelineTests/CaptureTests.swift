@@ -1051,3 +1051,245 @@ final class ChangeLogTests: XCTestCase {
         XCTAssertEqual(count, 0)
     }
 }
+
+// MARK: - CloudKit record mapping
+
+import CloudKit
+
+final class TimelineRecordMapperTests: XCTestCase {
+    private let zoneID = CKRecordZone.ID(zoneName: TimelineRecordMapper.zoneName, ownerName: CKCurrentUserDefaultName)
+    private let origin = Date(timeIntervalSince1970: 1_700_000_000)
+
+    func testVisitRoundTrips() throws {
+        let visit = TimelineVisit(
+            id: "dv-abc",
+            start: origin,
+            end: origin.addingTimeInterval(2_700),
+            coordinate: home,
+            semanticType: "Home",
+            placeKey: "ChIJ_home"
+        )
+        let record = TimelineRecordMapper.record(for: visit, in: zoneID)
+        XCTAssertEqual(record.recordID.recordName, "dv-abc")
+        XCTAssertEqual(record.recordType, "Visit")
+
+        let parsed = try XCTUnwrap(TimelineRecordMapper.visit(from: record))
+        XCTAssertEqual(parsed.id, visit.id)
+        XCTAssertEqual(parsed.start, visit.start)
+        XCTAssertEqual(parsed.end, visit.end)
+        XCTAssertEqual(parsed.placeKey, visit.placeKey)
+        XCTAssertEqual(parsed.semanticType, "Home")
+        XCTAssertEqual(parsed.coordinate?.latitude ?? 0, home.latitude, accuracy: 0.000_001)
+        XCTAssertEqual(parsed.coordinate?.longitude ?? 0, home.longitude, accuracy: 0.000_001)
+    }
+
+    func testVisitWithoutACoordinateRoundTrips() throws {
+        let visit = TimelineVisit(
+            id: "v1",
+            start: origin,
+            end: origin.addingTimeInterval(600),
+            coordinate: nil,
+            semanticType: nil,
+            placeKey: "somewhere"
+        )
+        let parsed = try XCTUnwrap(
+            TimelineRecordMapper.visit(from: TimelineRecordMapper.record(for: visit, in: zoneID))
+        )
+        XCTAssertNil(parsed.coordinate)
+        XCTAssertNil(parsed.semanticType)
+    }
+
+    func testActivityRoundTripsIncludingItsKind() throws {
+        let activity = TimelineActivity(
+            id: "da-1",
+            start: origin,
+            end: origin.addingTimeInterval(1_200),
+            distance: 8_400,
+            startCoordinate: home,
+            endCoordinate: offset(home, metersNorth: 8_400),
+            kind: .cycling
+        )
+        let parsed = try XCTUnwrap(
+            TimelineRecordMapper.activity(from: TimelineRecordMapper.record(for: activity, in: zoneID))
+        )
+        XCTAssertEqual(parsed.kind.stored, "cycling")
+        XCTAssertEqual(parsed.distance, 8_400)
+        XCTAssertNotNil(parsed.startCoordinate)
+        XCTAssertNotNil(parsed.endCoordinate)
+    }
+
+    func testPathPointsSurviveThePackedBlob() throws {
+        let points = (0..<500).map { offset(home, metersNorth: Double($0) * 25) }
+        let path = TimelinePath(
+            id: "dp-1",
+            start: origin,
+            end: origin.addingTimeInterval(3_600),
+            points: points,
+            kind: .automobile
+        )
+        let record = TimelineRecordMapper.record(for: path, in: zoneID)
+        let parsed = try XCTUnwrap(TimelineRecordMapper.path(from: record))
+        XCTAssertEqual(parsed.points.count, points.count)
+        XCTAssertEqual(parsed.points.last?.latitude ?? 0, points.last?.latitude ?? -1, accuracy: 0.000_001)
+
+        // A dense full-trace day has to stay well inside CloudKit's 1 MB record cap.
+        let blob = try XCTUnwrap(record[TimelineRecordMapper.Field.points] as? Data)
+        XCTAssertEqual(blob.count, points.count * 16)
+        XCTAssertLessThan(blob.count, 900_000)
+    }
+
+    func testPlaceNameAndMergeRoundTrip() throws {
+        let stamp = origin.timeIntervalSince1970
+        let nameRecord = TimelineRecordMapper.record(
+            forPlaceKey: "cafe",
+            name: PlaceIdentityName(name: "Continental Coffee", updatedAt: stamp),
+            in: zoneID
+        )
+        let parsedName = try XCTUnwrap(TimelineRecordMapper.placeName(from: nameRecord))
+        XCTAssertEqual(parsedName.key, "cafe")
+        XCTAssertEqual(parsedName.name.name, "Continental Coffee")
+        XCTAssertEqual(parsedName.name.updatedAt, stamp)
+
+        let mergeRecord = TimelineRecordMapper.record(
+            forPlaceKey: "annex",
+            merge: PlaceIdentityMerge(toKey: "cafe", updatedAt: stamp),
+            in: zoneID
+        )
+        let parsedMerge = try XCTUnwrap(TimelineRecordMapper.placeMerge(from: mergeRecord))
+        XCTAssertEqual(parsedMerge.merge.toKey, "cafe")
+    }
+
+    func testAnUnmergeTombstoneSurvives() throws {
+        // An empty toKey is how an undone merge travels; it must not be dropped.
+        let record = TimelineRecordMapper.record(
+            forPlaceKey: "annex",
+            merge: PlaceIdentityMerge(toKey: "", updatedAt: origin.timeIntervalSince1970),
+            in: zoneID
+        )
+        let parsed = try XCTUnwrap(TimelineRecordMapper.placeMerge(from: record))
+        XCTAssertTrue(parsed.merge.isTombstone)
+    }
+
+    func testRecordTypesAndKindsAgree() {
+        for kind in ChangeKind.allCases {
+            let type = TimelineRecordMapper.recordType(for: kind)
+            XCTAssertEqual(TimelineRecordMapper.kind(forRecordType: type), kind)
+        }
+        XCTAssertNil(TimelineRecordMapper.kind(forRecordType: "SomethingElse"))
+    }
+
+    func testMismatchedRecordTypesParseAsNil() {
+        let activityRecord = TimelineRecordMapper.record(
+            for: TimelineActivity(
+                id: "a1",
+                start: origin,
+                end: origin.addingTimeInterval(60),
+                distance: 0,
+                startCoordinate: nil,
+                endCoordinate: nil,
+                kind: .walking
+            ),
+            in: zoneID
+        )
+        XCTAssertNil(TimelineRecordMapper.visit(from: activityRecord))
+        XCTAssertNil(TimelineRecordMapper.path(from: activityRecord))
+    }
+
+    func testFetchedRecordsSortIntoTheRightBuckets() {
+        let visit = TimelineVisit(
+            id: "v1", start: origin, end: origin.addingTimeInterval(60),
+            coordinate: home, semanticType: nil, placeKey: "k"
+        )
+        let activity = TimelineActivity(
+            id: "a1", start: origin, end: origin.addingTimeInterval(60), distance: 10,
+            startCoordinate: home, endCoordinate: nil, kind: .walking
+        )
+        let records = [
+            TimelineRecordMapper.record(for: visit, in: zoneID),
+            TimelineRecordMapper.record(for: activity, in: zoneID),
+            TimelineRecordMapper.record(
+                forPlaceKey: "k",
+                name: PlaceIdentityName(name: "Home", updatedAt: 1),
+                in: zoneID
+            ),
+        ]
+        let sorted = TimelineRecordMapper.batch(from: records)
+        XCTAssertEqual(sorted.rows.visits.count, 1)
+        XCTAssertEqual(sorted.rows.activities.count, 1)
+        XCTAssertEqual(sorted.names["k"]?.name, "Home")
+        XCTAssertTrue(sorted.merges.isEmpty)
+    }
+}
+
+final class RemoteApplyTests: XCTestCase {
+    func testRowsArrivingFromAnotherDeviceAreNotQueuedBackOut() async throws {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("remote-\(UUID().uuidString).sqlite")
+        defer { try? FileManager.default.removeItem(at: url) }
+        let db = TimelineDatabase(fileURL: url)
+
+        let start = Date(timeIntervalSince1970: 1_700_000_000)
+        try await db.applyRemote(
+            TimelineBatch(
+                visits: [
+                    TimelineVisit(
+                        id: "v-from-phone",
+                        start: start,
+                        end: start.addingTimeInterval(1_800),
+                        coordinate: home,
+                        semanticType: nil,
+                        placeKey: "cafe"
+                    )
+                ],
+                activities: [],
+                paths: []
+            )
+        )
+
+        let stored = try await db.loadBatch()?.visits ?? []
+        XCTAssertEqual(stored.count, 1)
+        let queued = try await db.pendingChangeCount()
+        XCTAssertEqual(queued, 0, "a row we just received must not be queued for sending")
+    }
+
+    func testSyncStateSurvivesReopening() async throws {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("syncstate-\(UUID().uuidString).sqlite")
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let db = TimelineDatabase(fileURL: url)
+        try await db.setSyncStateData("cloudKitSyncState", Data([1, 2, 3, 4]))
+
+        let reopened = TimelineDatabase(fileURL: url)
+        let restored = try await reopened.syncStateData("cloudKitSyncState")
+        XCTAssertEqual(restored, Data([1, 2, 3, 4]))
+
+        try await reopened.setSyncStateData("cloudKitSyncState", nil)
+        let cleared = try await reopened.syncStateData("cloudKitSyncState")
+        XCTAssertNil(cleared)
+    }
+
+    func testRemoteDeletionRemovesTheRow() async throws {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("remotedelete-\(UUID().uuidString).sqlite")
+        defer { try? FileManager.default.removeItem(at: url) }
+        let db = TimelineDatabase(fileURL: url)
+
+        let start = Date(timeIntervalSince1970: 1_700_000_000)
+        try await db.record(
+            batch: TimelineBatch(
+                visits: [
+                    TimelineVisit(
+                        id: "v1", start: start, end: start.addingTimeInterval(600),
+                        coordinate: home, semanticType: nil, placeKey: "cafe"
+                    )
+                ],
+                activities: [],
+                paths: []
+            )
+        )
+        try await db.applyRemoteDeletion(kind: .visit, rowID: "v1")
+        let remaining = try await db.loadBatch()?.visits ?? []
+        XCTAssertTrue(remaining.isEmpty)
+    }
+}

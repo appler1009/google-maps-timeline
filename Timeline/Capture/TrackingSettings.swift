@@ -16,6 +16,7 @@ final class TrackingSettings {
         static let sentCount = "trackingNotifySentCount"
         static let held = "trackingNotifyHeld"
         static let health = "trackingUsesHealth"
+        static let cloud = "syncsWithCloud"
     }
 
     private let defaults: UserDefaults
@@ -26,6 +27,7 @@ final class TrackingSettings {
         mode = TrackingMode(rawValue: raw) ?? .off
         notifiesVisits = defaults.object(forKey: Key.notifyVisits) as? Bool ?? true
         usesHealth = defaults.bool(forKey: Key.health)
+        syncsWithCloud = defaults.bool(forKey: Key.cloud)
     }
 
     /// Stored, not computed: `@Observable` only tracks stored properties, and the
@@ -50,6 +52,15 @@ final class TrackingSettings {
         didSet {
             guard usesHealth != oldValue else { return }
             defaults.set(usesHealth, forKey: Key.health)
+        }
+    }
+
+    /// Off until asked for. Sync needs an iCloud account, and the Mac cannot
+    /// record — it only ever receives.
+    var syncsWithCloud: Bool {
+        didSet {
+            guard syncsWithCloud != oldValue else { return }
+            defaults.set(syncsWithCloud, forKey: Key.cloud)
         }
     }
 

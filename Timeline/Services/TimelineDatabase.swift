@@ -384,6 +384,91 @@ actor TimelineDatabase {
         try exec("DELETE FROM change_log")
     }
 
+    // MARK: - Sync state and remote writes
+
+    /// Opaque per-engine state, such as CloudKit's serialized sync state. Losing
+    /// it means the next launch re-syncs the world, so it lives in the library
+    /// file rather than in UserDefaults.
+    func syncStateData(_ key: String) throws -> Data? {
+        guard let db else { return nil }
+        var statement: OpaquePointer?
+        defer { sqlite3_finalize(statement) }
+        guard sqlite3_prepare_v2(db, "SELECT blob_value FROM sync_state WHERE key = ?", -1, &statement, nil) == SQLITE_OK else {
+            return nil
+        }
+        sqlite3_bind_text(statement, 1, key, -1, Self.transient)
+        guard sqlite3_step(statement) == SQLITE_ROW else { return nil }
+        return blob(statement, 0)
+    }
+
+    func setSyncStateData(_ key: String, _ data: Data?) throws {
+        guard let db else { throw TimelineDatabaseError.open }
+        var statement: OpaquePointer?
+        defer { sqlite3_finalize(statement) }
+        guard sqlite3_prepare_v2(
+            db,
+            """
+            INSERT INTO sync_state (key, int_value, blob_value) VALUES (?, 0, ?)
+            ON CONFLICT(key) DO UPDATE SET blob_value = excluded.blob_value
+            """,
+            -1,
+            &statement,
+            nil
+        ) == SQLITE_OK else { throw TimelineDatabaseError.execute(errmsg()) }
+        sqlite3_bind_text(statement, 1, key, -1, Self.transient)
+        if let data {
+            bindBlob(statement, 2, data)
+        } else {
+            sqlite3_bind_null(statement, 2)
+        }
+        guard sqlite3_step(statement) == SQLITE_DONE else {
+            throw TimelineDatabaseError.execute(errmsg())
+        }
+    }
+
+    /// Rows that arrived from another device. Written exactly like local rows but
+    /// without queueing themselves to be sent straight back.
+    func applyRemote(_ batch: TimelineBatch) throws {
+        guard let db else { throw TimelineDatabaseError.open }
+        guard !batch.visits.isEmpty || !batch.activities.isEmpty || !batch.paths.isEmpty else { return }
+        try exec("BEGIN IMMEDIATE")
+        do {
+            try applyingRemotely {
+                // Remote rows keep whatever source the sending device recorded.
+                try upsertVisits(batch.visits, db: db, source: .device)
+                try upsertActivities(batch.activities, db: db, source: .device)
+                try upsertPaths(batch.paths, db: db, source: .device)
+            }
+            try exec("COMMIT")
+        } catch {
+            sqlite3_exec(db, "ROLLBACK", nil, nil, nil)
+            throw error
+        }
+    }
+
+    /// A row deleted on another device.
+    func applyRemoteDeletion(kind: ChangeKind, rowID: String) throws {
+        let table: String
+        let column: String
+        switch kind {
+        case .visit: table = "visits"; column = "id"
+        case .activity: table = "activities"; column = "id"
+        case .path: table = "paths"; column = "id"
+        case .placeName: table = "place_names"; column = "place_key"
+        case .placeMerge: table = "place_merges"; column = "from_key"
+        }
+        guard let db else { throw TimelineDatabaseError.open }
+        var statement: OpaquePointer?
+        defer { sqlite3_finalize(statement) }
+        guard sqlite3_prepare_v2(db, "DELETE FROM \(table) WHERE \(column) = ?", -1, &statement, nil) == SQLITE_OK else {
+            throw TimelineDatabaseError.execute(errmsg())
+        }
+        sqlite3_bind_text(statement, 1, rowID, -1, Self.transient)
+        guard sqlite3_step(statement) == SQLITE_DONE else {
+            throw TimelineDatabaseError.execute(errmsg())
+        }
+    }
+
     // MARK: - Recorder state
 
     func openStop() throws -> OpenStop? {
@@ -966,7 +1051,8 @@ actor TimelineDatabase {
             CREATE INDEX IF NOT EXISTS change_log_seq ON change_log(seq);
             CREATE TABLE IF NOT EXISTS sync_state (
                 key TEXT PRIMARY KEY,
-                int_value INTEGER NOT NULL DEFAULT 0
+                int_value INTEGER NOT NULL DEFAULT 0,
+                blob_value BLOB
             );
             CREATE TRIGGER IF NOT EXISTS paths_points_changed AFTER UPDATE OF points ON paths
             BEGIN
@@ -981,6 +1067,7 @@ actor TimelineDatabase {
         }
         // Imported rows a recording supersedes are hidden, never deleted.
         try addColumn(db, table: "visits", column: "shadowed INTEGER NOT NULL DEFAULT 0")
+        try addColumn(db, table: "sync_state", column: "blob_value BLOB")
     }
 
     /// `ALTER TABLE ADD COLUMN` has no `IF NOT EXISTS`, so ask first.

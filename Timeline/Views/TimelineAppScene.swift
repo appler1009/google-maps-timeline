@@ -5,6 +5,9 @@ struct TimelineAppScene: View {
     @State private var importerPresented = false
     @State private var luxSettingsPresented = false
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
+    #if os(macOS)
+    @State private var cloudSettingsPresented = false
+    #endif
     #if os(iOS)
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.scenePhase) private var scenePhase
@@ -49,6 +52,18 @@ struct TimelineAppScene: View {
                 Task { await TimelineRecorder.shared.catchUp() }
             }
             #endif
+            #if os(macOS)
+            .sheet(isPresented: $cloudSettingsPresented) {
+                MacCloudSyncSettingsView()
+                    .frame(width: 460, height: 320)
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .timelineLibraryChanged)) { _ in
+                store.refreshFromLibrary()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .cloudSyncSettingsRequested)) { _ in
+                cloudSettingsPresented = true
+            }
+            #endif
             .sheet(isPresented: $luxSettingsPresented) {
                 LuxPhotosSettingsView()
                     #if os(macOS)
@@ -63,6 +78,7 @@ struct TimelineAppScene: View {
                 #endif
                 if !TimelineLaunch.isUITesting {
                     LuxPhotoLink.shared.start()
+                    CloudSyncController.shared.startIfEnabled()
                     #if os(iOS)
                     VisitNotifier.shared.start()
                     TimelineRecorder.shared.start()
@@ -169,6 +185,18 @@ struct TimelineAppScene: View {
         }
         .navigationSplitViewStyle(.balanced)
         .toolbar {
+            #if os(macOS)
+            ToolbarItem(placement: .primaryAction) {
+                Button {
+                    cloudSettingsPresented = true
+                } label: {
+                    Label("iCloud Sync", systemImage: "icloud")
+                }
+                .help("Receive stays this Mac's companion iPhone recorded")
+                .accessibilityLabel("iCloud Sync")
+                .accessibilityIdentifier("cloud-sync-settings")
+            }
+            #endif
             #if os(iOS)
             ToolbarItem(placement: .primaryAction) {
                 Button {

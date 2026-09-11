@@ -7,16 +7,19 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		00C50C029E0CE6E3C4516ABA /* TimelineRecordMapper.swift in Sources */ = {isa = PBXBuildFile; fileRef = DF833A290D79E26BC71C097D /* TimelineRecordMapper.swift */; };
 		0DF0BD019DFFBC79EDB55041 /* LiquidChrome.swift in Sources */ = {isa = PBXBuildFile; fileRef = 15F9427D76A38D8FFCE30323 /* LiquidChrome.swift */; };
 		106DE14DFAE09F84A5FA0DFF /* DeviceLocationSource.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC0D5BCA07B8225C963230A4 /* DeviceLocationSource.swift */; };
 		10EA88841A4ED1F827A9CD4F /* Palette.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9E1B28FC5BF045913929FD4 /* Palette.swift */; };
 		11AF1B6F32E8950126340FB4 /* HealthEnrichment.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20FA85C7156F368DF009D964 /* HealthEnrichment.swift */; };
 		1206EA7A74C5A49A16618591 /* LuxCompanionTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0FE6242695DDA947697A34B /* LuxCompanionTransport.swift */; };
+		16FB90A061C6788CA6F02362 /* CloudSyncController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2335B30CA9257E726C7F2CFD /* CloudSyncController.swift */; };
 		18B9EA1106022C3C35237159 /* RouteSnapperTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 71B4F471B4A574BC0ABB38C6 /* RouteSnapperTests.swift */; };
 		18E2A4AA27EBF3384CC2D4CB /* PlaceClusterer.swift in Sources */ = {isa = PBXBuildFile; fileRef = E62991B0B2E82A1FDD015746 /* PlaceClusterer.swift */; };
 		1D8314A3B0A26F26DE99CCFE /* LuxPhotoLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F42083B6EA50D85B014CFA4 /* LuxPhotoLink.swift */; };
 		1EF12CF0AC955A2127C038B6 /* TimelineLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 42F77A3F26A639DA1D9B8472 /* TimelineLog.swift */; };
 		1F23CB5DC494DCD3AA2BA9F7 /* PlaceMergeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B5D5FCA5DDE8A0A4A770F452 /* PlaceMergeTests.swift */; };
+		2496F92C181ED8DFFD4390BD /* CloudSyncController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2335B30CA9257E726C7F2CFD /* CloudSyncController.swift */; };
 		2F4D77765CE73711F545132A /* VisitPhotoStrip.swift in Sources */ = {isa = PBXBuildFile; fileRef = 19D6BC5356EA89FD2F53C904 /* VisitPhotoStrip.swift */; };
 		322C0C3A16299B0F506F72F8 /* LuxPhotoLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F42083B6EA50D85B014CFA4 /* LuxPhotoLink.swift */; };
 		3249DE45E8464069B727AD6F /* VisitNotificationPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = CD803A969D6C0BD2EF6C8543 /* VisitNotificationPolicy.swift */; };
@@ -76,6 +79,7 @@
 		9C96CEEE68E39287F7EE25FE /* VisitNotificationPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = CD803A969D6C0BD2EF6C8543 /* VisitNotificationPolicy.swift */; };
 		9F77A9BFE9B78FD5CCD3B1CB /* DeviceLocationSource.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC0D5BCA07B8225C963230A4 /* DeviceLocationSource.swift */; };
 		A0FC3C8AB26379B2D2DEFE7C /* GeoTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F3D570FD3C06A7239A56A812 /* GeoTests.swift */; };
+		A124241E29243B7A41A0CEE2 /* TimelineCloudSync.swift in Sources */ = {isa = PBXBuildFile; fileRef = FFC359E1EFD3A868987CD753 /* TimelineCloudSync.swift */; };
 		A126257F25349B281FF4D9FF /* PlaceMergeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B5D5FCA5DDE8A0A4A770F452 /* PlaceMergeTests.swift */; };
 		A12779692ABD1AF058D60516 /* MapCanvasView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C84392A4A35D3A0FF607D83 /* MapCanvasView.swift */; };
 		A1909CDF7C749AC78BBADA24 /* TimelineLaunch.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8DF68F06E1121E88E519C9BC /* TimelineLaunch.swift */; };
@@ -87,6 +91,7 @@
 		ACDB06C09F4926234980A27E /* TimelineLaunch.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8DF68F06E1121E88E519C9BC /* TimelineLaunch.swift */; };
 		AF6D80DC85AE05797F4B2A65 /* CaptureTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B79901C791A24DE1AB1AEA0 /* CaptureTests.swift */; };
 		AFFE5021B10D3A2EB4C0568F /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = F38FDE28A77697434B262F4C /* Assets.xcassets */; };
+		B08C98E1BB32B569B77AD4BD /* TimelineCloudSync.swift in Sources */ = {isa = PBXBuildFile; fileRef = FFC359E1EFD3A868987CD753 /* TimelineCloudSync.swift */; };
 		B0A875E3A9D778B59292C223 /* LuxCompanionTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0FE6242695DDA947697A34B /* LuxCompanionTransport.swift */; };
 		B5F3E018B2F13F222DB203FC /* TimelineRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3C9897691FC0C05406D4C21 /* TimelineRecorder.swift */; };
 		BB7C9FA0BF2D8C97366EC640 /* MarkersAndRoutesUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9B7B68A2C5A47F130B19C06 /* MarkersAndRoutesUITests.swift */; };
@@ -103,6 +108,7 @@
 		CC411E381CDFA2707E218666 /* TimelineChangeLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52C957366874AE084D0C1499 /* TimelineChangeLog.swift */; };
 		CD8E65BA7D7081416707C949 /* PlaceIdentitySync.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4B262EA915626D212E4F5F5 /* PlaceIdentitySync.swift */; };
 		D043A1DCB7AAD23D56E7DA4D /* TimelineStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 55715F8BD5815481AB80CCAE /* TimelineStore.swift */; };
+		D13FF8A865DAAD258FCE22A3 /* TimelineRecordMapper.swift in Sources */ = {isa = PBXBuildFile; fileRef = DF833A290D79E26BC71C097D /* TimelineRecordMapper.swift */; };
 		D3A7619A930F8160FB9D2A07 /* CaptureTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B79901C791A24DE1AB1AEA0 /* CaptureTests.swift */; };
 		D3FE925EC69D1014ADE3817B /* Landmark.swift in Sources */ = {isa = PBXBuildFile; fileRef = 89C557260FF448CAE3747FD8 /* Landmark.swift */; };
 		D6A7FF8397BE356AD52900B5 /* RouteSnapper.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD3B7EEBCFA7764518D9E18E /* RouteSnapper.swift */; };
@@ -162,6 +168,7 @@
 		19D6BC5356EA89FD2F53C904 /* VisitPhotoStrip.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VisitPhotoStrip.swift; sourceTree = "<group>"; };
 		1B79901C791A24DE1AB1AEA0 /* CaptureTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaptureTests.swift; sourceTree = "<group>"; };
 		20FA85C7156F368DF009D964 /* HealthEnrichment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthEnrichment.swift; sourceTree = "<group>"; };
+		2335B30CA9257E726C7F2CFD /* CloudSyncController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudSyncController.swift; sourceTree = "<group>"; };
 		23A862CFA6951F8FB80E7E1D /* DeviceHealthSource.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceHealthSource.swift; sourceTree = "<group>"; };
 		23DA5434853946FA3CE2CEE8 /* CaptureModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaptureModels.swift; sourceTree = "<group>"; };
 		27A603B8D2E85569C4F2AC40 /* TimelineApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimelineApp.swift; sourceTree = "<group>"; };
@@ -211,6 +218,7 @@
 		C9E1B28FC5BF045913929FD4 /* Palette.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Palette.swift; sourceTree = "<group>"; };
 		CD803A969D6C0BD2EF6C8543 /* VisitNotificationPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VisitNotificationPolicy.swift; sourceTree = "<group>"; };
 		D9CA19DBABF0B2606FC1E0E8 /* Version.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Version.xcconfig; sourceTree = "<group>"; };
+		DF833A290D79E26BC71C097D /* TimelineRecordMapper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimelineRecordMapper.swift; sourceTree = "<group>"; };
 		E04A92A7BC968DEE2C1E98C7 /* TimelineParserTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimelineParserTests.swift; sourceTree = "<group>"; };
 		E0F49A8E7037AC3A6458AD93 /* MarkerMapTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkerMapTests.swift; sourceTree = "<group>"; };
 		E27C0E12EC51D3A3D0B395AC /* SidebarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarView.swift; sourceTree = "<group>"; };
@@ -220,6 +228,7 @@
 		F3D570FD3C06A7239A56A812 /* GeoTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GeoTests.swift; sourceTree = "<group>"; };
 		F6743555640412252927D0B7 /* TimelineTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = TimelineTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		F89F6191AD676D10FB26A5F6 /* DeviceMotionSource.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceMotionSource.swift; sourceTree = "<group>"; };
+		FFC359E1EFD3A868987CD753 /* TimelineCloudSync.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimelineCloudSync.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -370,6 +379,7 @@
 		B298A13FC9D6E9CE95AB0671 /* Services */ = {
 			isa = PBXGroup;
 			children = (
+				2335B30CA9257E726C7F2CFD /* CloudSyncController.swift */,
 				8E2B0CEA1726213918DF87C9 /* MapDirectionsClient.swift */,
 				76E0FA2861409381C0894F1F /* PathOffset.swift */,
 				C4B262EA915626D212E4F5F5 /* PlaceIdentitySync.swift */,
@@ -377,9 +387,11 @@
 				76BAF0A4F92F29FA98081ADB /* RoutePlanner.swift */,
 				AD3B7EEBCFA7764518D9E18E /* RouteSnapper.swift */,
 				52C957366874AE084D0C1499 /* TimelineChangeLog.swift */,
+				FFC359E1EFD3A868987CD753 /* TimelineCloudSync.swift */,
 				A6C2E6A823AF58F47F778B43 /* TimelineDatabase.swift */,
 				42F77A3F26A639DA1D9B8472 /* TimelineLog.swift */,
 				7656BF50DC1AE8BB6971F641 /* TimelineMapPlotter.swift */,
+				DF833A290D79E26BC71C097D /* TimelineRecordMapper.swift */,
 				D7C70C1B74A5F58924D86183 /* Lux */,
 			);
 			path = Services;
@@ -634,6 +646,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				AB29EA130D7513D0A3492EFE /* CaptureModels.swift in Sources */,
+				2496F92C181ED8DFFD4390BD /* CloudSyncController.swift in Sources */,
 				BE33E41276AB920A3D9B547A /* DeviceHealthSource.swift in Sources */,
 				9F77A9BFE9B78FD5CCD3B1CB /* DeviceLocationSource.swift in Sources */,
 				61A7622A1EE76C1FD1F53995 /* DeviceMotionSource.swift in Sources */,
@@ -663,6 +676,7 @@
 				983E0828BD8950C6868F85C9 /* TimelineApp.swift in Sources */,
 				680588BE2CA48256095862A7 /* TimelineAppScene.swift in Sources */,
 				CC411E381CDFA2707E218666 /* TimelineChangeLog.swift in Sources */,
+				A124241E29243B7A41A0CEE2 /* TimelineCloudSync.swift in Sources */,
 				6FF2F358C44A36A7DC05B478 /* TimelineDatabase.swift in Sources */,
 				A1909CDF7C749AC78BBADA24 /* TimelineLaunch.swift in Sources */,
 				975265C3134BEF3B20A68A69 /* TimelineLog.swift in Sources */,
@@ -670,6 +684,7 @@
 				440BDDFA36C5E534D7EA8F21 /* TimelineModels.swift in Sources */,
 				C7A96D4167ED6038915F5C02 /* TimelineParser.swift in Sources */,
 				EC1E9AFE0B8D4CB37D47DEF7 /* TimelineReconciler.swift in Sources */,
+				D13FF8A865DAAD258FCE22A3 /* TimelineRecordMapper.swift in Sources */,
 				73E631A74E00F2CE83BC3DAE /* TimelineRecorder.swift in Sources */,
 				D043A1DCB7AAD23D56E7DA4D /* TimelineStore.swift in Sources */,
 				3C62B2B7DB23AE3083A859E7 /* TrackingSettings.swift in Sources */,
@@ -685,6 +700,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				3E4D415C25F38653CD8E3894 /* CaptureModels.swift in Sources */,
+				16FB90A061C6788CA6F02362 /* CloudSyncController.swift in Sources */,
 				D77E48A3EAA0CC94AF859972 /* DeviceHealthSource.swift in Sources */,
 				106DE14DFAE09F84A5FA0DFF /* DeviceLocationSource.swift in Sources */,
 				A53B974C529FA6F939C78E8C /* DeviceMotionSource.swift in Sources */,
@@ -714,6 +730,7 @@
 				61E057B94A0331DDD5FB506B /* TimelineApp.swift in Sources */,
 				F6EB15E5E9A0246EE425675B /* TimelineAppScene.swift in Sources */,
 				579F5F748B4FA8F674CCD350 /* TimelineChangeLog.swift in Sources */,
+				B08C98E1BB32B569B77AD4BD /* TimelineCloudSync.swift in Sources */,
 				557DEBB2DFDC88D8C1285ACE /* TimelineDatabase.swift in Sources */,
 				ACDB06C09F4926234980A27E /* TimelineLaunch.swift in Sources */,
 				1EF12CF0AC955A2127C038B6 /* TimelineLog.swift in Sources */,
@@ -721,6 +738,7 @@
 				FDE6839E49CA511377389692 /* TimelineModels.swift in Sources */,
 				F9C703A7EFE5B97ADD61970B /* TimelineParser.swift in Sources */,
 				8CB5FE05412BF29C5A1D4B90 /* TimelineReconciler.swift in Sources */,
+				00C50C029E0CE6E3C4516ABA /* TimelineRecordMapper.swift in Sources */,
 				B5F3E018B2F13F222DB203FC /* TimelineRecorder.swift in Sources */,
 				5B404FEF0895D6CF64249ADF /* TimelineStore.swift in Sources */,
 				703D4BE2FDCEC6A644E9F46A /* TrackingSettings.swift in Sources */,
