@@ -8,6 +8,9 @@ struct PlaceIdentityName: Hashable, Sendable {
 struct PlaceIdentityMerge: Hashable, Sendable {
     var toKey: String
     var updatedAt: TimeInterval
+
+    /// Empty `toKey` means the merge was undone (LWW tombstone for iCloud sync).
+    var isTombstone: Bool { toKey.isEmpty }
 }
 
 struct PlaceIdentitySnapshot: Hashable, Sendable {
@@ -23,7 +26,7 @@ extension Dictionary where Key == String, Value == String {
         for key in keys {
             var current = key
             var seen: Set<String> = [key]
-            while let next = self[current], !seen.contains(next) {
+            while let next = self[current], !next.isEmpty, !seen.contains(next) {
                 seen.insert(next)
                 current = next
             }
@@ -114,7 +117,7 @@ final class PlaceIdentitySync {
     }
 
     /// Last-write-wins merge of local and remote identity records.
-    static func merged(local: PlaceIdentitySnapshot, remote: PlaceIdentitySnapshot) -> PlaceIdentitySnapshot {
+    nonisolated static func merged(local: PlaceIdentitySnapshot, remote: PlaceIdentitySnapshot) -> PlaceIdentitySnapshot {
         var names = remote.names
         for (key, value) in local.names {
             if let existing = names[key], existing.updatedAt > value.updatedAt { continue }

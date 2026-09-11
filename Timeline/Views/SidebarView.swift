@@ -233,7 +233,7 @@ struct SidebarView: View {
                     place: place,
                     title: store.displayName(for: place),
                     subtitle: store.subtitle(for: place),
-                    showsActions: store.canRename(place),
+                    showsActions: store.showsPlaceActions(place),
                     onRename: {
                         renamingPlaceID = place.id
                     }
@@ -392,16 +392,30 @@ struct PlaceRow: View {
     }
 }
 
-/// Overflow menu for place rename / future merge, shared by the Places list and map legend.
+/// Overflow menu for place rename / unmerge, shared by the Places list and map legend.
 struct PlaceActionsMenu: View {
+    @Environment(TimelineStore.self) private var store
     let placeID: String
     var onRename: () -> Void
 
+    private var mergedSources: [(id: String, title: String)] {
+        store.sourcesMerged(into: placeID)
+    }
+
     var body: some View {
         Menu {
-            Button("Rename…", action: onRename)
-            Button("Merge Places…") {}
-                .disabled(true)
+            if let place = store.place(for: placeID), store.canRename(place) {
+                Button("Rename…", action: onRename)
+            }
+            if !mergedSources.isEmpty {
+                Menu("Unmerge") {
+                    ForEach(mergedSources, id: \.id) { source in
+                        Button(source.title) {
+                            store.unmergePlace(from: source.id)
+                        }
+                    }
+                }
+            }
         } label: {
             Image(systemName: "ellipsis.circle")
                 .font(.system(size: 16, weight: .regular))

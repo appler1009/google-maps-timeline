@@ -695,7 +695,7 @@ struct SelectionCard: View {
                             .font(.system(size: 12))
                             .foregroundStyle(Self.secondary)
                         Spacer(minLength: 8)
-                        if store.canRename(place) {
+                        if store.showsPlaceActions(place) {
                             PlaceActionsMenu(placeID: place.id) {
                                 renamingPlaceID = place.id
                             }
@@ -1031,7 +1031,7 @@ struct SelectionCard: View {
                 }
             }
             Spacer(minLength: 8)
-            if store.canRename(place) {
+            if store.showsPlaceActions(place) {
                 PlaceActionsMenu(placeID: place.id) {
                     renamingPlaceID = place.id
                 }
