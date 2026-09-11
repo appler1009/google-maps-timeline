@@ -69,8 +69,10 @@ enum VisitNotificationPolicy {
     /// that happened; a present-tense "you're at…" would be a lie, because a
     /// CLVisit departure lands several minutes late.
     static func durationPhrase(_ duration: TimeInterval) -> String {
-        let minutes = Int((duration / 60).rounded())
-        if minutes < 60 { return "\(max(minutes, 1)) minute\(minutes == 1 ? "" : "s")" }
+        // Clamp first: a stay that rounds down to zero still reads as one minute,
+        // and the plural has to agree with the number actually shown.
+        let minutes = max(Int((duration / 60).rounded()), 1)
+        if minutes < 60 { return "\(minutes) minute\(minutes == 1 ? "" : "s")" }
         let hours = minutes / 60
         let rest = minutes % 60
         if rest == 0 { return "\(hours) hour\(hours == 1 ? "" : "s")" }

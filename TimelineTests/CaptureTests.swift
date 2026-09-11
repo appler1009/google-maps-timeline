@@ -333,12 +333,26 @@ final class ScriptedStopSource: StopSource {
 
 final class ScriptedMotionSource: MotionSource {
     var scripted: [MotionSample] = []
+    private var liveHandler: ((MotionSample) -> Void)?
+    private(set) var isLive = false
+
     var isAvailable: Bool { true }
     func samples(from: Date, to: Date) async -> [MotionSample] {
         scripted.filter { $0.start >= from && $0.start <= to }
     }
-    func startLiveUpdates(_ handler: @escaping (MotionSample) -> Void) {}
-    func stopLiveUpdates() {}
+    func startLiveUpdates(_ handler: @escaping (MotionSample) -> Void) {
+        liveHandler = handler
+        isLive = true
+    }
+    func stopLiveUpdates() {
+        liveHandler = nil
+        isLive = false
+    }
+
+    /// Drive a motion transition the way Core Motion would.
+    func emit(_ kind: MotionKind) {
+        liveHandler?(MotionSample(start: Date(), kind: kind, confidence: 2))
+    }
 }
 
 final class CaptureDatabaseTests: XCTestCase {
@@ -1291,5 +1305,554 @@ final class RemoteApplyTests: XCTestCase {
         try await db.applyRemoteDeletion(kind: .visit, rowID: "v1")
         let remaining = try await db.loadBatch()?.visits ?? []
         XCTAssertTrue(remaining.isEmpty)
+    }
+}
+
+// MARK: - Notification bookkeeping
+
+@MainActor
+final class TrackingSettingsTests: XCTestCase {
+    private func settings() -> TrackingSettings {
+        TrackingSettings(defaults: UserDefaults(suiteName: "settings-\(UUID().uuidString)")!)
+    }
+
+    private var calendar: Calendar = {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "America/Vancouver")!
+        return calendar
+    }()
+
+    private func day(_ day: Int, hour: Int = 12) -> Date {
+        calendar.date(from: DateComponents(year: 2026, month: 3, day: day, hour: hour))!
+    }
+
+    func testTheDailyCountResetsAtMidnight() {
+        let settings = settings()
+        settings.recordSent(now: day(12, hour: 9), calendar: calendar)
+        settings.recordSent(now: day(12, hour: 14), calendar: calendar)
+        XCTAssertEqual(settings.sentToday(now: day(12, hour: 20), calendar: calendar), 2)
+        // A stay the next morning starts a fresh allowance.
+        XCTAssertEqual(settings.sentToday(now: day(13, hour: 9), calendar: calendar), 0)
+    }
+
+    func testCountingLateAtNightDoesNotBleedIntoTomorrow() {
+        let settings = settings()
+        settings.recordSent(now: day(12, hour: 23), calendar: calendar)
+        settings.recordSent(now: day(13, hour: 1), calendar: calendar)
+        XCTAssertEqual(settings.sentToday(now: day(13, hour: 8), calendar: calendar), 1)
+    }
+
+    func testHeldPlacesDedupeAndAreBounded() {
+        let settings = settings()
+        settings.hold("cafe")
+        settings.hold("cafe")
+        XCTAssertEqual(settings.heldPlaceKeys, ["cafe"])
+
+        for index in 0..<40 {
+            settings.hold("place-\(index)")
+        }
+        XCTAssertLessThanOrEqual(settings.heldPlaceKeys.count, 20, "the morning summary must not grow without bound")
+        XCTAssertEqual(settings.heldPlaceKeys.last, "place-39", "the newest holds are the ones kept")
+
+        settings.clearHeld()
+        XCTAssertTrue(settings.heldPlaceKeys.isEmpty)
+    }
+
+    func testSettingsSurviveANewInstanceOnTheSameDefaults() {
+        let defaults = UserDefaults(suiteName: "settings-\(UUID().uuidString)")!
+        let first = TrackingSettings(defaults: defaults)
+        first.mode = .fullTrace
+        first.notifiesVisits = false
+        first.usesHealth = true
+        first.syncsWithCloud = true
+
+        let second = TrackingSettings(defaults: defaults)
+        XCTAssertEqual(second.mode, .fullTrace)
+        XCTAssertFalse(second.notifiesVisits)
+        XCTAssertTrue(second.usesHealth)
+        XCTAssertTrue(second.syncsWithCloud)
+    }
+
+    func testModesDescribeWhatTheyRun() {
+        XCTAssertFalse(TrackingMode.off.isRecording)
+        XCTAssertTrue(TrackingMode.places.isRecording)
+        XCTAssertFalse(TrackingMode.places.tracksMovement, "places only draws no lines")
+        XCTAssertTrue(TrackingMode.balanced.tracksMovement)
+        XCTAssertFalse(TrackingMode.balanced.tracksFinePaths, "fine paths are the expensive tier")
+        XCTAssertTrue(TrackingMode.fullTrace.tracksFinePaths)
+    }
+
+    func testMotionKindsMapOntoDrawableTravel() {
+        XCTAssertEqual(MotionKind.walking.travelKind.stored, "walking")
+        XCTAssertEqual(MotionKind.running.travelKind.stored, "walking", "a run draws like a walk")
+        XCTAssertEqual(MotionKind.cycling.travelKind.stored, "cycling")
+        XCTAssertEqual(MotionKind.automotive.travelKind.stored, "automobile")
+        XCTAssertEqual(MotionKind.stationary.travelKind.stored, "raw")
+        XCTAssertFalse(MotionKind.unknown.isMoving)
+        XCTAssertFalse(MotionKind.stationary.isMoving)
+        XCTAssertTrue(MotionKind.cycling.isMoving)
+    }
+}
+
+// MARK: - The notification path, without the network
+
+final class ScriptedGuesser: PlaceGuessing {
+    let guesses: [PlaceNameSuggestion]
+
+    init(_ titles: [String]) {
+        self.guesses = titles.map { title in
+            PlaceNameSuggestion(
+                id: "scripted:\(title)",
+                title: title,
+                subtitle: "Nearby",
+                source: .map,
+                visitCount: 0,
+                distanceMeters: 40,
+                targetPlaceID: nil
+            )
+        }
+    }
+
+    func pointsOfInterest(around coordinate: CLLocationCoordinate2D) async -> [PlaceNameSuggestion] { guesses }
+    func address(at coordinate: CLLocationCoordinate2D) async -> PlaceNameSuggestion? { guesses.first }
+    func guesses(
+        around coordinate: CLLocationCoordinate2D,
+        visited: [PlaceNameSuggestion],
+        limit: Int
+    ) async -> [PlaceNameSuggestion] {
+        Array((visited + guesses).prefix(limit))
+    }
+}
+
+@MainActor
+final class RecorderNotificationTests: XCTestCase {
+    private var calendar: Calendar = {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "America/Vancouver")!
+        return calendar
+    }()
+
+    private func afternoon(_ hour: Int = 14) -> Date {
+        calendar.date(from: DateComponents(year: 2026, month: 3, day: 12, hour: hour))!
+    }
+
+    private func makeRecorder(
+        now: Date
+    ) -> (TimelineRecorder, TimelineDatabase, TrackingSettings, URL) {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("notify-\(UUID().uuidString).sqlite")
+        let database = TimelineDatabase(fileURL: url)
+        let settings = TrackingSettings(defaults: UserDefaults(suiteName: "notify-\(UUID().uuidString)")!)
+        settings.mode = .balanced
+        settings.notifiesVisits = true
+        let recorder = TimelineRecorder(
+            database: database,
+            stops: ScriptedStopSource(),
+            motion: ScriptedMotionSource(),
+            settings: settings,
+            guesser: ScriptedGuesser(["Continental Coffee", "JJ Bean"]),
+            now: { now }
+        )
+        return (recorder, database, settings, url)
+    }
+
+    func testAStayAtANamedPlaceIsRecordedInSilence() async throws {
+        let now = afternoon()
+        let (recorder, database, settings, url) = makeRecorder(now: now)
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        // Seed a place that already has a name — home and work look like this.
+        let earlier = now.addingTimeInterval(-86_400)
+        try await database.record(
+            batch: TimelineBatch(
+                visits: [
+                    TimelineVisit(
+                        id: "seed", start: earlier, end: earlier.addingTimeInterval(3_600),
+                        coordinate: home, semanticType: nil, placeKey: "cafe"
+                    )
+                ],
+                activities: [],
+                paths: []
+            )
+        )
+        try await database.setPlaceName(placeKey: "cafe", name: "Home")
+
+        await recorder.handle(stop: stop(start: now.addingTimeInterval(-3_600), minutes: 60))
+
+        XCTAssertTrue(settings.heldPlaceKeys.isEmpty)
+        XCTAssertEqual(settings.sentToday(now: now, calendar: calendar), 0, "a named place must never notify")
+        let visits = try await database.loadBatch()?.visits ?? []
+        XCTAssertEqual(visits.count, 2, "but the stay is still recorded")
+    }
+
+    func testAStayDuringQuietHoursIsHeldForTheMorning() async throws {
+        let night = afternoon(23)
+        let (recorder, _, settings, url) = makeRecorder(now: night)
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        await recorder.handle(stop: stop(start: night.addingTimeInterval(-2_700), minutes: 45))
+        XCTAssertEqual(settings.heldPlaceKeys.count, 1, "a 23:45 stay should wait until morning")
+    }
+
+    func testPastTheDailyCapStaysAreHeldRatherThanDropped() async throws {
+        let now = afternoon()
+        let (recorder, _, settings, url) = makeRecorder(now: now)
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        for _ in 0..<VisitNotificationPolicy.dailyCap {
+            settings.recordSent(now: now, calendar: calendar)
+        }
+        await recorder.handle(stop: stop(start: now.addingTimeInterval(-3_600), minutes: 60))
+        XCTAssertEqual(settings.heldPlaceKeys.count, 1)
+    }
+
+    func testAShortStayIsNeitherAnnouncedNorHeld() async throws {
+        let now = afternoon()
+        let (recorder, _, settings, url) = makeRecorder(now: now)
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        await recorder.handle(stop: stop(start: now.addingTimeInterval(-240), minutes: 4))
+        XCTAssertTrue(settings.heldPlaceKeys.isEmpty)
+        XCTAssertEqual(settings.sentToday(now: now, calendar: calendar), 0)
+    }
+
+    func testTurningNotificationsOffSilencesEverything() async throws {
+        let night = afternoon(23)
+        let (recorder, _, settings, url) = makeRecorder(now: night)
+        defer { try? FileManager.default.removeItem(at: url) }
+        settings.notifiesVisits = false
+
+        await recorder.handle(stop: stop(start: night.addingTimeInterval(-2_700), minutes: 45))
+        XCTAssertTrue(settings.heldPlaceKeys.isEmpty, "nothing is held when nothing would be sent")
+    }
+
+    func testTheMorningSummaryClearsWhatWasHeld() async throws {
+        let morning = afternoon(9)
+        let (recorder, _, settings, url) = makeRecorder(now: morning)
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        settings.hold("cafe")
+        settings.hold("bank")
+        await recorder.catchUp()
+        XCTAssertTrue(settings.heldPlaceKeys.isEmpty, "the summary goes out and the queue empties")
+    }
+
+    func testHoldsSurviveUntilItIsMorning() async throws {
+        let night = afternoon(2)
+        let (recorder, _, settings, url) = makeRecorder(now: night)
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        settings.hold("cafe")
+        await recorder.catchUp()
+        XCTAssertEqual(settings.heldPlaceKeys, ["cafe"], "2am is not the time to send a summary")
+    }
+}
+
+// MARK: - Recorder lifecycle and enrichment
+
+@MainActor
+final class RecorderLifecycleTests: XCTestCase {
+    private struct Rig {
+        let recorder: TimelineRecorder
+        let stops: ScriptedStopSource
+        let motion: ScriptedMotionSource
+        let health: ScriptedHealthSource
+        let database: TimelineDatabase
+        let settings: TrackingSettings
+        let url: URL
+    }
+
+    private func rig(mode: TrackingMode = .balanced, now: Date = Date()) -> Rig {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("lifecycle-\(UUID().uuidString).sqlite")
+        let database = TimelineDatabase(fileURL: url)
+        let stops = ScriptedStopSource()
+        let motion = ScriptedMotionSource()
+        let health = ScriptedHealthSource()
+        let settings = TrackingSettings(defaults: UserDefaults(suiteName: "lifecycle-\(UUID().uuidString)")!)
+        settings.mode = mode
+        settings.notifiesVisits = false
+        return Rig(
+            recorder: TimelineRecorder(
+                database: database,
+                stops: stops,
+                motion: motion,
+                settings: settings,
+                health: health,
+                guesser: ScriptedGuesser([]),
+                now: { now }
+            ),
+            stops: stops,
+            motion: motion,
+            health: health,
+            database: database,
+            settings: settings,
+            url: url
+        )
+    }
+
+    func testStartingArmsTheSourcesForTheChosenMode() async throws {
+        let rig = rig()
+        defer { try? FileManager.default.removeItem(at: rig.url) }
+
+        rig.recorder.start()
+        XCTAssertEqual(rig.stops.startedMode, .balanced)
+        XCTAssertTrue(rig.recorder.isRunning)
+        XCTAssertFalse(rig.motion.isLive, "balanced does not need live motion updates")
+    }
+
+    func testOffModeArmsNothing() async throws {
+        let rig = rig(mode: .off)
+        defer { try? FileManager.default.removeItem(at: rig.url) }
+
+        rig.recorder.start()
+        XCTAssertNil(rig.stops.startedMode)
+        XCTAssertFalse(rig.recorder.isRunning)
+    }
+
+    func testFullTraceOnlyTracesWhileMoving() async throws {
+        let rig = rig(mode: .fullTrace)
+        defer { try? FileManager.default.removeItem(at: rig.url) }
+
+        rig.recorder.start()
+        XCTAssertTrue(rig.motion.isLive, "full trace has to watch for motion transitions")
+
+        rig.motion.emit(.automotive)
+        await Task.yield()
+        XCTAssertTrue(rig.stops.isTracing, "a drive should turn the radio on")
+
+        rig.motion.emit(.stationary)
+        await Task.yield()
+        XCTAssertFalse(rig.stops.isTracing, "standing still must turn it off again")
+    }
+
+    func testStoppingDisarmsEverything() async throws {
+        let rig = rig(mode: .fullTrace)
+        defer { try? FileManager.default.removeItem(at: rig.url) }
+
+        rig.recorder.start()
+        rig.recorder.stop()
+        XCTAssertNil(rig.stops.startedMode)
+        XCTAssertFalse(rig.motion.isLive)
+        XCTAssertFalse(rig.recorder.isRunning)
+    }
+
+    func testWorkoutRoutesArriveThroughTheRecorder() async throws {
+        let now = Date()
+        let rig = rig(now: now)
+        defer { try? FileManager.default.removeItem(at: rig.url) }
+        rig.settings.usesHealth = true
+
+        rig.health.workoutsToReturn = [
+            HealthWorkout(
+                id: "ride-1",
+                start: now.addingTimeInterval(-3_600),
+                end: now.addingTimeInterval(-1_800),
+                kind: .cycling,
+                distanceMeters: 9_000,
+                route: (0..<40).map { offset(home, metersNorth: Double($0) * 225) }
+            )
+        ]
+
+        await rig.recorder.catchUp()
+
+        let batch = try await rig.database.loadBatch()
+        XCTAssertEqual(batch?.paths.count, 1, "the Watch's own GPS track should land as a path")
+        XCTAssertEqual(batch?.activities.first?.kind.stored, "cycling")
+        let mark = try await rig.database.captureMark(CaptureMark.health)
+        XCTAssertNotNil(mark)
+    }
+
+    func testWatchDistanceReclassifiesADriveThatWasARide() async throws {
+        let now = Date()
+        let rig = rig(now: now)
+        defer { try? FileManager.default.removeItem(at: rig.url) }
+        rig.settings.usesHealth = true
+
+        // Core Motion called this stretch driving.
+        rig.motion.scripted = [
+            MotionSample(start: now.addingTimeInterval(-3_000), kind: .automotive, confidence: 2),
+            MotionSample(start: now.addingTimeInterval(-1_200), kind: .stationary, confidence: 2),
+        ]
+        // The Watch logged real cycling distance across the same window.
+        rig.health.distancesToReturn = [
+            HealthDistanceSample(
+                start: now.addingTimeInterval(-3_000),
+                end: now.addingTimeInterval(-1_200),
+                meters: 4_000,
+                kind: .cycling
+            )
+        ]
+
+        await rig.recorder.catchUp()
+
+        let activities = try await rig.database.loadBatch()?.activities ?? []
+        XCTAssertEqual(activities.count, 1)
+        XCTAssertEqual(activities.first?.kind.stored, "cycling", "the Watch overrules Core Motion here")
+    }
+
+    func testHealthIsIgnoredUntilItIsTurnedOn() async throws {
+        let now = Date()
+        let rig = rig(now: now)
+        defer { try? FileManager.default.removeItem(at: rig.url) }
+
+        rig.health.workoutsToReturn = [
+            HealthWorkout(
+                id: "ride-1",
+                start: now.addingTimeInterval(-3_600),
+                end: now.addingTimeInterval(-1_800),
+                kind: .cycling,
+                distanceMeters: 9_000,
+                route: [home, offset(home, metersNorth: 9_000)]
+            )
+        ]
+        await rig.recorder.catchUp()
+
+        let batch = try await rig.database.loadBatch()
+        XCTAssertNil(batch?.paths.first, "HealthKit is opt-in; nothing should be read")
+    }
+
+    func testReconciliationRunsAtMostOncePerDay() async throws {
+        // A whole-second epoch, because a Date round-trips through the database as
+        // seconds-since-1970 and an arbitrary Date loses its lowest bits to that
+        // conversion — harmless for a capture mark, fatal for an equality check.
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let rig = rig(now: now)
+        defer { try? FileManager.default.removeItem(at: rig.url) }
+
+        await rig.recorder.catchUp()
+        let first = try await rig.database.captureMark(CaptureMark.reconcile)
+        XCTAssertEqual(first, now)
+
+        // A second wake soon after must not re-read the whole visit table.
+        await rig.recorder.catchUp()
+        let second = try await rig.database.captureMark(CaptureMark.reconcile)
+        XCTAssertEqual(second, first, "reconciliation is daily, not every wake")
+    }
+
+    func testCatchUpDoesNothingWhenRecordingIsOff() async throws {
+        let rig = rig(mode: .off)
+        defer { try? FileManager.default.removeItem(at: rig.url) }
+
+        rig.motion.scripted = [
+            MotionSample(start: Date().addingTimeInterval(-3_600), kind: .walking, confidence: 2),
+            MotionSample(start: Date().addingTimeInterval(-1_800), kind: .stationary, confidence: 2),
+        ]
+        await rig.recorder.catchUp()
+        let mark = try await rig.database.captureMark(CaptureMark.motion)
+        XCTAssertNil(mark)
+    }
+}
+
+// MARK: - Value semantics
+
+final class CaptureValueTests: XCTestCase {
+    private let origin = Date(timeIntervalSince1970: 1_700_000_000)
+
+    func testStopsCompareOnEveryFieldThatMatters() {
+        let base = CapturedStop(coordinate: home, horizontalAccuracy: 65, start: origin, end: nil)
+        XCTAssertEqual(base, CapturedStop(coordinate: home, horizontalAccuracy: 65, start: origin, end: nil))
+
+        // Same place and time, different departure: a stay that has since closed.
+        XCTAssertNotEqual(
+            base,
+            CapturedStop(coordinate: home, horizontalAccuracy: 65, start: origin, end: origin.addingTimeInterval(600))
+        )
+        // Same time, moved: a different stay entirely.
+        XCTAssertNotEqual(
+            base,
+            CapturedStop(
+                coordinate: offset(home, metersNorth: 500),
+                horizontalAccuracy: 65,
+                start: origin,
+                end: nil
+            )
+        )
+        // Same stay, a better fix.
+        XCTAssertNotEqual(
+            base,
+            CapturedStop(coordinate: home, horizontalAccuracy: 20, start: origin, end: nil)
+        )
+    }
+
+    func testAnOpenStopHasNoDuration() {
+        let open = CapturedStop(coordinate: home, horizontalAccuracy: 65, start: origin, end: nil)
+        XCTAssertEqual(open.duration, 0)
+        XCTAssertFalse(open.isClosed)
+
+        let closed = CapturedStop(
+            coordinate: home,
+            horizontalAccuracy: 65,
+            start: origin,
+            end: origin.addingTimeInterval(2_700)
+        )
+        XCTAssertEqual(closed.duration, 2_700)
+        XCTAssertTrue(closed.isClosed)
+    }
+
+    func testABackwardsStopReportsNoNegativeDuration() {
+        let backwards = CapturedStop(
+            coordinate: home,
+            horizontalAccuracy: 65,
+            start: origin,
+            end: origin.addingTimeInterval(-600)
+        )
+        XCTAssertEqual(backwards.duration, 0, "a negative stay would poison every total it feeds")
+    }
+
+    func testAnchorsCompareOnIdentityAndStanding() {
+        let anchor = PlaceAnchor(placeKey: "cafe", coordinate: home, visitCount: 4, isNamed: true)
+        XCTAssertEqual(anchor, PlaceAnchor(placeKey: "cafe", coordinate: home, visitCount: 4, isNamed: true))
+        XCTAssertNotEqual(anchor, PlaceAnchor(placeKey: "cafe", coordinate: home, visitCount: 5, isNamed: true))
+        XCTAssertNotEqual(anchor, PlaceAnchor(placeKey: "cafe", coordinate: home, visitCount: 4, isNamed: false))
+        XCTAssertNotEqual(anchor, PlaceAnchor(placeKey: "bank", coordinate: home, visitCount: 4, isNamed: true))
+    }
+
+    func testFixesAreIdentifiedByWhenAndWhere() {
+        let fix = CapturedFix(coordinate: home, timestamp: origin, horizontalAccuracy: 10, speed: 3)
+        // Accuracy and speed vary between reports of the same moment.
+        XCTAssertEqual(fix, CapturedFix(coordinate: home, timestamp: origin, horizontalAccuracy: 40, speed: 9))
+        XCTAssertNotEqual(
+            fix,
+            CapturedFix(coordinate: home, timestamp: origin.addingTimeInterval(1), horizontalAccuracy: 10, speed: 3)
+        )
+    }
+
+    func testAnEmptyChangeBatchIsEmpty() {
+        XCTAssertTrue(ChangeBatch().isEmpty)
+        XCTAssertEqual(ChangeBatch().count, 0)
+        XCTAssertTrue(ChangeBatch().deletions.isEmpty)
+    }
+
+    func testABatchSeparatesDeletionsFromUpserts() {
+        let batch = ChangeBatch(
+            changes: [
+                PendingChange(kind: .visit, rowID: "v1", operation: .upsert, seq: 1, changedAt: origin),
+                PendingChange(kind: .visit, rowID: "v2", operation: .delete, seq: 2, changedAt: origin),
+            ]
+        )
+        XCTAssertFalse(batch.isEmpty)
+        XCTAssertEqual(batch.count, 2)
+        XCTAssertEqual(batch.deletions.map(\.rowID), ["v2"])
+    }
+
+    func testAnOpenStayStillPrintsAStartTime() {
+        let open = CapturedStop(coordinate: home, horizontalAccuracy: 65, start: origin, end: nil)
+        XCTAssertFalse(VisitNotificationPolicy.timeRange(open).isEmpty)
+        XCTAssertFalse(VisitNotificationPolicy.timeRange(open).contains("–"), "there is no end to show yet")
+
+        let closed = CapturedStop(
+            coordinate: home,
+            horizontalAccuracy: 65,
+            start: origin,
+            end: origin.addingTimeInterval(2_700)
+        )
+        XCTAssertTrue(VisitNotificationPolicy.timeRange(closed).contains("–"))
+    }
+
+    func testAVeryShortStayStillReadsAsAMinute() {
+        XCTAssertEqual(VisitNotificationPolicy.durationPhrase(20), "1 minute")
+        XCTAssertEqual(VisitNotificationPolicy.durationPhrase(120), "2 minutes")
+        XCTAssertEqual(VisitNotificationPolicy.durationPhrase(7_200), "2 hours")
     }
 }

@@ -29,7 +29,9 @@ final class TimelineRecorder {
     private let motion: MotionSource
     private let settings: TrackingSettings
     private let health: HealthSource?
-    private let guesser: PlaceGuessService
+    private let guesser: any PlaceGuessing
+    /// Injectable so the quiet-hours and daily-cap paths are testable at any hour.
+    private let now: () -> Date
     private var fixBuffer: [CapturedFix] = []
     private var flushTask: Task<Void, Never>?
 
@@ -45,11 +47,13 @@ final class TimelineRecorder {
         motion: MotionSource? = nil,
         settings: TrackingSettings? = nil,
         health: HealthSource? = nil,
-        guesser: PlaceGuessService = PlaceGuessService()
+        guesser: any PlaceGuessing = PlaceGuessService(),
+        now: @escaping () -> Date = Date.init
     ) {
         self.database = database ?? TimelineDatabase()
         self.settings = settings ?? TrackingSettings.shared
         self.guesser = guesser
+        self.now = now
         #if os(iOS)
         self.stops = stops ?? DeviceLocationSource()
         self.motion = motion ?? DeviceMotionSource()
@@ -111,14 +115,14 @@ final class TimelineRecorder {
         await flushFixes()
         await enrichFromHealth()
         await reconcileIfDue()
-        try? await database.pruneFixes(before: Date().addingTimeInterval(-Self.fixRetention))
+        try? await database.pruneFixes(before: now().addingTimeInterval(-Self.fixRetention))
         await deliverHeldSummaryIfNeeded()
     }
 
     // MARK: - Stays
 
     func handle(stop: CapturedStop) async {
-        lastStopAt = Date()
+        lastStopAt = now()
         let anchors = (try? await database.placeAnchors()) ?? []
         let known = try? await database.openStop()
 
@@ -169,8 +173,8 @@ final class TimelineRecorder {
             stop: stop,
             match: match,
             isNamed: match.anchor?.isNamed ?? false,
-            sentToday: settings.sentToday(),
-            now: Date()
+            sentToday: settings.sentToday(now: now()),
+            now: now()
         )
         switch VisitNotificationPolicy.decide(context) {
         case .silent(let reason):
@@ -193,7 +197,7 @@ final class TimelineRecorder {
                 },
                 excluding: match.placeKey
             )
-            let guesses = await guesser.guesses(around: stop.coordinate, visited: visited)
+            let guesses = await guesser.guesses(around: stop.coordinate, visited: visited, limit: 2)
             let area = await guesser.address(at: stop.coordinate)?.subtitle
             #if os(iOS)
             await VisitNotifier.shared.notify(
@@ -202,7 +206,7 @@ final class TimelineRecorder {
                 guesses: guesses,
                 areaHint: area
             )
-            settings.recordSent()
+            settings.recordSent(now: now())
             #endif
             NotificationCenter.default.post(name: .timelineWantsPlaceName, object: match.placeKey)
         }
@@ -234,7 +238,7 @@ final class TimelineRecorder {
     /// woke up and asked the coprocessor what it saw.
     private func backfillMotion() async {
         guard settings.mode.tracksMovement, motion.isAvailable else { return }
-        let now = Date()
+        let now = now()
         let mark = (try? await database.captureMark(CaptureMark.motion)) ?? nil
         let earliest = now.addingTimeInterval(-Self.maximumBackfill)
         let from = max(mark ?? now.addingTimeInterval(-Self.coldBackfill), earliest)
@@ -288,7 +292,7 @@ final class TimelineRecorder {
     /// passive cycling distance that overrules Core Motion's worst guess.
     private func enrichFromHealth() async {
         guard settings.usesHealth, settings.mode.tracksMovement, let health, health.isAvailable else { return }
-        let now = Date()
+        let now = now()
         let mark = (try? await database.captureMark(CaptureMark.health)) ?? nil
         let from = mark ?? now.addingTimeInterval(-Self.maximumBackfill)
         guard now.timeIntervalSince(from) > 60 else { return }
@@ -321,9 +325,9 @@ final class TimelineRecorder {
     /// every wake. Imports reconcile immediately on their own path.
     private func reconcileIfDue() async {
         let last = (try? await database.captureMark(CaptureMark.reconcile)) ?? nil
-        if let last, Date().timeIntervalSince(last) < 20 * 60 * 60 { return }
+        if let last, now().timeIntervalSince(last) < 20 * 60 * 60 { return }
         guard let plan = try? await database.reconcileSources() else { return }
-        try? await database.setCaptureMark(CaptureMark.reconcile, through: Date())
+        try? await database.setCaptureMark(CaptureMark.reconcile, through: now())
         guard !plan.isEmpty else { return }
         TimelineLog.info(
             "library reconciled",
@@ -334,7 +338,7 @@ final class TimelineRecorder {
 
     private func deliverHeldSummaryIfNeeded() async {
         let held = settings.heldPlaceKeys
-        guard !held.isEmpty, !VisitNotificationPolicy.isQuiet(Date()) else { return }
+        guard !held.isEmpty, !VisitNotificationPolicy.isQuiet(now()) else { return }
         #if os(iOS)
         await VisitNotifier.shared.notifyHeldSummary(count: held.count)
         #endif

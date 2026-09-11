@@ -2,6 +2,19 @@ import Foundation
 import CoreLocation
 import MapKit
 
+/// Name guesses for a coordinate. Behind a protocol so the recorder can be
+/// exercised without MapKit — the notification path is worth testing, and it is
+/// not worth a network round trip to do it.
+protocol PlaceGuessing: Sendable {
+    func pointsOfInterest(around coordinate: CLLocationCoordinate2D) async -> [PlaceNameSuggestion]
+    func address(at coordinate: CLLocationCoordinate2D) async -> PlaceNameSuggestion?
+    func guesses(
+        around coordinate: CLLocationCoordinate2D,
+        visited: [PlaceNameSuggestion],
+        limit: Int
+    ) async -> [PlaceNameSuggestion]
+}
+
 /// Name guesses for a coordinate, with no UI attached.
 ///
 /// `PlaceNameSuggester` drives the rename sheet and is built around typing, so it
@@ -9,7 +22,7 @@ import MapKit
 /// same answers on a background wake with nobody typing, so the lookup and the
 /// ranking live here and both front ends share them — which is the only way the
 /// notification's guesses and the rename sheet's list can never disagree.
-struct PlaceGuessService {
+struct PlaceGuessService: PlaceGuessing {
     var searchRadius: CLLocationDistance = 450
 
     /// Nearby points of interest, nearest first.
