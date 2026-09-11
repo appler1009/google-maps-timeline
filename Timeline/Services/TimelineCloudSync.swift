@@ -283,14 +283,14 @@ extension TimelineCloudSync: CKSyncEngineDelegate {
     private func handle(failure: CKSyncEngine.Event.SentRecordZoneChanges.FailedRecordSave) async {
         let name = failure.record.recordID.recordName
         let change = inFlight.removeValue(forKey: name)
-        let error = failure.error as? CKError
+        let error = failure.error
 
-        switch error?.code {
+        switch error.code {
         case .serverRecordChanged:
             // The row exists and our copy was stale — adopt the server's record so
             // the next save quotes the right change tag. This is the exact failure
             // that fired 3,400 times: a fresh CKRecord has no tag at all.
-            if let server = error?.serverRecord {
+            if let server = error.serverRecord {
                 try? await database.setCloudRecordArchive(
                     name,
                     TimelineRecordMapper.encodeSystemFields(server)
