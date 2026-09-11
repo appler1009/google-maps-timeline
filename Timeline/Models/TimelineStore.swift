@@ -18,6 +18,10 @@ final class TimelineStore {
     var selectedVisitID: String?
     var parsed: ParsedTimeline?
     var isLoading = false
+    /// False until the library has actually been read. The empty-library prompt
+    /// is a claim that there is nothing here, and it should not be made while we
+    /// are still finding out.
+    private(set) var hasCheckedLibrary = false
     var loadError: String?
     var sourceName: String?
     var focusRegion = MKCoordinateRegion(
@@ -90,9 +94,16 @@ final class TimelineStore {
         return TimelineStore(database: database, snapper: snapper)
     }
 
+    /// Marks the library as read without loading anything — for launches that
+    /// deliberately skip the loaders, so the sidebar can settle on an answer.
+    func markLibraryChecked() {
+        hasCheckedLibrary = true
+    }
+
     func loadBundledFixture() {
         guard let url = Bundle.main.url(forResource: "eiffel-tower-day", withExtension: "json") else {
             loadError = "Missing bundled test fixture."
+            hasCheckedLibrary = true
             return
         }
         open(url: url)
@@ -366,6 +377,9 @@ final class TimelineStore {
 
     func restoreLastOpenedFile() {
         Task {
+            // Every exit path has to settle `hasCheckedLibrary`, or the sidebar
+            // sits on a spinner forever.
+            defer { hasCheckedLibrary = true }
             if isLoading { return }
             await refreshPlaceNames()
             await pullPlaceIdentityFromCloud()
@@ -414,6 +428,7 @@ final class TimelineStore {
             } catch {
                 loadError = error.localizedDescription
                 isLoading = false
+                hasCheckedLibrary = true
             }
         }
     }
@@ -515,6 +530,7 @@ final class TimelineStore {
 
     func apply(_ parsed: ParsedTimeline) {
         self.parsed = parsed
+        hasCheckedLibrary = true
         sourceName = parsed.sourceName
         isLoading = false
         selectedPlaceID = nil

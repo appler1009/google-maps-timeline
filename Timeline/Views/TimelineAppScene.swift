@@ -92,6 +92,10 @@ struct TimelineAppScene: View {
                             store.loadBundledFixture()
                         } else if !TimelineLaunch.isUITesting {
                             store.restoreLastOpenedFile()
+                        } else {
+                            // A UI test asking for an empty library: nothing will
+                            // load, so say so rather than spin.
+                            store.markLibraryChecked()
                         }
                     }
                 }
