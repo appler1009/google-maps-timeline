@@ -95,20 +95,28 @@ struct ModelPlaceRanker: PlaceRanking {
 /// Builds the prompt. Pure and separate, because the prompt is the part worth
 /// reviewing and the only part that can be tested deterministically.
 enum PlaceNamingPrompt {
+    /// Worked examples were a mistake here: given one, the model repeated its
+    /// wording back as the reason and ignored the hour it had actually been
+    /// given. These instructions describe how to weigh the facts instead.
     static let instructions = """
-        You identify which nearby place a person most likely visited, using the \
-        time of day, how long they stayed, and their recent habits.
-        Prefer the candidate whose kind of place fits the hour and the length of \
-        the stay. A long weekday stay is more likely somewhere they work or live \
-        than a shop. A short mid-morning stop is more likely a cafe or an errand \
-        than a restaurant.
+        You identify which nearby place a person most likely visited.
+        Weigh only the facts given: the day, the stated arrival time and part of \
+        day, how long the stay lasted, where they arrived from, any earlier stays \
+        at the same spot, and the kind of each candidate.
+        Do not assume a time of day that was not stated. Do not assume a stay was \
+        short or long except by comparing it to how long people usually spend at \
+        that kind of place.
         Answer with one of the candidate names exactly as written. Never invent a \
         name. If nothing fits well, choose the nearest candidate and say so.
+        Give the reason as a short phrase naming the facts you used.
         """
 
     static func build(context: VisitNamingContext, candidates: [PlaceNameSuggestion]) -> String {
         var lines: [String] = []
-        lines.append("Stay: \(context.weekday) at \(context.startTime), lasting \(context.durationPhrase).")
+        lines.append(
+            "Stay: \(context.weekday), arrived \(context.startTime) (\(context.partOfDay)), "
+                + "stayed \(context.durationMinutes) minutes."
+        )
         if let cameFrom = context.cameFrom {
             lines.append("Arrived from: \(cameFrom).")
         }

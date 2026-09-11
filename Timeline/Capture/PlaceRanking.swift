@@ -13,6 +13,9 @@ struct VisitNamingContext: Equatable {
     var startMinutes: Int
     /// "12:30"
     var startTime: String
+    /// "midday". Computed here rather than left for the model to infer from the
+    /// clock, because inferring it is exactly what it got wrong.
+    var partOfDay: String
     var durationMinutes: Int
     /// "40 minutes"
     var durationPhrase: String

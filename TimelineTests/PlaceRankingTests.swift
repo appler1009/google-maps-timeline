@@ -36,6 +36,7 @@ private func context(
         weekday: weekday,
         startMinutes: startMinutes,
         startTime: VisitNamingContextBuilder.clock(minutes: startMinutes),
+        partOfDay: VisitNamingContextBuilder.partOfDay(minutes: startMinutes),
         durationMinutes: durationMinutes,
         durationPhrase: VisitNotificationPolicy.durationPhrase(Double(durationMinutes) * 60),
         priorVisitsHere: priorVisits,
@@ -247,8 +248,8 @@ final class PlaceNamingPromptTests: XCTestCase {
             context: context(cameFrom: "Work, 18 minutes earlier"),
             candidates: [candidate("Chipotle", meters: 40, category: "Restaurant")]
         )
-        XCTAssertTrue(prompt.contains("Tuesday at 12:30"))
-        XCTAssertTrue(prompt.contains("40 minutes"))
+        XCTAssertTrue(prompt.contains("Tuesday, arrived 12:30 (midday)"), "the hour must not be left to inference")
+        XCTAssertTrue(prompt.contains("stayed 40 minutes"))
         XCTAssertTrue(prompt.contains("Arrived from: Work, 18 minutes earlier"))
         XCTAssertTrue(prompt.contains("Chipotle"))
         XCTAssertTrue(prompt.contains("kind: Restaurant"))
@@ -288,6 +289,23 @@ final class PlaceNamingPromptTests: XCTestCase {
 
     func testTheInstructionsForbidInvention() {
         XCTAssertTrue(PlaceNamingPrompt.instructions.contains("Never invent a name"))
+    }
+
+    func testTheInstructionsCarryNoWorkedExampleToParrot() {
+        // A real run repeated "short mid-morning stop" back as its reason for a
+        // stay that began at 12:30. Examples in instructions get copied.
+        let instructions = PlaceNamingPrompt.instructions.lowercased()
+        for phrase in ["mid-morning", "lunch", "cafe", "restaurant", "shop"] {
+            XCTAssertFalse(instructions.contains(phrase), "\(phrase) is quotable enough to be parroted")
+        }
+        XCTAssertTrue(instructions.contains("do not assume a time of day that was not stated"))
+    }
+
+    func testPartOfDayIsSpelledOutInPlainWords() {
+        XCTAssertEqual(VisitNamingContextBuilder.partOfDay(minutes: 12 * 60 + 30), "midday")
+        XCTAssertEqual(VisitNamingContextBuilder.partOfDay(minutes: 9 * 60), "mid-morning")
+        XCTAssertEqual(VisitNamingContextBuilder.partOfDay(minutes: 2 * 60), "the middle of the night")
+        XCTAssertEqual(VisitNamingContextBuilder.partOfDay(minutes: 19 * 60), "evening")
     }
 }
 
@@ -476,5 +494,58 @@ final class VisitNamingContextBuilderTests: XCTestCase {
     func testMedianOfAnEmptyListIsZeroRatherThanACrash() {
         XCTAssertEqual(VisitNamingContextBuilder.median([]), 0)
         XCTAssertEqual(VisitNamingContextBuilder.median([10, 20, 30]), 20)
+    }
+}
+
+// MARK: - The real model
+
+/// Availability is safe to check anywhere; generating is not, so the round trip
+/// is opt-in — it needs Apple Intelligence switched on, takes seconds, and does
+/// not give the same answer twice. It is still the only way to prove the prompt,
+/// the constrained schema and the parsing work together, so:
+///
+///     defaults write com.appler.Timeline.tests runModelTests -bool YES
+///
+/// (xcodebuild does not forward shell environment to the test host, which is why
+/// this is a defaults domain rather than an env var.)
+final class FoundationModelChooserTests: XCTestCase {
+    private var modelTestsEnabled: Bool {
+        UserDefaults(suiteName: "com.appler.Timeline.tests")?.bool(forKey: "runModelTests") ?? false
+    }
+
+    func testTheFactoryAlwaysReturnsAChooser() {
+        let chooser = PlaceChooserFactory.make()
+        // Either it can run or it says why — never a crash, never silence.
+        if chooser.isAvailable {
+            XCTAssertNil(PlaceChooserFactory.unavailableReason())
+        } else {
+            XCTAssertNotNil(PlaceChooserFactory.unavailableReason())
+        }
+    }
+
+    func testTheModelPicksFromTheListWhenItIsAvailable() async throws {
+        try XCTSkipUnless(
+            modelTestsEnabled,
+            "defaults write com.appler.Timeline.tests runModelTests -bool YES to exercise the on-device model"
+        )
+        let chooser = PlaceChooserFactory.make()
+        try XCTSkipUnless(chooser.isAvailable, PlaceChooserFactory.unavailableReason() ?? "no model")
+
+        let lunch = context(startMinutes: 12 * 60 + 30, durationMinutes: 40)
+        let candidates = [
+            candidate("Bright Smile Dental", meters: 45, category: "Dentist"),
+            candidate("Chipotle", meters: 40, category: "Restaurant"),
+            candidate("QuickShip Postal", meters: 52, category: "PostOffice"),
+        ]
+        let titles = candidates.map(\.title)
+        let choice = try await chooser.choose(
+            from: titles,
+            prompt: PlaceNamingPrompt.build(context: lunch, candidates: candidates)
+        )
+
+        XCTAssertTrue(titles.contains(choice.title), "the answer has to be one of the candidates, got \(choice.title)")
+        XCTAssertTrue((0...1).contains(choice.confidence))
+        XCTAssertFalse(choice.reason.isEmpty)
+        print("[model] chose \(choice.title) — \(choice.reason) (\(choice.confidence))")
     }
 }

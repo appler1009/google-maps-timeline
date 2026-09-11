@@ -29,6 +29,7 @@ enum VisitNamingContextBuilder {
             weekday: weekdayName(stop.start, calendar: calendar),
             startMinutes: startMinutes,
             startTime: clockTime(stop.start, calendar: calendar),
+            partOfDay: partOfDay(minutes: startMinutes),
             durationMinutes: duration,
             durationPhrase: VisitNotificationPolicy.durationPhrase(stop.duration),
             priorVisitsHere: priorVisits(priorVisitsHere, excluding: stop, calendar: calendar),
@@ -100,6 +101,19 @@ enum VisitNamingContextBuilder {
             ?? "somewhere unnamed"
         if gap <= 1 { return name }
         return "\(name), \(gap) minute\(gap == 1 ? "" : "s") earlier"
+    }
+
+    /// Plain words for the hour, so nothing has to be inferred from "12:30".
+    static func partOfDay(minutes: Int) -> String {
+        switch minutes {
+        case ..<(5 * 60): return "the middle of the night"
+        case ..<(8 * 60): return "early morning"
+        case ..<(11 * 60): return "mid-morning"
+        case ..<(14 * 60): return "midday"
+        case ..<(17 * 60): return "afternoon"
+        case ..<(21 * 60): return "evening"
+        default: return "late evening"
+        }
     }
 
     // MARK: - Formatting
