@@ -172,6 +172,12 @@ actor TimelineDatabase {
             .map { $0 }
     }
 
+    /// Raw fixes on hand, for the diagnostics readout.
+    func fixCount(since date: Date? = nil) throws -> Int {
+        guard let date else { return try scalar("SELECT COUNT(*) FROM fixes") }
+        return try scalar("SELECT COUNT(*) FROM fixes WHERE t >= \(date.timeIntervalSince1970)")
+    }
+
     func shadowedVisitCount() throws -> Int {
         try scalar("SELECT COUNT(*) FROM visits WHERE shadowed = 1")
     }

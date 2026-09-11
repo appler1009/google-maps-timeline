@@ -125,6 +125,34 @@ final class TimelineRecorder {
         await deliverHeldSummaryIfNeeded()
     }
 
+    /// The raw counters behind the Status rows. A stay is only written when it
+    /// closes, so "none recorded" and "nothing is working" look identical from
+    /// the outside — these are what tell them apart.
+    struct Diagnostics: Equatable {
+        var openStayStart: Date?
+        var staysToday = 0
+        var staysTotal = 0
+        var fixesToday = 0
+        var fixesTotal = 0
+        var motionMark: Date?
+        var fixMark: Date?
+        var pendingSync = 0
+    }
+
+    func diagnostics(calendar: Calendar = .current) async -> Diagnostics {
+        let dayStart = calendar.startOfDay(for: now())
+        var report = Diagnostics()
+        report.openStayStart = (try? await database.openStop())??.stop.start
+        report.staysToday = (try? await database.recordedVisitCount(since: dayStart)) ?? 0
+        report.staysTotal = (try? await database.recordedVisitCount(since: .distantPast)) ?? 0
+        report.fixesToday = (try? await database.fixCount(since: dayStart)) ?? 0
+        report.fixesTotal = (try? await database.fixCount()) ?? 0
+        report.motionMark = (try? await database.captureMark(CaptureMark.motion)) ?? nil
+        report.fixMark = (try? await database.captureMark(CaptureMark.fixes)) ?? nil
+        report.pendingSync = (try? await database.pendingChangeCount()) ?? 0
+        return report
+    }
+
     /// What the Status row shows: stays recorded today, from the library.
     func recordedToday(calendar: Calendar = .current) async -> Int {
         let start = calendar.startOfDay(for: now())

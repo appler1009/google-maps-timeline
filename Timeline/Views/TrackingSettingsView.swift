@@ -16,7 +16,7 @@ struct TrackingSettingsView: View {
     @State private var locationStatus = CLLocationManager().authorizationStatus
     @State private var notificationsAllowed = false
     @State private var motionAllowed = CMMotionActivityManager.authorizationStatus() == .authorized
-    @State private var recordedToday = 0
+    @State private var diagnostics = TimelineRecorder.Diagnostics()
     private let modelUnavailableReason = PlaceChooserFactory.unavailableReason()
 
     private let recorder = TimelineRecorder.shared
@@ -106,16 +106,47 @@ struct TrackingSettingsView: View {
                         Text("On a day this iPhone recorded, the export's version of the same stays is hidden rather than deleted. Turn this on to see both.")
                     }
 
-                    Section("Status") {
+                    Section {
                         LabeledContent("Recording") {
                             Text(recorder.isRunning ? "On" : "Off")
                                 .foregroundStyle(Palette.muted)
                         }
+                        LabeledContent("Right now") {
+                            Text(openStayLabel)
+                                .foregroundStyle(Palette.muted)
+                                .multilineTextAlignment(.trailing)
+                        }
                         LabeledContent("Stays recorded today") {
-                            Text("\(recordedToday)")
+                            Text("\(diagnostics.staysToday)")
                                 .foregroundStyle(Palette.muted)
                                 .monospacedDigit()
                         }
+                    } header: {
+                        Text("Status")
+                    } footer: {
+                        Text("A stay is only written once you leave, so this stays at zero while you are still somewhere.")
+                    }
+
+                    Section {
+                        counter("Stays, all time", diagnostics.staysTotal)
+                        counter("Location fixes today", diagnostics.fixesToday)
+                        counter("Location fixes stored", diagnostics.fixesTotal)
+                        LabeledContent("Movement read through") {
+                            Text(stamp(diagnostics.motionMark))
+                                .foregroundStyle(Palette.muted)
+                        }
+                        LabeledContent("Last fix stored") {
+                            Text(stamp(diagnostics.fixMark))
+                                .foregroundStyle(Palette.muted)
+                        }
+                        counter("Rows waiting to sync", diagnostics.pendingSync)
+                        Button("Refresh") {
+                            Task { diagnostics = await recorder.diagnostics() }
+                        }
+                    } header: {
+                        Text("Raw counts")
+                    } footer: {
+                        Text("What the recorder has actually collected. If these are all zero while recording is on, nothing is reaching the app.")
                     }
                 }
             }
@@ -129,9 +160,34 @@ struct TrackingSettingsView: View {
             }
             .task {
                 await refreshPermissions()
-                recordedToday = await recorder.recordedToday()
+                diagnostics = await recorder.diagnostics()
             }
         }
+    }
+
+    /// "Somewhere since 09:12" is the answer to "why is today still zero".
+    private var openStayLabel: String {
+        guard let start = diagnostics.openStayStart else { return "Not at a place yet" }
+        let formatter = DateFormatter()
+        formatter.timeStyle = .short
+        formatter.dateStyle = .none
+        return "Somewhere since \(formatter.string(from: start))"
+    }
+
+    private func counter(_ title: String, _ value: Int) -> some View {
+        LabeledContent(title) {
+            Text("\(value)")
+                .foregroundStyle(Palette.muted)
+                .monospacedDigit()
+        }
+    }
+
+    private func stamp(_ date: Date?) -> String {
+        guard let date else { return "never" }
+        let formatter = DateFormatter()
+        formatter.timeStyle = .short
+        formatter.dateStyle = Calendar.current.isDateInToday(date) ? .none : .short
+        return formatter.string(from: date)
     }
 
     private var healthBinding: Binding<Bool> {

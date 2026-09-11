@@ -88,6 +88,13 @@ final class TrackingOptionsUITests: XCTestCase {
             scroll(app, to: app.switches["cloud-sync-toggle"]),
             "iCloud sync should be offered too"
         )
+
+        // The diagnostics exist to tell "nothing recorded yet" apart from
+        // "nothing is working", so they have to be reachable.
+        XCTAssertTrue(scroll(app, to: app.staticTexts["Raw counts"]), "raw counts should be shown")
+        XCTAssertTrue(app.staticTexts["Stays, all time"].exists)
+        XCTAssertTrue(app.staticTexts["Location fixes today"].exists)
+        XCTAssertTrue(app.staticTexts["Right now"].exists, "the open stay is the answer to a zero count")
         XCTAssertEqual(app.state, .runningForeground)
     }
 
