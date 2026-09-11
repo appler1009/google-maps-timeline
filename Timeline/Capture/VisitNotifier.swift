@@ -158,7 +158,7 @@ final class VisitNotifier: NSObject, UNUserNotificationCenterDelegate {
         let targets = info[InfoKey.targets] as? [String] ?? []
         let action = response.actionIdentifier
 
-        var choice: VisitNameChoice
+        let choice: VisitNameChoice
         if action.hasPrefix(ActionID.guessPrefix),
            let index = Int(action.dropFirst(ActionID.guessPrefix.count)),
            index < titles.count {

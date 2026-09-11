@@ -37,7 +37,7 @@ struct TimelineAppScene: View {
             }
             #if os(iOS)
             .sheet(isPresented: $trackingSettingsPresented) {
-                TrackingSettingsView()
+                TrackingSettingsView(store: store)
             }
             .placeRenameSheet(placeID: $renamingPlaceID, store: store)
             .onReceive(NotificationCenter.default.publisher(for: .timelineLibraryChanged)) { _ in

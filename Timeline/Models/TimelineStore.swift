@@ -402,7 +402,7 @@ final class TimelineStore {
                 try await database.upsert(batch: batch, sourceName: name)
                 // Fold the export into whatever the phone recorded before the
                 // library is assembled, so the day view never shows both.
-                try? await database.reconcileSources()
+                _ = try? await database.reconcileSources()
                 let merged = try await database.loadBatch(includingShadowed: showsShadowedImports) ?? batch
                 let source = (try? await database.latestSourceName()) ?? name
                 await refreshPlaceNames()

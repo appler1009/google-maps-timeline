@@ -6,8 +6,11 @@ import CoreMotion
 /// The one screen that decides how much battery the recorder is allowed to spend,
 /// and the only place the permission escalation is explained.
 struct TrackingSettingsView: View {
+    /// Handed in rather than read from the environment: this view is presented in
+    /// a sheet, and a sheet gets its own environment on iOS.
+    let store: TimelineStore
+
     @Bindable private var settings = TrackingSettings.shared
-    @Environment(TimelineStore.self) private var store
     @Environment(\.dismiss) private var dismiss
 
     @State private var locationStatus = CLLocationManager().authorizationStatus

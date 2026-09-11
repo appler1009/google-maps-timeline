@@ -23,7 +23,7 @@ actor TimelineCloudSync {
     private let database: TimelineDatabase
     private let containerIdentifier: String
     private var engine: CKSyncEngine?
-    private var zoneCreated = false
+    private var isResyncing = false
 
     /// Rows the engine is currently sending, so the acknowledgement can name them
     /// precisely rather than clearing whatever happens to be queued.
@@ -78,7 +78,13 @@ actor TimelineCloudSync {
 
     /// Queue the whole library, then send. This is the first sync after the user
     /// turns iCloud on, and the repair if the change log ever loses an entry.
+    ///
+    /// Must never be awaited from inside a delegate callback — see the sign-in
+    /// case in `handleAccountChange`.
     func resyncEverything() async throws {
+        guard !isResyncing else { return }
+        isResyncing = true
+        defer { isResyncing = false }
         _ = try await database.markEverythingPending()
         await enqueuePendingChanges()
         try await engine?.sendChanges()
@@ -253,8 +259,15 @@ extension TimelineCloudSync: CKSyncEngineDelegate {
     private func handleAccountChange(_ change: CKSyncEngine.Event.AccountChange) async {
         switch change.changeType {
         case .signIn:
-            // A fresh account has none of this library, so offer all of it.
-            try? await resyncEverything()
+            // A fresh account has none of this library, so offer all of it — but
+            // never from inside a delegate callback. CKSyncEngine traps if you
+            // await a call that reenters the delegate, because it can no longer
+            // promise to deliver callbacks serially. The engine fires this event
+            // during start(), so awaiting here crashed the moment sync was
+            // switched on.
+            Task.detached { [weak self] in
+                try? await self?.resyncEverything()
+            }
         case .switchAccounts, .signOut:
             // Do not push one person's timeline into another's account.
             try? await database.clearChangeLog()

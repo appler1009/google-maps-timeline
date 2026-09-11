@@ -72,6 +72,7 @@
 		96B59CD15DADADC9520920A8 /* libsqlite3.tbd in Frameworks */ = {isa = PBXBuildFile; fileRef = AAFD7CBAD5210FAA2FDF9FFA /* libsqlite3.tbd */; };
 		975265C3134BEF3B20A68A69 /* TimelineLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 42F77A3F26A639DA1D9B8472 /* TimelineLog.swift */; };
 		97A25A42DD94B85B0BD1D5E3 /* LuxShared in Frameworks */ = {isa = PBXBuildFile; productRef = EDD341C2B15D99D8BBFBB92C /* LuxShared */; };
+		97B2DDFBFEE729CBC5EAEC4B /* TrackingSettingsUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B4416C93AB1D91BF2E8CD365 /* TrackingSettingsUITests.swift */; };
 		983E0828BD8950C6868F85C9 /* TimelineApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 27A603B8D2E85569C4F2AC40 /* TimelineApp.swift */; };
 		9885790E87229BE88B9C691B /* LogShip in Frameworks */ = {isa = PBXBuildFile; productRef = 4A622217CF4391B19D910D55 /* LogShip */; };
 		993817CBABDE8F9AE038102E /* MotionSegmenter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 174CA6AC718EC8110BFA031B /* MotionSegmenter.swift */; };
@@ -121,6 +122,7 @@
 		F6C8B4F9899829F0BA97927E /* LuxCompanionClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 779DB6859B7B0D720B7E4A39 /* LuxCompanionClient.swift */; };
 		F6EB15E5E9A0246EE425675B /* TimelineAppScene.swift in Sources */ = {isa = PBXBuildFile; fileRef = 82ECD6098781D0E441C5CEE4 /* TimelineAppScene.swift */; };
 		F7982D38B7D6F507D5347CEB /* RoutePlanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 76BAF0A4F92F29FA98081ADB /* RoutePlanner.swift */; };
+		F7EC06BD4B72584197BDB947 /* TrackingSettingsUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B4416C93AB1D91BF2E8CD365 /* TrackingSettingsUITests.swift */; };
 		F8F80DA01C8AB4369112EDEF /* LuxPhotosSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1752D9250320F1FA1FA6BC7C /* LuxPhotosSettingsView.swift */; };
 		F97F40526F45D1595B0D0851 /* MapDirectionsClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E2B0CEA1726213918DF87C9 /* MapDirectionsClient.swift */; };
 		F9C703A7EFE5B97ADD61970B /* TimelineParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 30475295489F71438FC87FC3 /* TimelineParser.swift */; };
@@ -210,6 +212,7 @@
 		AD3B7EEBCFA7764518D9E18E /* RouteSnapper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RouteSnapper.swift; sourceTree = "<group>"; };
 		AD4CF2C63079E56DFD6AFB4A /* TimelineUITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = TimelineUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		B0FE6242695DDA947697A34B /* LuxCompanionTransport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LuxCompanionTransport.swift; sourceTree = "<group>"; };
+		B4416C93AB1D91BF2E8CD365 /* TrackingSettingsUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackingSettingsUITests.swift; sourceTree = "<group>"; };
 		B5D5FCA5DDE8A0A4A770F452 /* PlaceMergeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaceMergeTests.swift; sourceTree = "<group>"; };
 		C3743ECF459145619A53BAFE /* RoutePlannerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RoutePlannerTests.swift; sourceTree = "<group>"; };
 		C3C9897691FC0C05406D4C21 /* TimelineRecorder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimelineRecorder.swift; sourceTree = "<group>"; };
@@ -437,6 +440,7 @@
 			isa = PBXGroup;
 			children = (
 				A9B7B68A2C5A47F130B19C06 /* MarkersAndRoutesUITests.swift */,
+				B4416C93AB1D91BF2E8CD365 /* TrackingSettingsUITests.swift */,
 			);
 			path = TimelineUITests;
 			sourceTree = "<group>";
@@ -754,6 +758,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				593C80158AEF13F1FCD6A540 /* MarkersAndRoutesUITests.swift in Sources */,
+				F7EC06BD4B72584197BDB947 /* TrackingSettingsUITests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -762,6 +767,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				BB7C9FA0BF2D8C97366EC640 /* MarkersAndRoutesUITests.swift in Sources */,
+				97B2DDFBFEE729CBC5EAEC4B /* TrackingSettingsUITests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
