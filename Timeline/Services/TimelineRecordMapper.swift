@@ -116,8 +116,16 @@ enum TimelineRecordMapper {
 
     // MARK: - Row → record
 
-    static func record(for visit: TimelineVisit, in zoneID: CKRecordZone.ID, base: CKRecord? = nil) -> CKRecord {
+    static func record(
+        for visit: TimelineVisit,
+        in zoneID: CKRecordZone.ID,
+        base: CKRecord? = nil,
+        source: RecordSource = .device
+    ) -> CKRecord {
         let record = canvas(base: base, type: recordType(for: .visit), recordName: visit.id, in: zoneID)
+        // Carried explicitly: a stay added by hand must arrive on the other device
+        // still marked manual, or reconciliation there is free to shadow it.
+        record[Field.source] = source.rawValue as NSString
         record[Field.start] = visit.start as NSDate
         record[Field.end] = visit.end as NSDate
         record[Field.placeKey] = visit.placeKey as NSString
@@ -196,6 +204,11 @@ enum TimelineRecordMapper {
 
     // MARK: - Record → row
 
+    /// Older records predate the field and were all device recordings.
+    static func source(from record: CKRecord) -> RecordSource {
+        RecordSource(rawValue: record[Field.source] as? String ?? "") ?? .device
+    }
+
     static func visit(from record: CKRecord) -> TimelineVisit? {
         guard record.recordType == recordType(for: .visit),
               let start = record[Field.start] as? Date,
@@ -261,15 +274,20 @@ enum TimelineRecordMapper {
     static func batch(from records: [CKRecord]) -> (
         rows: TimelineBatch,
         names: [String: PlaceIdentityName],
-        merges: [String: PlaceIdentityMerge]
+        merges: [String: PlaceIdentityMerge],
+        visitSources: [String: RecordSource]
     ) {
         var rows = TimelineBatch(visits: [], activities: [], paths: [])
         var names: [String: PlaceIdentityName] = [:]
         var merges: [String: PlaceIdentityMerge] = [:]
+        var visitSources: [String: RecordSource] = [:]
         for record in records {
             switch kind(forRecordType: record.recordType) {
             case .visit:
-                if let visit = visit(from: record) { rows.visits.append(visit) }
+                if let visit = visit(from: record) {
+                    rows.visits.append(visit)
+                    visitSources[visit.id] = source(from: record)
+                }
             case .activity:
                 if let activity = activity(from: record) { rows.activities.append(activity) }
             case .path:
@@ -282,7 +300,7 @@ enum TimelineRecordMapper {
                 continue
             }
         }
-        return (rows, names, merges)
+        return (rows, names, merges, visitSources)
     }
 
     private static func coordinate(_ record: CKRecord, _ latField: String, _ lonField: String) -> CLLocationCoordinate2D? {

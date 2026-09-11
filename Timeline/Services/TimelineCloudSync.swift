@@ -189,7 +189,12 @@ extension TimelineCloudSync: CKSyncEngineDelegate {
         }
         for visit in batch.visits {
             let key = name(.visit, visit.id)
-            records[key] = TimelineRecordMapper.record(for: visit, in: zoneID, base: bases[key])
+            records[key] = TimelineRecordMapper.record(
+                for: visit,
+                in: zoneID,
+                base: bases[key],
+                source: batch.visitSources[visit.id] ?? .device
+            )
         }
         for activity in batch.activities {
             let key = name(.activity, activity.id)
@@ -225,7 +230,7 @@ extension TimelineCloudSync: CKSyncEngineDelegate {
                 TimelineRecordMapper.encodeSystemFields(record)
             )
         }
-        try? await database.applyRemote(parsed.rows)
+        try? await database.applyRemote(parsed.rows, visitSources: parsed.visitSources)
         for (key, name) in parsed.names {
             _ = try? await database.applyPlaceNameIfNewer(
                 placeKey: key,

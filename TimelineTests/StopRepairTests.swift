@@ -186,3 +186,87 @@ final class InvalidVisitPurgeTests: XCTestCase {
         XCTAssertEqual(queued, 0, "a clean library should queue nothing")
     }
 }
+
+/// A stay begins where the journey to it ended. Core Motion records travel from
+/// the coprocessor without needing location, so this evidence exists exactly when
+/// fixes do not — the first morning after Always is granted.
+final class TripBoundedArrivalTests: XCTestCase {
+    private let home = CLLocationCoordinate2D(latitude: 49.2645, longitude: -123.2460)
+    private let origin = Date(timeIntervalSince1970: 1_800_000_000)
+
+    private func halfSeenStop(departureMinutes: Double) -> CapturedStop {
+        CapturedStop(
+            coordinate: home,
+            horizontalAccuracy: 65,
+            start: origin.addingTimeInterval(departureMinutes * 60),
+            end: origin.addingTimeInterval(departureMinutes * 60),
+            arrivalIsKnown: false
+        )
+    }
+
+    func testTheStayStartsWhereTheDriveHomeEnded() {
+        // The real shape of the morning: drove out 08:35, back 08:55, left again
+        // 10:35. Without the trip we had nothing; with it the stay is 08:55–10:35.
+        let droveHomeAt = origin.addingTimeInterval(55 * 60)
+        let repaired = StopRepair.repaired(
+            halfSeenStop(departureMinutes: 155),
+            openStart: nil,
+            fixes: [],
+            previousTripEnd: droveHomeAt
+        )
+        XCTAssertEqual(repaired?.start, droveHomeAt)
+        XCTAssertEqual(repaired?.duration, 100 * 60)
+    }
+
+    func testAWatchedArrivalStillBeatsTheTrip() {
+        let watched = origin.addingTimeInterval(60 * 60)
+        let repaired = StopRepair.repaired(
+            halfSeenStop(departureMinutes: 155),
+            openStart: watched,
+            fixes: [],
+            previousTripEnd: origin.addingTimeInterval(55 * 60)
+        )
+        XCTAssertEqual(repaired?.start, watched, "what we saw outranks what we inferred")
+    }
+
+    func testTheTripBeatsTheFixesWhenBothExist() {
+        // Fixes only start once location is permitted, so they can begin long
+        // after the arrival they are supposed to date.
+        let fixes = [
+            CapturedFix(
+                coordinate: home,
+                timestamp: origin.addingTimeInterval(100 * 60),
+                horizontalAccuracy: 30,
+                speed: 0
+            )
+        ]
+        let repaired = StopRepair.repaired(
+            halfSeenStop(departureMinutes: 155),
+            openStart: nil,
+            fixes: fixes,
+            previousTripEnd: origin.addingTimeInterval(55 * 60)
+        )
+        XCTAssertEqual(repaired?.start, origin.addingTimeInterval(55 * 60))
+    }
+
+    func testAStaleTripIsNotEvidence() {
+        // A trip from days ago says nothing about today's stay.
+        let repaired = StopRepair.repaired(
+            halfSeenStop(departureMinutes: 155),
+            openStart: nil,
+            fixes: [],
+            previousTripEnd: origin.addingTimeInterval(-3 * 24 * 60 * 60)
+        )
+        XCTAssertEqual(repaired?.duration, StopRepair.unknownArrivalFallback)
+    }
+
+    func testATripEndingAfterTheDepartureIsIgnored() {
+        let repaired = StopRepair.repaired(
+            halfSeenStop(departureMinutes: 155),
+            openStart: nil,
+            fixes: [],
+            previousTripEnd: origin.addingTimeInterval(200 * 60)
+        )
+        XCTAssertEqual(repaired?.duration, StopRepair.unknownArrivalFallback)
+    }
+}

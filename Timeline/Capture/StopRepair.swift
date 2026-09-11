@@ -24,7 +24,8 @@ enum StopRepair {
     static func repaired(
         _ stop: CapturedStop,
         openStart: Date?,
-        fixes: [CapturedFix]
+        fixes: [CapturedFix],
+        previousTripEnd: Date? = nil
     ) -> CapturedStop? {
         guard let end = stop.end else { return stop }
 
@@ -34,6 +35,7 @@ enum StopRepair {
                 departure: end,
                 coordinate: stop.coordinate,
                 openStart: openStart,
+                previousTripEnd: previousTripEnd,
                 fixes: fixes
             )
             repaired.arrivalIsKnown = true
@@ -45,18 +47,27 @@ enum StopRepair {
         return repaired
     }
 
-    /// Best evidence first: a stay we watched begin, then the earliest fix that
-    /// puts us here, then a plain assumption.
+    /// Best evidence first: a stay we watched begin, then the moment the journey
+    /// here ended, then the earliest fix that puts us here, then an assumption.
+    ///
+    /// The trip is the strong one. A stay begins when travelling stops, and Core
+    /// Motion records travel from the coprocessor without needing location at all
+    /// — so it is available precisely when fixes are not, which is the first
+    /// morning after Always is granted.
     static func inferredArrival(
         departure: Date,
         coordinate: CLLocationCoordinate2D,
         openStart: Date?,
+        previousTripEnd: Date? = nil,
         fixes: [CapturedFix]
     ) -> Date {
         let earliestAllowed = departure.addingTimeInterval(-longestInferredStay)
 
         if let openStart, openStart < departure, openStart >= earliestAllowed {
             return openStart
+        }
+        if let previousTripEnd, previousTripEnd < departure, previousTripEnd >= earliestAllowed {
+            return previousTripEnd
         }
         if let arrival = firstFixNearby(
             coordinate: coordinate,

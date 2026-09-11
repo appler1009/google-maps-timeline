@@ -187,9 +187,22 @@ final class TimelineRecorder {
 
         // CoreLocation can report a stay it only half saw. Repair it from what we
         // know before writing anything, and refuse it if it still cannot be placed.
-        let dayStart = Calendar.current.startOfDay(for: stop.end ?? now())
-        let fixes = (try? await database.fixes(from: dayStart, to: stop.end ?? now())) ?? []
-        guard let usable = StopRepair.repaired(stop, openStart: known?.stop.start, fixes: fixes) else {
+        let departure = stop.end ?? now()
+        let dayStart = Calendar.current.startOfDay(for: departure)
+        let fixes = (try? await database.fixes(from: dayStart, to: departure)) ?? []
+        // A stay begins where the journey to it ended, and Core Motion knows that
+        // even when location was not permitted yet.
+        let recentTrips = (try? await database.activities(
+            from: departure.addingTimeInterval(-StopRepair.longestInferredStay),
+            to: departure
+        )) ?? []
+        let previousTripEnd = recentTrips.map(\.end).filter { $0 <= departure }.max()
+        guard let usable = StopRepair.repaired(
+            stop,
+            openStart: known?.stop.start,
+            fixes: fixes,
+            previousTripEnd: previousTripEnd
+        ) else {
             TimelineLog.info(
                 "stay discarded",
                 ["placeKey": placeKey, "reason": "no usable arrival time"]

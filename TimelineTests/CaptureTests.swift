@@ -2051,3 +2051,71 @@ final class RecordNamespacingTests: XCTestCase {
         XCTAssertEqual(id.recordName, record.recordID.recordName, "the queue and the record must name the same thing")
     }
 }
+
+// MARK: - A row keeps its source across devices
+
+final class VisitSourceSyncTests: XCTestCase {
+    private let zoneID = CKRecordZone.ID(zoneName: TimelineRecordMapper.zoneName, ownerName: CKCurrentUserDefaultName)
+    private let origin = Date(timeIntervalSince1970: 1_800_000_000)
+
+    private func visit(_ id: String) -> TimelineVisit {
+        TimelineVisit(
+            id: id,
+            start: origin,
+            end: origin.addingTimeInterval(600),
+            coordinate: home,
+            semanticType: nil,
+            placeKey: "school"
+        )
+    }
+
+    func testAHandAddedStayArrivesStillMarkedManual() throws {
+        // Otherwise reconciliation on the receiving device is free to shadow it.
+        let record = TimelineRecordMapper.record(for: visit("mv1"), in: zoneID, source: .manual)
+        XCTAssertEqual(TimelineRecordMapper.source(from: record), .manual)
+
+        let parsed = TimelineRecordMapper.batch(from: [record])
+        XCTAssertEqual(parsed.visitSources["mv1"], .manual)
+    }
+
+    func testAnImportedStayKeepsItsSourceToo() {
+        let record = TimelineRecordMapper.record(for: visit("g1"), in: zoneID, source: .google)
+        XCTAssertEqual(TimelineRecordMapper.source(from: record), .google)
+    }
+
+    func testARecordWithoutTheFieldIsTreatedAsADeviceRecording() {
+        // Records written before the field existed are all device recordings.
+        let record = CKRecord(
+            recordType: "Visit",
+            recordID: CKRecord.ID(recordName: "old", zoneID: zoneID)
+        )
+        XCTAssertEqual(TimelineRecordMapper.source(from: record), .device)
+    }
+
+    func testApplyingRemoteRowsPreservesEachSource() async throws {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("srcsync-\(UUID().uuidString).sqlite")
+        defer { try? FileManager.default.removeItem(at: url) }
+        let db = TimelineDatabase(fileURL: url)
+
+        try await db.applyRemote(
+            TimelineBatch(visits: [visit("mv1"), visit("dv1")], activities: [], paths: []),
+            visitSources: ["mv1": .manual]
+        )
+
+        let sources = try await db.visitSources(ids: ["mv1", "dv1"])
+        XCTAssertEqual(sources["mv1"], .manual, "a hand-added stay must not be demoted on arrival")
+        XCTAssertEqual(sources["dv1"], .device, "and an unlabelled one stays a recording")
+    }
+
+    func testTheSourceTravelsWithTheOutgoingBatch() async throws {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("srcbatch-\(UUID().uuidString).sqlite")
+        defer { try? FileManager.default.removeItem(at: url) }
+        let db = TimelineDatabase(fileURL: url)
+
+        try await db.record(batch: TimelineBatch(visits: [visit("mv1")], activities: [], paths: []), source: .manual)
+        let batch = try await db.changeBatch()
+        XCTAssertEqual(batch.visitSources["mv1"], .manual, "the sender has to say which source it is")
+    }
+}

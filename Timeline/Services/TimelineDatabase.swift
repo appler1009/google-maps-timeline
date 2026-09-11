@@ -92,9 +92,9 @@ actor TimelineDatabase {
         guard !batch.visits.isEmpty || !batch.activities.isEmpty || !batch.paths.isEmpty else { return }
         try exec("BEGIN IMMEDIATE")
         do {
-            try upsertVisits(batch.visits, db: db, source: .device)
-            try upsertActivities(batch.activities, db: db, source: .device)
-            try upsertPaths(batch.paths, db: db, source: .device)
+            try upsertVisits(batch.visits, db: db, source: source)
+            try upsertActivities(batch.activities, db: db, source: source)
+            try upsertPaths(batch.paths, db: db, source: source)
             try exec("COMMIT")
         } catch {
             sqlite3_exec(db, "ROLLBACK", nil, nil, nil)
@@ -176,6 +176,25 @@ actor TimelineDatabase {
     func fixCount(since date: Date? = nil) throws -> Int {
         guard let date else { return try scalar("SELECT COUNT(*) FROM fixes") }
         return try scalar("SELECT COUNT(*) FROM fixes WHERE t >= \(date.timeIntervalSince1970)")
+    }
+
+    /// Which source each visit came from, for the rows about to be sent. The
+    /// source is a property of the row, not of the device sending it — a stay
+    /// added by hand stays manual wherever it lands.
+    func visitSources(ids: [String]) throws -> [String: RecordSource] {
+        guard let db, !ids.isEmpty else { return [:] }
+        var statement: OpaquePointer?
+        defer { sqlite3_finalize(statement) }
+        guard sqlite3_prepare_v2(db, "SELECT id, source FROM visits", -1, &statement, nil) == SQLITE_OK else {
+            return [:]
+        }
+        let wanted = Set(ids)
+        var found: [String: RecordSource] = [:]
+        while sqlite3_step(statement) == SQLITE_ROW {
+            guard let id = text(statement, 0), wanted.contains(id) else { continue }
+            found[id] = RecordSource(rawValue: text(statement, 1) ?? "") ?? .device
+        }
+        return found
     }
 
     func shadowedVisitCount() throws -> Int {
@@ -386,6 +405,7 @@ actor TimelineDatabase {
         let visitIDs = ids(.visit)
         if !visitIDs.isEmpty {
             batch.visits = try loadVisits().filter { visitIDs.contains($0.id) }
+            batch.visitSources = try visitSources(ids: Array(visitIDs))
         }
         let activityIDs = ids(.activity)
         if !activityIDs.isEmpty {
@@ -563,14 +583,19 @@ actor TimelineDatabase {
 
     /// Rows that arrived from another device. Written exactly like local rows but
     /// without queueing themselves to be sent straight back.
-    func applyRemote(_ batch: TimelineBatch) throws {
+    func applyRemote(_ batch: TimelineBatch, visitSources: [String: RecordSource] = [:]) throws {
         guard let db else { throw TimelineDatabaseError.open }
         guard !batch.visits.isEmpty || !batch.activities.isEmpty || !batch.paths.isEmpty else { return }
         try exec("BEGIN IMMEDIATE")
         do {
             try applyingRemotely {
-                // Remote rows keep whatever source the sending device recorded.
-                try upsertVisits(batch.visits, db: db, source: .device)
+                // A row keeps the source it was written with. Forcing `.device`
+                // here stripped a hand-added stay of the protection that stops
+                // reconciliation shadowing it.
+                let grouped = Dictionary(grouping: batch.visits) { visitSources[$0.id] ?? .device }
+                for (source, visits) in grouped {
+                    try upsertVisits(visits, db: db, source: source)
+                }
                 try upsertActivities(batch.activities, db: db, source: .device)
                 try upsertPaths(batch.paths, db: db, source: .device)
             }
@@ -1242,6 +1267,12 @@ actor TimelineDatabase {
                          AND excluded.semantic_type NOT IN ('', 'Unknown', 'unknown')
                     THEN excluded.semantic_type
                     ELSE visits.semantic_type
+                END,
+                -- Hand-added wins from either side: a later recording must not
+                -- quietly demote a stay someone entered themselves.
+                source = CASE
+                    WHEN excluded.source = 'manual' OR visits.source = 'manual' THEN 'manual'
+                    ELSE excluded.source
                 END
             """
         guard sqlite3_prepare_v2(db, sql, -1, &statement, nil) == SQLITE_OK else {
