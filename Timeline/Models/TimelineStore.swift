@@ -383,6 +383,11 @@ final class TimelineStore {
             if isLoading { return }
             await refreshPlaceNames()
             await pullPlaceIdentityFromCloud()
+            // A stay that ends before it starts is never legitimate, and one
+            // already written would otherwise keep coming back from the server.
+            if let purged = try? await database.purgeInvalidVisits(), purged > 0 {
+                TimelineLog.info("invalid stays removed", ["count": "\(purged)"])
+            }
             if let batch = try? await database.loadBatch() {
                 if isLoading { return }
                 let name = (try? await database.latestSourceName()) ?? "Library"

@@ -15,14 +15,17 @@
 		10EA88841A4ED1F827A9CD4F /* Palette.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9E1B28FC5BF045913929FD4 /* Palette.swift */; };
 		11AF1B6F32E8950126340FB4 /* HealthEnrichment.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20FA85C7156F368DF009D964 /* HealthEnrichment.swift */; };
 		1206EA7A74C5A49A16618591 /* LuxCompanionTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0FE6242695DDA947697A34B /* LuxCompanionTransport.swift */; };
+		129247D7D7F1F4311CD3BCA6 /* StopRepair.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1E0B1C927BDA1F4B664231A /* StopRepair.swift */; };
 		16FB90A061C6788CA6F02362 /* CloudSyncController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2335B30CA9257E726C7F2CFD /* CloudSyncController.swift */; };
 		18B9EA1106022C3C35237159 /* RouteSnapperTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 71B4F471B4A574BC0ABB38C6 /* RouteSnapperTests.swift */; };
 		18E2A4AA27EBF3384CC2D4CB /* PlaceClusterer.swift in Sources */ = {isa = PBXBuildFile; fileRef = E62991B0B2E82A1FDD015746 /* PlaceClusterer.swift */; };
+		1ACE10F721E4F439B3D73E69 /* StopRepairTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB8F7FB10F4B9C7394C7A61D /* StopRepairTests.swift */; };
 		1D8314A3B0A26F26DE99CCFE /* LuxPhotoLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F42083B6EA50D85B014CFA4 /* LuxPhotoLink.swift */; };
 		1EF12CF0AC955A2127C038B6 /* TimelineLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 42F77A3F26A639DA1D9B8472 /* TimelineLog.swift */; };
 		1F23CB5DC494DCD3AA2BA9F7 /* PlaceMergeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B5D5FCA5DDE8A0A4A770F452 /* PlaceMergeTests.swift */; };
 		2496F92C181ED8DFFD4390BD /* CloudSyncController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2335B30CA9257E726C7F2CFD /* CloudSyncController.swift */; };
 		2F4D77765CE73711F545132A /* VisitPhotoStrip.swift in Sources */ = {isa = PBXBuildFile; fileRef = 19D6BC5356EA89FD2F53C904 /* VisitPhotoStrip.swift */; };
+		3050C9D536B6A55CDE27CE66 /* StopRepairTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB8F7FB10F4B9C7394C7A61D /* StopRepairTests.swift */; };
 		322C0C3A16299B0F506F72F8 /* LuxPhotoLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F42083B6EA50D85B014CFA4 /* LuxPhotoLink.swift */; };
 		3249DE45E8464069B727AD6F /* VisitNotificationPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = CD803A969D6C0BD2EF6C8543 /* VisitNotificationPolicy.swift */; };
 		33E38AD3DAADA7EACA52A5B0 /* FoundationModelChooser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7D8EC6E68BB9F0E3DFDBE4C4 /* FoundationModelChooser.swift */; };
@@ -64,6 +67,7 @@
 		6DCB9C1145A01D9CFDD101B9 /* MarkerMapTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E0F49A8E7037AC3A6458AD93 /* MarkerMapTests.swift */; };
 		6FF2F358C44A36A7DC05B478 /* TimelineDatabase.swift in Sources */ = {isa = PBXBuildFile; fileRef = A6C2E6A823AF58F47F778B43 /* TimelineDatabase.swift */; };
 		703D4BE2FDCEC6A644E9F46A /* TrackingSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 668EEBFE37A08864E7B86FB0 /* TrackingSettings.swift */; };
+		720EB8925A1E08FD9695D0FC /* StopRepair.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1E0B1C927BDA1F4B664231A /* StopRepair.swift */; };
 		73E631A74E00F2CE83BC3DAE /* TimelineRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3C9897691FC0C05406D4C21 /* TimelineRecorder.swift */; };
 		74E4753A8141BD410C95C7DF /* LuxCompanionClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 779DB6859B7B0D720B7E4A39 /* LuxCompanionClient.swift */; };
 		787BF16488900AB0D19B37A1 /* PlaceClusterer.swift in Sources */ = {isa = PBXBuildFile; fileRef = E62991B0B2E82A1FDD015746 /* PlaceClusterer.swift */; };
@@ -250,9 +254,11 @@
 		CD803A969D6C0BD2EF6C8543 /* VisitNotificationPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VisitNotificationPolicy.swift; sourceTree = "<group>"; };
 		D5BA77125DBF486853623401 /* VisitTimingGuesser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VisitTimingGuesser.swift; sourceTree = "<group>"; };
 		D9CA19DBABF0B2606FC1E0E8 /* Version.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Version.xcconfig; sourceTree = "<group>"; };
+		DB8F7FB10F4B9C7394C7A61D /* StopRepairTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StopRepairTests.swift; sourceTree = "<group>"; };
 		DF833A290D79E26BC71C097D /* TimelineRecordMapper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimelineRecordMapper.swift; sourceTree = "<group>"; };
 		E04A92A7BC968DEE2C1E98C7 /* TimelineParserTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimelineParserTests.swift; sourceTree = "<group>"; };
 		E0F49A8E7037AC3A6458AD93 /* MarkerMapTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkerMapTests.swift; sourceTree = "<group>"; };
+		E1E0B1C927BDA1F4B664231A /* StopRepair.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StopRepair.swift; sourceTree = "<group>"; };
 		E27C0E12EC51D3A3D0B395AC /* SidebarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarView.swift; sourceTree = "<group>"; };
 		E296CA76980924F3017D7F8F /* VisitNamingContextBuilder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VisitNamingContextBuilder.swift; sourceTree = "<group>"; };
 		E62991B0B2E82A1FDD015746 /* PlaceClusterer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaceClusterer.swift; sourceTree = "<group>"; };
@@ -298,6 +304,7 @@
 				7F28B4F667D6FE05CE4975FF /* PlaceRankingTests.swift */,
 				C3743ECF459145619A53BAFE /* RoutePlannerTests.swift */,
 				71B4F471B4A574BC0ABB38C6 /* RouteSnapperTests.swift */,
+				DB8F7FB10F4B9C7394C7A61D /* StopRepairTests.swift */,
 				9E6BAFAEE844C25B64EFCA57 /* TimelineLogTests.swift */,
 				E04A92A7BC968DEE2C1E98C7 /* TimelineParserTests.swift */,
 				23B1FD9FB2E0EE4DEDC6C473 /* VisitTimingGuesserTests.swift */,
@@ -407,6 +414,7 @@
 				E62991B0B2E82A1FDD015746 /* PlaceClusterer.swift */,
 				4781B5D31C58B47CB454B42F /* PlaceGuess.swift */,
 				5D2CF03D1D5D400E2DAF6AB3 /* PlaceRanking.swift */,
+				E1E0B1C927BDA1F4B664231A /* StopRepair.swift */,
 				010CFC73A281BD14E50E36E1 /* TimelineReconciler.swift */,
 				C3C9897691FC0C05406D4C21 /* TimelineRecorder.swift */,
 				668EEBFE37A08864E7B86FB0 /* TrackingSettings.swift */,
@@ -721,6 +729,7 @@
 				931622D8BC51D41E309E61BE /* RoutePlanner.swift in Sources */,
 				D6A7FF8397BE356AD52900B5 /* RouteSnapper.swift in Sources */,
 				4EDBBF8CCA6D77BC993A4BCC /* SidebarView.swift in Sources */,
+				720EB8925A1E08FD9695D0FC /* StopRepair.swift in Sources */,
 				983E0828BD8950C6868F85C9 /* TimelineApp.swift in Sources */,
 				680588BE2CA48256095862A7 /* TimelineAppScene.swift in Sources */,
 				CC411E381CDFA2707E218666 /* TimelineChangeLog.swift in Sources */,
@@ -781,6 +790,7 @@
 				F7982D38B7D6F507D5347CEB /* RoutePlanner.swift in Sources */,
 				EE77B27F0E6DF16DDF11864E /* RouteSnapper.swift in Sources */,
 				45AB66324806BAD817122ABC /* SidebarView.swift in Sources */,
+				129247D7D7F1F4311CD3BCA6 /* StopRepair.swift in Sources */,
 				61E057B94A0331DDD5FB506B /* TimelineApp.swift in Sources */,
 				F6EB15E5E9A0246EE425675B /* TimelineAppScene.swift in Sources */,
 				579F5F748B4FA8F674CCD350 /* TimelineChangeLog.swift in Sources */,
@@ -836,6 +846,7 @@
 				B0F50AEE842775C1BD588A3F /* PlaceRankingTests.swift in Sources */,
 				6480458E08F5E4B3A0C83A58 /* RoutePlannerTests.swift in Sources */,
 				FC0A7F53D600B675C1DD07A5 /* RouteSnapperTests.swift in Sources */,
+				3050C9D536B6A55CDE27CE66 /* StopRepairTests.swift in Sources */,
 				10065D0E209B87E15CF64C01 /* TimelineLogTests.swift in Sources */,
 				886D2DB443AF6A8852FE2B57 /* TimelineParserTests.swift in Sources */,
 				8D11DC7C6C90AA628A37BD32 /* VisitTimingGuesserTests.swift in Sources */,
@@ -853,6 +864,7 @@
 				0BE5BF076CDD93411DC6D9AA /* PlaceRankingTests.swift in Sources */,
 				C36CFB977724E83B2402615A /* RoutePlannerTests.swift in Sources */,
 				18B9EA1106022C3C35237159 /* RouteSnapperTests.swift in Sources */,
+				1ACE10F721E4F439B3D73E69 /* StopRepairTests.swift in Sources */,
 				F52E8C9EAF1FD47A26F835A0 /* TimelineLogTests.swift in Sources */,
 				63F9B3CE39E7714EC22FC434 /* TimelineParserTests.swift in Sources */,
 				C58CE72AA30AD5D61AAA6E1A /* VisitTimingGuesserTests.swift in Sources */,

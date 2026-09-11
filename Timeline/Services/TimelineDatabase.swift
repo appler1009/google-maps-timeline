@@ -182,6 +182,41 @@ actor TimelineDatabase {
         try scalar("SELECT COUNT(*) FROM visits WHERE shadowed = 1")
     }
 
+    /// Remove stays that end before they start. Such a row is never legitimate —
+    /// it came from an arrival that was guessed rather than observed — and it
+    /// sorts into the wrong part of the day, making everything around it read as
+    /// nonsense.
+    ///
+    /// The deletion is logged so it reaches the other devices too. Deleting only
+    /// locally would leave the bad row on the server to be fetched straight back.
+    @discardableResult
+    func purgeInvalidVisits() throws -> Int {
+        guard let db else { return 0 }
+        var statement: OpaquePointer?
+        defer { sqlite3_finalize(statement) }
+        guard sqlite3_prepare_v2(db, "SELECT id FROM visits WHERE end <= start", -1, &statement, nil) == SQLITE_OK else {
+            return 0
+        }
+        var ids: [String] = []
+        while sqlite3_step(statement) == SQLITE_ROW {
+            if let id = text(statement, 0) { ids.append(id) }
+        }
+        guard !ids.isEmpty else { return 0 }
+
+        try exec("BEGIN IMMEDIATE")
+        do {
+            for id in ids {
+                try exec("DELETE FROM visits WHERE id = \(quote(id))")
+                try logChange(.visit, id, .delete)
+            }
+            try exec("COMMIT")
+        } catch {
+            sqlite3_exec(db, "ROLLBACK", nil, nil, nil)
+            throw error
+        }
+        return ids.count
+    }
+
     /// Every place we could snap a new stay onto, with how often it was visited
     /// and whether it already carries a name worth not asking about again.
     func placeAnchors() throws -> [PlaceAnchor] {

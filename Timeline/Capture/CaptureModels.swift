@@ -64,8 +64,13 @@ enum TrackingMode: String, CaseIterable, Identifiable {
 struct CapturedStop: Equatable {
     let coordinate: CLLocationCoordinate2D
     let horizontalAccuracy: CLLocationAccuracy
-    let start: Date
+    var start: Date
     var end: Date?
+    /// False when CoreLocation reported the arrival as `.distantPast` — you were
+    /// already there before monitoring began, so it knows you left but not when
+    /// you got there. `start` is then only a placeholder for the repair to
+    /// replace, never a time to write down.
+    var arrivalIsKnown = true
 
     var duration: TimeInterval {
         guard let end else { return 0 }
