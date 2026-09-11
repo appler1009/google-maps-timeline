@@ -28,3 +28,30 @@ final class TrackingSettingsUITests: XCTestCase {
     }
     #endif
 }
+
+/// Launch behaviour: a tracking app should show what it recorded, not a list of
+/// months to drill through.
+final class LaunchOnTodayUITests: XCTestCase {
+    override func setUpWithError() throws {
+        continueAfterFailure = false
+    }
+
+    #if os(iOS)
+    func testLaunchOpensTheMapRatherThanTheDateList() {
+        let app = XCUIApplication()
+        app.launchArguments = ["loadFixture", "openOnToday"]
+        app.launchEnvironment["TIMELINE_UI_TESTING"] = "1"
+        app.launchEnvironment["TIMELINE_LOAD_FIXTURE"] = "1"
+        app.launchEnvironment["TIMELINE_OPEN_ON_TODAY"] = "1"
+        app.launch()
+
+        let map = app.descendants(matching: .any).matching(identifier: "timeline-map").firstMatch
+        XCTAssertTrue(map.waitForExistence(timeout: 20), "the map should be on screen without tapping a day")
+        XCTAssertTrue(
+            app.descendants(matching: .any).matching(identifier: "back-to-list").firstMatch
+                .waitForExistence(timeout: 5),
+            "and there should be a way back to the list"
+        )
+    }
+    #endif
+}

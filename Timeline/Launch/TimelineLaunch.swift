@@ -10,6 +10,13 @@ enum TimelineLaunch {
         return env("TIMELINE_LOAD_FIXTURE") || flag("loadFixture") || isUITesting
     }
 
+    /// iOS opens straight onto today's map. UI tests that assert list behaviour
+    /// opt out by default and back in explicitly, so both paths stay testable.
+    static var opensOnToday: Bool {
+        if env("TIMELINE_OPEN_ON_TODAY") || flag("openOnToday") { return true }
+        return !isUITesting
+    }
+
     private static func env(_ key: String) -> Bool {
         let value = ProcessInfo.processInfo.environment[key]
         return value == "1" || value == "true" || value == "YES"

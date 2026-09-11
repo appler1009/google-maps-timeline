@@ -16,6 +16,7 @@ struct TrackingSettingsView: View {
     @State private var locationStatus = CLLocationManager().authorizationStatus
     @State private var notificationsAllowed = false
     @State private var motionAllowed = CMMotionActivityManager.authorizationStatus() == .authorized
+    @State private var recordedToday = 0
 
     private let recorder = TimelineRecorder.shared
 
@@ -95,8 +96,8 @@ struct TrackingSettingsView: View {
                             Text(recorder.isRunning ? "On" : "Off")
                                 .foregroundStyle(Palette.muted)
                         }
-                        LabeledContent("Stays this session") {
-                            Text("\(recorder.recordedVisitCount)")
+                        LabeledContent("Stays recorded today") {
+                            Text("\(recordedToday)")
                                 .foregroundStyle(Palette.muted)
                                 .monospacedDigit()
                         }
@@ -111,7 +112,10 @@ struct TrackingSettingsView: View {
                     Button("Done") { dismiss() }
                 }
             }
-            .task { await refreshPermissions() }
+            .task {
+                await refreshPermissions()
+                recordedToday = await recorder.recordedToday()
+            }
         }
     }
 

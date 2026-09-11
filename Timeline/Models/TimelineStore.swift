@@ -63,6 +63,9 @@ final class TimelineStore {
     }
     private static let shadowedKey = "showsShadowedImports"
     private var isApplyingCloudIdentity = false
+    /// Opening straight onto today's map is a launch behaviour, not something to
+    /// redo every time a merge or a recorded stay reloads the library.
+    private var hasOpenedOnLaunch = false
     private(set) var monthGroups: [(month: Date, days: [DayRecord])] = []
     private(set) var yearOptions: [Int] = []
     private(set) var monthOptions: [Int] = []
@@ -530,6 +533,7 @@ final class TimelineStore {
         routesByDay = [:]
         #if os(iOS)
         selectedDayID = nil
+        openTodayIfLaunching()
         #else
         selectedDayID = parsed.days.first?.day
         if let day = parsed.days.first {
@@ -538,6 +542,29 @@ final class TimelineStore {
         }
         #endif
     }
+
+    #if os(iOS)
+    /// Open on today, so a tracking app shows what it recorded rather than a list
+    /// of months. Falls back to the newest day there is — after a fresh import
+    /// that is usually a day in the past, which is still more useful than nothing.
+    private func openTodayIfLaunching() {
+        guard !hasOpenedOnLaunch else { return }
+        hasOpenedOnLaunch = true
+        guard TimelineLaunch.opensOnToday else { return }
+        let today = Calendar.current.startOfDay(for: Date())
+        guard let day = daysByID[today] ?? newestDay() else { return }
+        // Match the filters to the day being shown, or the sidebar would come
+        // back to a month that does not contain it.
+        filterYear = Calendar.current.component(.year, from: day.day)
+        filterMonth = 0
+        rebuildDateIndexes()
+        select(day: day)
+    }
+
+    private func newestDay() -> DayRecord? {
+        daysByID.values.max { $0.day < $1.day }
+    }
+    #endif
 
     private func refreshPlaceIdentity() async {
         placeNames = (try? await database.loadPlaceNames()) ?? placeNames

@@ -21,6 +21,9 @@ final class TimelineRecorder {
     static let shared = TimelineRecorder()
 
     private(set) var lastStopAt: Date?
+    /// Stays recorded since this process started. Useful in a log, misleading in
+    /// the UI — iOS relaunches the app in the background constantly, so it says
+    /// far more about the last relaunch than about the day.
     private(set) var recordedVisitCount = 0
     private(set) var isRunning = false
 
@@ -117,6 +120,12 @@ final class TimelineRecorder {
         await reconcileIfDue()
         try? await database.pruneFixes(before: now().addingTimeInterval(-Self.fixRetention))
         await deliverHeldSummaryIfNeeded()
+    }
+
+    /// What the Status row shows: stays recorded today, from the library.
+    func recordedToday(calendar: Calendar = .current) async -> Int {
+        let start = calendar.startOfDay(for: now())
+        return (try? await database.recordedVisitCount(since: start)) ?? 0
     }
 
     // MARK: - Stays

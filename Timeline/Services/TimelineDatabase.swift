@@ -141,6 +141,17 @@ actor TimelineDatabase {
         }
     }
 
+    /// Stays this device recorded on or after `date`. Read from the library
+    /// rather than counted in memory, so a background relaunch does not reset it.
+    func recordedVisitCount(since date: Date) throws -> Int {
+        try scalar(
+            """
+            SELECT COUNT(*) FROM visits
+            WHERE source = '\(RecordSource.device.rawValue)' AND start >= \(date.timeIntervalSince1970)
+            """
+        )
+    }
+
     func shadowedVisitCount() throws -> Int {
         try scalar("SELECT COUNT(*) FROM visits WHERE shadowed = 1")
     }
