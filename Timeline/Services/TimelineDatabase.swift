@@ -75,14 +75,244 @@ actor TimelineDatabase {
                 VALUES (\(quote(sourceName)), \(Date().timeIntervalSince1970), \(batch.visits.count), \(batch.activities.count), \(batch.paths.count))
                 """
             )
-            try upsertVisits(batch.visits, db: db)
-            try upsertActivities(batch.activities, db: db)
-            try upsertPaths(batch.paths, db: db)
+            try upsertVisits(batch.visits, db: db, source: .google)
+            try upsertActivities(batch.activities, db: db, source: .google)
+            try upsertPaths(batch.paths, db: db, source: .google)
             try exec("COMMIT")
         } catch {
             sqlite3_exec(db, "ROLLBACK", nil, nil, nil)
             throw error
         }
+    }
+
+    /// What the phone recorded. No `imports` row: this is not an import, and the
+    /// sidebar's source name should keep naming the last export the user opened.
+    func record(batch: TimelineBatch) throws {
+        guard let db else { throw TimelineDatabaseError.open }
+        guard !batch.visits.isEmpty || !batch.activities.isEmpty || !batch.paths.isEmpty else { return }
+        try exec("BEGIN IMMEDIATE")
+        do {
+            try upsertVisits(batch.visits, db: db, source: .device)
+            try upsertActivities(batch.activities, db: db, source: .device)
+            try upsertPaths(batch.paths, db: db, source: .device)
+            try exec("COMMIT")
+        } catch {
+            sqlite3_exec(db, "ROLLBACK", nil, nil, nil)
+            throw error
+        }
+    }
+
+    /// Every place we could snap a new stay onto, with how often it was visited
+    /// and whether it already carries a name worth not asking about again.
+    func placeAnchors() throws -> [PlaceAnchor] {
+        guard let db else { return [] }
+        var statement: OpaquePointer?
+        defer { sqlite3_finalize(statement) }
+        let sql = """
+            SELECT v.place_key,
+                   AVG(v.lat),
+                   AVG(v.lon),
+                   COUNT(*),
+                   MAX(CASE
+                       WHEN n.name IS NOT NULL AND n.name != '' THEN 1
+                       WHEN v.semantic_type IS NOT NULL
+                            AND v.semantic_type NOT IN ('', 'Unknown', 'unknown') THEN 1
+                       ELSE 0
+                   END)
+            FROM visits v
+            LEFT JOIN place_names n ON n.place_key = v.place_key
+            WHERE v.lat IS NOT NULL AND v.lon IS NOT NULL
+            GROUP BY v.place_key
+            """
+        guard sqlite3_prepare_v2(db, sql, -1, &statement, nil) == SQLITE_OK else {
+            throw TimelineDatabaseError.execute(errmsg())
+        }
+        let merges = try loadPlaceMerges()
+        var anchors: [String: PlaceAnchor] = [:]
+        while sqlite3_step(statement) == SQLITE_ROW {
+            guard let rawKey = text(statement, 0) else { continue }
+            let key = merges[rawKey] ?? rawKey
+            let coordinate = CLLocationCoordinate2D(
+                latitude: sqlite3_column_double(statement, 1),
+                longitude: sqlite3_column_double(statement, 2)
+            )
+            guard CLLocationCoordinate2DIsValid(coordinate) else { continue }
+            let count = Int(sqlite3_column_int64(statement, 3))
+            let named = sqlite3_column_int64(statement, 4) == 1
+            if let existing = anchors[key] {
+                anchors[key] = PlaceAnchor(
+                    placeKey: key,
+                    coordinate: existing.visitCount >= count ? existing.coordinate : coordinate,
+                    visitCount: existing.visitCount + count,
+                    isNamed: existing.isNamed || named
+                )
+            } else {
+                anchors[key] = PlaceAnchor(
+                    placeKey: key,
+                    coordinate: coordinate,
+                    visitCount: count,
+                    isNamed: named
+                )
+            }
+        }
+        return Array(anchors.values)
+    }
+
+    // MARK: - Recorder state
+
+    func openStop() throws -> OpenStop? {
+        guard let db else { return nil }
+        var statement: OpaquePointer?
+        defer { sqlite3_finalize(statement) }
+        guard sqlite3_prepare_v2(
+            db,
+            "SELECT start, lat, lon, h_accuracy, place_key FROM open_visit WHERE id = 1",
+            -1,
+            &statement,
+            nil
+        ) == SQLITE_OK else { return nil }
+        guard sqlite3_step(statement) == SQLITE_ROW else { return nil }
+        return OpenStop(
+            stop: CapturedStop(
+                coordinate: CLLocationCoordinate2D(
+                    latitude: sqlite3_column_double(statement, 1),
+                    longitude: sqlite3_column_double(statement, 2)
+                ),
+                horizontalAccuracy: sqlite3_column_double(statement, 3),
+                start: Date(timeIntervalSince1970: sqlite3_column_double(statement, 0)),
+                end: nil
+            ),
+            placeKey: text(statement, 4) ?? ""
+        )
+    }
+
+    func setOpenStop(_ stop: CapturedStop, placeKey: String) throws {
+        guard let db else { throw TimelineDatabaseError.open }
+        var statement: OpaquePointer?
+        defer { sqlite3_finalize(statement) }
+        guard sqlite3_prepare_v2(
+            db,
+            """
+            INSERT INTO open_visit (id, start, lat, lon, h_accuracy, place_key)
+            VALUES (1, ?, ?, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+                start = excluded.start,
+                lat = excluded.lat,
+                lon = excluded.lon,
+                h_accuracy = excluded.h_accuracy,
+                place_key = excluded.place_key
+            """,
+            -1,
+            &statement,
+            nil
+        ) == SQLITE_OK else { throw TimelineDatabaseError.execute(errmsg()) }
+        sqlite3_bind_double(statement, 1, stop.start.timeIntervalSince1970)
+        sqlite3_bind_double(statement, 2, stop.coordinate.latitude)
+        sqlite3_bind_double(statement, 3, stop.coordinate.longitude)
+        sqlite3_bind_double(statement, 4, stop.horizontalAccuracy)
+        sqlite3_bind_text(statement, 5, placeKey, -1, Self.transient)
+        guard sqlite3_step(statement) == SQLITE_DONE else {
+            throw TimelineDatabaseError.execute(errmsg())
+        }
+    }
+
+    func clearOpenStop() throws {
+        try exec("DELETE FROM open_visit")
+    }
+
+    func captureMark(_ name: String) throws -> Date? {
+        guard let db else { return nil }
+        var statement: OpaquePointer?
+        defer { sqlite3_finalize(statement) }
+        guard sqlite3_prepare_v2(db, "SELECT through FROM capture_marks WHERE name = ?", -1, &statement, nil) == SQLITE_OK else {
+            return nil
+        }
+        sqlite3_bind_text(statement, 1, name, -1, Self.transient)
+        guard sqlite3_step(statement) == SQLITE_ROW else { return nil }
+        return Date(timeIntervalSince1970: sqlite3_column_double(statement, 0))
+    }
+
+    func setCaptureMark(_ name: String, through: Date) throws {
+        guard let db else { throw TimelineDatabaseError.open }
+        var statement: OpaquePointer?
+        defer { sqlite3_finalize(statement) }
+        guard sqlite3_prepare_v2(
+            db,
+            """
+            INSERT INTO capture_marks (name, through) VALUES (?, ?)
+            ON CONFLICT(name) DO UPDATE SET through = MAX(capture_marks.through, excluded.through)
+            """,
+            -1,
+            &statement,
+            nil
+        ) == SQLITE_OK else { throw TimelineDatabaseError.execute(errmsg()) }
+        sqlite3_bind_text(statement, 1, name, -1, Self.transient)
+        sqlite3_bind_double(statement, 2, through.timeIntervalSince1970)
+        guard sqlite3_step(statement) == SQLITE_DONE else {
+            throw TimelineDatabaseError.execute(errmsg())
+        }
+    }
+
+    func appendFixes(_ fixes: [CapturedFix]) throws {
+        guard let db, !fixes.isEmpty else { return }
+        var statement: OpaquePointer?
+        defer { sqlite3_finalize(statement) }
+        guard sqlite3_prepare_v2(
+            db,
+            "INSERT OR REPLACE INTO fixes (t, lat, lon, h_accuracy, speed) VALUES (?, ?, ?, ?, ?)",
+            -1,
+            &statement,
+            nil
+        ) == SQLITE_OK else { throw TimelineDatabaseError.execute(errmsg()) }
+        for fix in fixes {
+            sqlite3_reset(statement)
+            sqlite3_clear_bindings(statement)
+            sqlite3_bind_double(statement, 1, fix.timestamp.timeIntervalSince1970)
+            sqlite3_bind_double(statement, 2, fix.coordinate.latitude)
+            sqlite3_bind_double(statement, 3, fix.coordinate.longitude)
+            sqlite3_bind_double(statement, 4, fix.horizontalAccuracy)
+            sqlite3_bind_double(statement, 5, fix.speed)
+            guard sqlite3_step(statement) == SQLITE_DONE else {
+                throw TimelineDatabaseError.execute(errmsg())
+            }
+        }
+    }
+
+    func fixes(from: Date, to: Date) throws -> [CapturedFix] {
+        guard let db else { return [] }
+        var statement: OpaquePointer?
+        defer { sqlite3_finalize(statement) }
+        guard sqlite3_prepare_v2(
+            db,
+            "SELECT t, lat, lon, h_accuracy, speed FROM fixes WHERE t >= ? AND t <= ? ORDER BY t",
+            -1,
+            &statement,
+            nil
+        ) == SQLITE_OK else { throw TimelineDatabaseError.execute(errmsg()) }
+        sqlite3_bind_double(statement, 1, from.timeIntervalSince1970)
+        sqlite3_bind_double(statement, 2, to.timeIntervalSince1970)
+        var rows: [CapturedFix] = []
+        while sqlite3_step(statement) == SQLITE_ROW {
+            let coordinate = CLLocationCoordinate2D(
+                latitude: sqlite3_column_double(statement, 1),
+                longitude: sqlite3_column_double(statement, 2)
+            )
+            guard CLLocationCoordinate2DIsValid(coordinate) else { continue }
+            rows.append(
+                CapturedFix(
+                    coordinate: coordinate,
+                    timestamp: Date(timeIntervalSince1970: sqlite3_column_double(statement, 0)),
+                    horizontalAccuracy: sqlite3_column_double(statement, 3),
+                    speed: sqlite3_column_double(statement, 4)
+                )
+            )
+        }
+        return rows
+    }
+
+    /// Raw fixes are scaffolding for the paths we already built; keep a week.
+    func pruneFixes(before date: Date) throws {
+        try exec("DELETE FROM fixes WHERE t < \(date.timeIntervalSince1970)")
     }
 
     func hop(key: String) throws -> [CLLocationCoordinate2D]? {
@@ -471,21 +701,62 @@ actor TimelineDatabase {
                 to_key TEXT NOT NULL,
                 updated_at REAL NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS fixes (
+                t REAL PRIMARY KEY,
+                lat REAL NOT NULL,
+                lon REAL NOT NULL,
+                h_accuracy REAL NOT NULL,
+                speed REAL NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS open_visit (
+                id INTEGER PRIMARY KEY CHECK (id = 1),
+                start REAL NOT NULL,
+                lat REAL NOT NULL,
+                lon REAL NOT NULL,
+                h_accuracy REAL NOT NULL,
+                place_key TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS capture_marks (
+                name TEXT PRIMARY KEY,
+                through REAL NOT NULL
+            );
             CREATE TRIGGER IF NOT EXISTS paths_points_changed AFTER UPDATE OF points ON paths
             BEGIN
                 DELETE FROM path_routes WHERE path_id = NEW.id;
             END;
             """
         )
+        // Existing libraries predate provenance; everything already in them came
+        // from an export.
+        for table in ["visits", "activities", "paths"] {
+            try addColumn(db, table: table, column: "source TEXT NOT NULL DEFAULT 'google'")
+        }
     }
 
-    private func upsertVisits(_ visits: [TimelineVisit], db: OpaquePointer) throws {
+    /// `ALTER TABLE ADD COLUMN` has no `IF NOT EXISTS`, so ask first.
+    private static func addColumn(_ db: OpaquePointer?, table: String, column: String) throws {
+        guard let db else { throw TimelineDatabaseError.open }
+        let name = String(column.prefix(while: { $0 != " " }))
+        var statement: OpaquePointer?
+        defer { sqlite3_finalize(statement) }
+        guard sqlite3_prepare_v2(db, "PRAGMA table_info(\(table))", -1, &statement, nil) == SQLITE_OK else { return }
+        var exists = false
+        while sqlite3_step(statement) == SQLITE_ROW {
+            if let raw = sqlite3_column_text(statement, 1), String(cString: raw) == name { exists = true }
+        }
+        guard !exists else { return }
+        try exec(db, "ALTER TABLE \(table) ADD COLUMN \(column)")
+    }
+
+    private func upsertVisits(_ visits: [TimelineVisit], db: OpaquePointer, source: RecordSource) throws {
         var statement: OpaquePointer?
         defer { sqlite3_finalize(statement) }
         let sql = """
-            INSERT INTO visits (id, start, end, lat, lon, place_key, semantic_type)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO visits (id, start, end, lat, lon, place_key, semantic_type, source)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
+                start = excluded.start,
+                end = excluded.end,
                 lat = COALESCE(excluded.lat, visits.lat),
                 lon = COALESCE(excluded.lon, visits.lon),
                 place_key = excluded.place_key,
@@ -518,20 +789,22 @@ actor TimelineDatabase {
             } else {
                 sqlite3_bind_null(statement, 7)
             }
+            sqlite3_bind_text(statement, 8, source.rawValue, -1, Self.transient)
             guard sqlite3_step(statement) == SQLITE_DONE else {
                 throw TimelineDatabaseError.execute(errmsg())
             }
         }
     }
 
-    private func upsertActivities(_ activities: [TimelineActivity], db: OpaquePointer) throws {
+    private func upsertActivities(_ activities: [TimelineActivity], db: OpaquePointer, source: RecordSource) throws {
         var statement: OpaquePointer?
         defer { sqlite3_finalize(statement) }
         let sql = """
-            INSERT INTO activities (id, start, end, distance, start_lat, start_lon, end_lat, end_lon, kind)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO activities (id, start, end, distance, start_lat, start_lon, end_lat, end_lon, kind, source)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
-                distance = MAX(activities.distance, excluded.distance)
+                distance = MAX(activities.distance, excluded.distance),
+                kind = excluded.kind
             """
         guard sqlite3_prepare_v2(db, sql, -1, &statement, nil) == SQLITE_OK else {
             throw TimelineDatabaseError.execute(errmsg())
@@ -546,18 +819,19 @@ actor TimelineDatabase {
             bindCoord(statement, index: 5, coordinate: activity.startCoordinate)
             bindCoord(statement, index: 7, coordinate: activity.endCoordinate)
             sqlite3_bind_text(statement, 9, activity.kind.stored, -1, Self.transient)
+            sqlite3_bind_text(statement, 10, source.rawValue, -1, Self.transient)
             guard sqlite3_step(statement) == SQLITE_DONE else {
                 throw TimelineDatabaseError.execute(errmsg())
             }
         }
     }
 
-    private func upsertPaths(_ paths: [TimelinePath], db: OpaquePointer) throws {
+    private func upsertPaths(_ paths: [TimelinePath], db: OpaquePointer, source: RecordSource) throws {
         var statement: OpaquePointer?
         defer { sqlite3_finalize(statement) }
         let sql = """
-            INSERT INTO paths (id, start, end, kind, point_count, points)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO paths (id, start, end, kind, point_count, points, source)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
                 kind = excluded.kind,
                 point_count = excluded.point_count,
@@ -576,6 +850,7 @@ actor TimelineDatabase {
             sqlite3_bind_text(statement, 4, path.kind.stored, -1, Self.transient)
             sqlite3_bind_int(statement, 5, Int32(path.points.count))
             bindBlob(statement, 6, CoordBlob.pack(path.points))
+            sqlite3_bind_text(statement, 7, source.rawValue, -1, Self.transient)
             guard sqlite3_step(statement) == SQLITE_DONE else {
                 throw TimelineDatabaseError.execute(errmsg())
             }

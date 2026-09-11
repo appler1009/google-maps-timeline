@@ -80,6 +80,10 @@ targets:
         NSDownloadsFolderUsageDescription: Timeline reads a Timeline.json export from Downloads when you open it.
         NSDocumentsFolderUsageDescription: Timeline opens a Google Maps Timeline JSON export that you choose.
         NSLocalNetworkUsageDescription: Timeline connects to Lux on your Mac to match photos with visits, and may ship diagnostic logs to LogDock when debugging.
+        NSLocationWhenInUseUsageDescription: Timeline records the places you stop at so your days fill in without an export.
+        NSLocationAlwaysAndWhenInUseUsageDescription: Timeline needs Always access to notice stays while it is closed. Nothing leaves your device.
+        NSMotionUsageDescription: Timeline reads the motion your iPhone already recorded so trips show as walking, cycling or driving.
+        UIBackgroundModes: [location]
         NSBonjourServices:
           - _lux-library._tcp
         NSAppTransportSecurity:

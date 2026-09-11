@@ -436,6 +436,53 @@ final class TimelineStore {
         return true
     }
 
+    /// Reload after the recorder wrote something. Unlike `apply`, this keeps the
+    /// day, place and filters the user is looking at — a stay recorded in the
+    /// background must not yank the map out from under them.
+    func refreshFromLibrary() {
+        guard !isLoading else { return }
+        Task {
+            guard let batch = try? await database.loadBatch() else { return }
+            await refreshPlaceIdentity()
+            let name = (try? await database.latestSourceName()) ?? sourceName ?? "This device"
+            let keptDay = selectedDayID
+            let keptPlace = selectedPlaceID
+            let keptTab = tab
+            let keptYear = filterYear
+            let keptMonth = filterMonth
+            let keptSearch = search
+            apply(TimelineParser.assemble(batch, sourceName: name))
+            tab = keptTab
+            search = keptSearch
+            filterYear = keptYear
+            filterMonth = keptMonth
+            clampDateFilters()
+            if let keptDay, daysByID[keptDay] != nil {
+                selectedDayID = keptDay
+            }
+            if let keptPlace, placesByID[keptPlace] != nil {
+                selectedPlaceID = keptPlace
+            }
+        }
+    }
+
+    /// Apply a name the user picked straight from a visit notification. The key
+    /// may be a place the app has not assembled yet, so this writes through to the
+    /// library and reloads rather than going via `placesByID`.
+    func applyRecordedPlaceName(_ name: String, forPlaceKey placeKey: String) {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        placeNames[placeKey] = trimmed
+        placeNames = placeNames
+        placeNameGeneration &+= 1
+        Task {
+            try? await database.setPlaceName(placeKey: placeKey, name: trimmed)
+            await pushPlaceIdentityToCloud()
+            TimelineLog.info("recorded place named", ["placeKey": placeKey, "name": trimmed])
+            refreshFromLibrary()
+        }
+    }
+
     func apply(_ parsed: ParsedTimeline) {
         self.parsed = parsed
         sourceName = parsed.sourceName
