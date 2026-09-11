@@ -17,6 +17,7 @@ struct TrackingSettingsView: View {
     @State private var notificationsAllowed = false
     @State private var motionAllowed = CMMotionActivityManager.authorizationStatus() == .authorized
     @State private var recordedToday = 0
+    private let modelUnavailableReason = PlaceChooserFactory.unavailableReason()
 
     private let recorder = TimelineRecorder.shared
 
@@ -75,6 +76,20 @@ struct TrackingSettingsView: View {
                         Text("Apple Watch")
                     } footer: {
                         Text("Walks, runs and rides the Watch recorded come in with their exact route, and the cycling distance it logs corrects trips Core Motion read as driving. Timeline only reads this data.")
+                    }
+
+                    Section {
+                        Toggle("Smarter place guesses", isOn: $settings.usesOnDeviceModel)
+                            .accessibilityIdentifier("tracking-model-toggle")
+                        if let reason = modelUnavailableReason {
+                            Text(reason)
+                                .font(.caption)
+                                .foregroundStyle(Palette.muted)
+                        }
+                    } header: {
+                        Text("On-device intelligence")
+                    } footer: {
+                        Text("When the nearest places are equally likely, Apple Intelligence picks the one that fits the time of day and how long you stayed. It runs on this iPhone — where you have been never leaves the device.")
                     }
 
                     CloudSyncSettingsView()

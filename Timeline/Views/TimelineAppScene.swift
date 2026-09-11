@@ -85,6 +85,11 @@ struct TimelineAppScene: View {
                     applyPendingVisitChoice()
                     #endif
                 }
+                #if os(iOS)
+                if TimelineLaunch.showsTrackingAtLaunch {
+                    trackingSettingsPresented = true
+                }
+                #endif
                 Task { @MainActor in
                     await Task.yield()
                     if store.parsed == nil {

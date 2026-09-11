@@ -17,6 +17,7 @@ final class TrackingSettings {
         static let held = "trackingNotifyHeld"
         static let health = "trackingUsesHealth"
         static let cloud = "syncsWithCloud"
+        static let onDeviceModel = "trackingUsesOnDeviceModel"
     }
 
     private let defaults: UserDefaults
@@ -28,6 +29,7 @@ final class TrackingSettings {
         notifiesVisits = defaults.object(forKey: Key.notifyVisits) as? Bool ?? true
         usesHealth = defaults.bool(forKey: Key.health)
         syncsWithCloud = defaults.bool(forKey: Key.cloud)
+        usesOnDeviceModel = defaults.object(forKey: Key.onDeviceModel) as? Bool ?? true
     }
 
     /// Stored, not computed: `@Observable` only tracks stored properties, and the
@@ -61,6 +63,15 @@ final class TrackingSettings {
         didSet {
             guard syncsWithCloud != oldValue else { return }
             defaults.set(syncsWithCloud, forKey: Key.cloud)
+        }
+    }
+
+    /// On by default: it runs on the phone, costs nothing when the hardware
+    /// cannot do it, and only ever reorders guesses the user can overrule.
+    var usesOnDeviceModel: Bool {
+        didSet {
+            guard usesOnDeviceModel != oldValue else { return }
+            defaults.set(usesOnDeviceModel, forKey: Key.onDeviceModel)
         }
     }
 

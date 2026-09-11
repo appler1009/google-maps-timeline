@@ -1451,6 +1451,10 @@ final class RecorderNotificationTests: XCTestCase {
             motion: ScriptedMotionSource(),
             settings: settings,
             guesser: ScriptedGuesser(["Continental Coffee", "JJ Bean"]),
+            // Deterministic on purpose: the default ranker would reach for this
+            // Mac's real language model, making these tests slow and dependent on
+            // whether Apple Intelligence happens to be switched on.
+            ranker: HeuristicPlaceRanker(),
             now: { now }
         )
         return (recorder, database, settings, url)
@@ -1580,6 +1584,7 @@ final class RecorderLifecycleTests: XCTestCase {
                 settings: settings,
                 health: health,
                 guesser: ScriptedGuesser([]),
+                ranker: HeuristicPlaceRanker(),
                 now: { now }
             ),
             stops: stops,

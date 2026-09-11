@@ -217,7 +217,10 @@ final class TimelineRecorder {
                 limit: ModelPlaceRanker.shortlistSize + 3
             )
             let context = await namingContext(for: stop, placeKey: match.placeKey)
-            let guesses = Array(await ranker.rank(candidates, context: context).prefix(2))
+            // Turning the model off leaves the measured ranking, which is what
+            // every device without Apple Intelligence gets anyway.
+            let active: any PlaceRanking = settings.usesOnDeviceModel ? ranker : HeuristicPlaceRanker()
+            let guesses = Array(await active.rank(candidates, context: context).prefix(2))
             let area = await guesser.address(at: stop.coordinate)?.subtitle
             #if os(iOS)
             await VisitNotifier.shared.notify(

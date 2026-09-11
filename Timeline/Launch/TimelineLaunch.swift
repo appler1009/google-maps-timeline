@@ -17,6 +17,12 @@ enum TimelineLaunch {
         return !isUITesting
     }
 
+    /// Opens the Tracking sheet at launch. For driving the screen in the
+    /// simulator without a tester having to find the toolbar button.
+    static var showsTrackingAtLaunch: Bool {
+        env("TIMELINE_SHOW_TRACKING") || flag("showTracking")
+    }
+
     private static func env(_ key: String) -> Bool {
         let value = ProcessInfo.processInfo.environment[key]
         return value == "1" || value == "true" || value == "YES"
