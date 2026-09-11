@@ -48,7 +48,9 @@ final class DeviceHealthSource: HealthSource {
                 sortDescriptors: [NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: true)]
             ) { _, results, error in
                 if let error {
-                    TimelineLog.error("workout query failed", ["error": error.localizedDescription])
+                    // "Protected health data is inaccessible" just means the phone
+                    // was locked when a background pass ran. It retries next wake.
+                    TimelineLog.info("workout query skipped", ["reason": error.localizedDescription])
                 }
                 continuation.resume(returning: results as? [HKWorkout] ?? [])
             }

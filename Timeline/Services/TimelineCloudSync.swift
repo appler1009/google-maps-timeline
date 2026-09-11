@@ -110,7 +110,8 @@ actor TimelineCloudSync {
             return change.operation == .delete ? .deleteRecord(id) : .saveRecord(id)
         }
         for change in changes {
-            inFlight[change.rowID] = change
+            // Keyed by record name, which is what the server acknowledges.
+            inFlight[TimelineRecordMapper.recordName(for: change.kind, rowID: change.rowID)] = change
         }
         engine.state.add(pendingRecordZoneChanges: pending)
     }
@@ -169,7 +170,7 @@ extension TimelineCloudSync: CKSyncEngineDelegate {
         let batch = (try? await database.changeBatch(limit: Self.batchLimit)) ?? ChangeBatch()
         // Build each save on the record CloudKit last acknowledged, so it carries
         // the change tag and reads as an update rather than an insert.
-        let names = batch.changes.map(\.rowID)
+        let names = batch.changes.map { TimelineRecordMapper.recordName(for: $0.kind, rowID: $0.rowID) }
         let archives = (try? await database.cloudRecordArchives(names)) ?? [:]
         let bases = archives.compactMapValues { TimelineRecordMapper.decodeSystemFields($0) }
         let records = recordsByName(from: batch, bases: bases)
@@ -183,20 +184,28 @@ extension TimelineCloudSync: CKSyncEngineDelegate {
     /// answer in constant time.
     private func recordsByName(from batch: ChangeBatch, bases: [String: CKRecord]) -> [String: CKRecord] {
         var records: [String: CKRecord] = [:]
+        func name(_ kind: ChangeKind, _ rowID: String) -> String {
+            TimelineRecordMapper.recordName(for: kind, rowID: rowID)
+        }
         for visit in batch.visits {
-            records[visit.id] = TimelineRecordMapper.record(for: visit, in: zoneID, base: bases[visit.id])
+            let key = name(.visit, visit.id)
+            records[key] = TimelineRecordMapper.record(for: visit, in: zoneID, base: bases[key])
         }
         for activity in batch.activities {
-            records[activity.id] = TimelineRecordMapper.record(for: activity, in: zoneID, base: bases[activity.id])
+            let key = name(.activity, activity.id)
+            records[key] = TimelineRecordMapper.record(for: activity, in: zoneID, base: bases[key])
         }
         for path in batch.paths {
-            records[path.id] = TimelineRecordMapper.record(for: path, in: zoneID, base: bases[path.id])
+            let key = name(.path, path.id)
+            records[key] = TimelineRecordMapper.record(for: path, in: zoneID, base: bases[key])
         }
-        for (key, name) in batch.names {
-            records[key] = TimelineRecordMapper.record(forPlaceKey: key, name: name, in: zoneID, base: bases[key])
+        for (placeKey, value) in batch.names {
+            let key = name(.placeName, placeKey)
+            records[key] = TimelineRecordMapper.record(forPlaceKey: placeKey, name: value, in: zoneID, base: bases[key])
         }
-        for (key, merge) in batch.merges {
-            records[key] = TimelineRecordMapper.record(forPlaceKey: key, merge: merge, in: zoneID, base: bases[key])
+        for (placeKey, value) in batch.merges {
+            let key = name(.placeMerge, placeKey)
+            records[key] = TimelineRecordMapper.record(forPlaceKey: placeKey, merge: value, in: zoneID, base: bases[key])
         }
         return records
     }
@@ -235,7 +244,10 @@ extension TimelineCloudSync: CKSyncEngineDelegate {
         for deletion in deletions {
             try? await database.setCloudRecordArchive(deletion.recordID.recordName, nil)
             guard let kind = TimelineRecordMapper.kind(forRecordType: deletion.recordType) else { continue }
-            try? await database.applyRemoteDeletion(kind: kind, rowID: deletion.recordID.recordName)
+            try? await database.applyRemoteDeletion(
+                kind: kind,
+                rowID: TimelineRecordMapper.rowID(fromRecordName: deletion.recordID.recordName, kind: kind)
+            )
         }
 
         TimelineLog.info(

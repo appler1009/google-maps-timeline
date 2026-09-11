@@ -50,8 +50,32 @@ enum TimelineRecordMapper {
         ChangeKind.allCases.first { recordType(for: $0) == type }
     }
 
+    /// Record names are unique per *zone*, not per type, and a record's type can
+    /// never change. A place with both a custom name and a merge alias would
+    /// otherwise want two records called the same thing, and the server rejects
+    /// the second forever. Visits, activities and paths need no prefix: their ids
+    /// are content hashes already minted with distinct prefixes.
+    static func recordName(for kind: ChangeKind, rowID: String) -> String {
+        guard let prefix = namePrefix(for: kind) else { return rowID }
+        return prefix + rowID
+    }
+
+    static func rowID(fromRecordName name: String, kind: ChangeKind) -> String {
+        guard let prefix = namePrefix(for: kind), name.hasPrefix(prefix) else { return name }
+        return String(name.dropFirst(prefix.count))
+    }
+
+    /// Place keys are Google ids or "lat,lon" — neither contains a colon.
+    private static func namePrefix(for kind: ChangeKind) -> String? {
+        switch kind {
+        case .visit, .activity, .path: return nil
+        case .placeName: return "name:"
+        case .placeMerge: return "merge:"
+        }
+    }
+
     static func recordID(for change: PendingChange, in zoneID: CKRecordZone.ID) -> CKRecord.ID {
-        CKRecord.ID(recordName: change.rowID, zoneID: zoneID)
+        CKRecord.ID(recordName: recordName(for: change.kind, rowID: change.rowID), zoneID: zoneID)
     }
 
     /// The record to write fields onto.
@@ -142,7 +166,12 @@ enum TimelineRecordMapper {
         in zoneID: CKRecordZone.ID,
         base: CKRecord? = nil
     ) -> CKRecord {
-        let record = canvas(base: base, type: recordType(for: .placeName), recordName: key, in: zoneID)
+        let record = canvas(
+            base: base,
+            type: recordType(for: .placeName),
+            recordName: recordName(for: .placeName, rowID: key),
+            in: zoneID
+        )
         record[Field.name] = name.name as NSString
         record[Field.updatedAt] = name.updatedAt as NSNumber
         return record
@@ -154,7 +183,12 @@ enum TimelineRecordMapper {
         in zoneID: CKRecordZone.ID,
         base: CKRecord? = nil
     ) -> CKRecord {
-        let record = canvas(base: base, type: recordType(for: .placeMerge), recordName: key, in: zoneID)
+        let record = canvas(
+            base: base,
+            type: recordType(for: .placeMerge),
+            recordName: recordName(for: .placeMerge, rowID: key),
+            in: zoneID
+        )
         record[Field.toKey] = merge.toKey as NSString
         record[Field.updatedAt] = merge.updatedAt as NSNumber
         return record
@@ -211,14 +245,16 @@ enum TimelineRecordMapper {
         guard record.recordType == recordType(for: .placeName),
               let name = record[Field.name] as? String,
               let updatedAt = record[Field.updatedAt] as? Double else { return nil }
-        return (record.recordID.recordName, PlaceIdentityName(name: name, updatedAt: updatedAt))
+        let key = rowID(fromRecordName: record.recordID.recordName, kind: .placeName)
+        return (key, PlaceIdentityName(name: name, updatedAt: updatedAt))
     }
 
     static func placeMerge(from record: CKRecord) -> (key: String, merge: PlaceIdentityMerge)? {
         guard record.recordType == recordType(for: .placeMerge),
               let toKey = record[Field.toKey] as? String,
               let updatedAt = record[Field.updatedAt] as? Double else { return nil }
-        return (record.recordID.recordName, PlaceIdentityMerge(toKey: toKey, updatedAt: updatedAt))
+        let key = rowID(fromRecordName: record.recordID.recordName, kind: .placeMerge)
+        return (key, PlaceIdentityMerge(toKey: toKey, updatedAt: updatedAt))
     }
 
     /// Sort fetched records into the shapes the database writes.

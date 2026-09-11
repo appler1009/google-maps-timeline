@@ -1966,3 +1966,88 @@ final class CloudRecordArchiveTests: XCTestCase {
         XCTAssertEqual(count, 0, "another account's change tags must never be quoted")
     }
 }
+
+// MARK: - Record names must not collide across types
+
+final class RecordNamespacingTests: XCTestCase {
+    private let zoneID = CKRecordZone.ID(zoneName: TimelineRecordMapper.zoneName, ownerName: CKCurrentUserDefaultName)
+
+    func testAPlaceWithBothANameAndAMergeGetsTwoRecords() {
+        // The device hit this for real: "invalid attempt to update record from
+        // type 'PlaceName' to 'PlaceMerge'". Record names are unique per zone and
+        // a record's type can never change, so they cannot share one name.
+        let key = "ChIJsZsnWllHhFQRaMimFKVnFpc"
+        let named = TimelineRecordMapper.record(
+            forPlaceKey: key,
+            name: PlaceIdentityName(name: "Home", updatedAt: 1),
+            in: zoneID
+        )
+        let merged = TimelineRecordMapper.record(
+            forPlaceKey: key,
+            merge: PlaceIdentityMerge(toKey: "other", updatedAt: 1),
+            in: zoneID
+        )
+        XCTAssertNotEqual(named.recordID.recordName, merged.recordID.recordName)
+        XCTAssertEqual(named.recordType, "PlaceName")
+        XCTAssertEqual(merged.recordType, "PlaceMerge")
+    }
+
+    func testThePlaceKeySurvivesTheRoundTrip() throws {
+        let key = "ChIJsZsnWllHhFQRaMimFKVnFpc"
+        let named = TimelineRecordMapper.record(
+            forPlaceKey: key,
+            name: PlaceIdentityName(name: "Home", updatedAt: 7),
+            in: zoneID
+        )
+        let parsedName = try XCTUnwrap(TimelineRecordMapper.placeName(from: named))
+        XCTAssertEqual(parsedName.key, key, "the prefix must not leak into the place key")
+
+        let merged = TimelineRecordMapper.record(
+            forPlaceKey: key,
+            merge: PlaceIdentityMerge(toKey: "target", updatedAt: 7),
+            in: zoneID
+        )
+        let parsedMerge = try XCTUnwrap(TimelineRecordMapper.placeMerge(from: merged))
+        XCTAssertEqual(parsedMerge.key, key)
+    }
+
+    func testCoordinateKeysAreNamespacedToo() {
+        let key = "49.2765,-123.0680"
+        XCTAssertEqual(TimelineRecordMapper.recordName(for: .placeName, rowID: key), "name:\(key)")
+        XCTAssertEqual(TimelineRecordMapper.rowID(fromRecordName: "name:\(key)", kind: .placeName), key)
+    }
+
+    func testTheBulkOfTheLibraryKeepsItsIdsUnchanged() {
+        // Visit, activity and path ids are content hashes minted with their own
+        // prefixes, so renaming them would be churn for nothing.
+        for kind in [ChangeKind.visit, .activity, .path] {
+            XCTAssertEqual(TimelineRecordMapper.recordName(for: kind, rowID: "abc123"), "abc123")
+            XCTAssertEqual(TimelineRecordMapper.rowID(fromRecordName: "abc123", kind: kind), "abc123")
+        }
+    }
+
+    func testAnUnprefixedLegacyNameStillParses() {
+        // Records already on the server were written before the prefix existed.
+        XCTAssertEqual(
+            TimelineRecordMapper.rowID(fromRecordName: "ChIJabc", kind: .placeName),
+            "ChIJabc"
+        )
+    }
+
+    func testThePendingChangeAgreesWithTheRecordItBuilds() {
+        let change = PendingChange(
+            kind: .placeMerge,
+            rowID: "ChIJabc",
+            operation: .upsert,
+            seq: 1,
+            changedAt: Date()
+        )
+        let id = TimelineRecordMapper.recordID(for: change, in: zoneID)
+        let record = TimelineRecordMapper.record(
+            forPlaceKey: "ChIJabc",
+            merge: PlaceIdentityMerge(toKey: "x", updatedAt: 1),
+            in: zoneID
+        )
+        XCTAssertEqual(id.recordName, record.recordID.recordName, "the queue and the record must name the same thing")
+    }
+}
