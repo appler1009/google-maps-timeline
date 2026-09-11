@@ -87,7 +87,7 @@ actor TimelineDatabase {
 
     /// What the phone recorded. No `imports` row: this is not an import, and the
     /// sidebar's source name should keep naming the last export the user opened.
-    func record(batch: TimelineBatch) throws {
+    func record(batch: TimelineBatch, source: RecordSource = .device) throws {
         guard let db else { throw TimelineDatabaseError.open }
         guard !batch.visits.isEmpty || !batch.activities.isEmpty || !batch.paths.isEmpty else { return }
         try exec("BEGIN IMMEDIATE")

@@ -6,6 +6,10 @@ import CoreLocation
 enum RecordSource: String {
     case google
     case device
+    /// Added by hand. Never shadowed by reconciliation and never overwritten by a
+    /// recording: if someone took the trouble to say they were somewhere, that
+    /// beats anything inferred.
+    case manual
 }
 
 /// How much the recorder is allowed to spend. Stored as a raw string so the

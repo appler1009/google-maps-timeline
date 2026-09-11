@@ -661,6 +661,8 @@ private final class VisitMarkerView: MKAnnotationView, VisitMarkerTitleUpdating 
 struct SelectionCard: View {
     @Environment(TimelineStore.self) private var store
     @State private var renamingPlaceID: String?
+    /// The day whose "Add a stay" was tapped.
+    @State private var addingStayOn: Date?
     @Bindable private var lux = LuxPhotoLink.shared
     #if os(iOS)
     /// Full map canvas height — used to stretch the open sheet under the top chrome.
@@ -749,6 +751,7 @@ struct SelectionCard: View {
         .foregroundStyle(Palette.parchment)
         .onDisappear { store.hoveredVisitID = nil }
         .placeRenameSheet(placeID: $renamingPlaceID, store: store)
+        .addVisitSheet(day: $addingStayOn, store: store)
         .onAppear { lux.refreshPhotos(for: store.activeDay) }
         .onChange(of: store.selectedDayID) { _, _ in
             lux.refreshPhotos(for: store.activeDay)
@@ -1002,17 +1005,42 @@ struct SelectionCard: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 2) {
                 rows
+                addStayRow(day)
             }
         }
         .scrollIndicators(.visible)
         #else
         VStack(alignment: .leading, spacing: 2) {
             rows
+            addStayRow(day)
         }
         .onHover { hovering in
             if !hovering { store.hoveredVisitID = nil }
         }
         #endif
+    }
+
+    /// The recorder cannot see a two-minute drop-off, so the day's list is where
+    /// you notice one is missing and where you add it.
+    @ViewBuilder
+    private func addStayRow(_ day: DayRecord) -> some View {
+        Button {
+            addingStayOn = day.day
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "plus.circle")
+                    .foregroundStyle(Palette.water)
+                Text("Add a stay")
+                    .foregroundStyle(Palette.muted)
+                Spacer(minLength: 0)
+            }
+            .padding(.vertical, 8)
+            .padding(.horizontal, 12)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help("Record a stop the app did not notice")
+        .accessibilityIdentifier("add-stay")
     }
 
     @ViewBuilder

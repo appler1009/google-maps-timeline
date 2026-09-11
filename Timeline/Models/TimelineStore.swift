@@ -511,6 +511,70 @@ final class TimelineStore {
         }
     }
 
+    /// Suggest when a stay at `coordinate` happened, from the movement recorded
+    /// on `day`. The school run is the case: a two-minute stop CLVisit will never
+    /// report, inside a drive that was recorded.
+    func suggestedTiming(
+        for coordinate: CLLocationCoordinate2D,
+        on day: Date
+    ) async -> VisitTimingGuesser.Guess {
+        let calendar = Calendar.current
+        let dayStart = calendar.startOfDay(for: day)
+        let dayEnd = calendar.date(byAdding: .day, value: 1, to: dayStart) ?? dayStart.addingTimeInterval(86_400)
+        let fixes = (try? await database.fixes(from: dayStart, to: dayEnd)) ?? []
+        let midpoint = VisitTimingGuesser.largestGapMidpoint(
+            between: daysByID[dayStart]?.visits ?? [],
+            on: dayStart,
+            calendar: calendar
+        )
+        return VisitTimingGuesser.guess(
+            placeCoordinate: coordinate,
+            fixes: fixes,
+            fallbackMidpoint: midpoint
+        )
+    }
+
+    /// Record a stay the user added by hand.
+    ///
+    /// Written as `manual`, which reconciliation never shadows: a stay someone
+    /// took the trouble to enter outranks anything inferred or imported.
+    func addVisit(
+        name: String,
+        coordinate: CLLocationCoordinate2D,
+        start: Date,
+        end: Date,
+        mergingInto targetPlaceID: String? = nil
+    ) {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let placeKey = targetPlaceID ?? Geo.placeKey(id: nil, coordinate: coordinate)
+        let visit = TimelineVisit(
+            id: Geo.segmentID("mv", Geo.millis(start), placeKey),
+            start: start,
+            end: max(end, start.addingTimeInterval(60)),
+            coordinate: coordinate,
+            semanticType: nil,
+            placeKey: placeKey
+        )
+        isLoading = true
+        Task {
+            try? await database.record(
+                batch: TimelineBatch(visits: [visit], activities: [], paths: []),
+                source: .manual
+            )
+            if !trimmed.isEmpty, targetPlaceID == nil {
+                try? await database.setPlaceName(placeKey: placeKey, name: trimmed)
+                await pushPlaceIdentityToCloud()
+            }
+            await refreshPlaceIdentity()
+            TimelineLog.info(
+                "visit added by hand",
+                ["placeKey": placeKey, "minutes": "\(Int(visit.duration / 60))"]
+            )
+            isLoading = false
+            refreshFromLibrary()
+        }
+    }
+
     /// Apply a name the user picked straight from a visit notification. The key
     /// may be a place the app has not assembled yet, so this writes through to the
     /// library and reloads rather than going via `placesByID`.
