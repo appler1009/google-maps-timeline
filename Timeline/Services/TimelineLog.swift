@@ -17,7 +17,21 @@ enum TimelineLog {
     private static let defaultLocalURL = URL(string: "http://127.0.0.1:8737")!
     private static let configureGate = ConfigureGate()
 
+    /// True inside a test run: the unit-test bundles are hosted by the app binary
+    /// itself, so without this the suite ships its fixture coordinates to the
+    /// real collector and does network I/O on every assertion.
+    static var isRunningTests: Bool {
+        let environment = ProcessInfo.processInfo.environment
+        if environment["XCTestConfigurationFilePath"] != nil { return true }
+        if environment["XCTestSessionIdentifier"] != nil { return true }
+        if environment["XCTestBundlePath"] != nil { return true }
+        // The app launched by a UI test is a normal process, so the env markers
+        // above are absent — the launch flags are what identify it.
+        return TimelineLaunch.isUITesting
+    }
+
     static func start() {
+        guard !isRunningTests else { return }
         Task { await bootstrap() }
     }
 
@@ -34,6 +48,7 @@ enum TimelineLog {
     }
 
     static func debug(_ message: String, _ metadata: [String: String]? = nil) {
+        guard !isRunningTests else { return }
         Task {
             await configureIfPossible()
             await LogShip.shared.debug(message, metadata: metadata)
@@ -41,6 +56,7 @@ enum TimelineLog {
     }
 
     static func info(_ message: String, _ metadata: [String: String]? = nil) {
+        guard !isRunningTests else { return }
         Task {
             await configureIfPossible()
             await LogShip.shared.info(message, metadata: metadata)
@@ -48,6 +64,7 @@ enum TimelineLog {
     }
 
     static func warning(_ message: String, _ metadata: [String: String]? = nil) {
+        guard !isRunningTests else { return }
         Task {
             await configureIfPossible()
             await LogShip.shared.warning(message, metadata: metadata)
@@ -55,6 +72,7 @@ enum TimelineLog {
     }
 
     static func error(_ message: String, _ metadata: [String: String]? = nil) {
+        guard !isRunningTests else { return }
         Task {
             await configureIfPossible()
             await LogShip.shared.error(message, metadata: metadata)
@@ -63,13 +81,14 @@ enum TimelineLog {
 
     /// Re-read intake config (e.g. after an external KVS change published a Mac LAN URL).
     static func refreshConfiguration() {
+        guard !isRunningTests else { return }
         Task { await configureIfPossible(force: true) }
     }
 
     @MainActor
     static func publishIntakeForPeersIfNeeded() {
         #if os(macOS)
-        guard let token = collectorToken() else { return }
+        guard !isRunningTests, let token = collectorToken() else { return }
         let lan = primaryIPv4Address().map { "http://\($0):8737" } ?? defaultLocalURL.absoluteString
         let payload: [String: String] = ["url": lan, "token": token]
         guard let data = try? JSONSerialization.data(withJSONObject: payload) else { return }
@@ -81,6 +100,7 @@ enum TimelineLog {
     }
 
     private static func configureIfPossible(force: Bool = false) async {
+        guard !isRunningTests else { return }
         if !force {
             let alreadyStarted = await configureGate.noteStart()
             if alreadyStarted, await LogShip.shared.status().isConfigured { return }
