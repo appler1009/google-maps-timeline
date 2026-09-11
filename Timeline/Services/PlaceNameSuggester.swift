@@ -18,6 +18,11 @@ struct PlaceNameSuggestion: Identifiable, Hashable {
     let distanceMeters: Double
     /// When set, choosing this suggestion merges into that place instead of only renaming.
     let targetPlaceID: String?
+    /// Apple's point-of-interest category, stripped of its `MKPOICategory` prefix
+    /// — "Cafe", "Restaurant", "FitnessCenter". Nil for addresses and for places
+    /// you have already visited. Carried separately from `subtitle` because the
+    /// ranker reasons about it and the subtitle is display text.
+    var category: String? = nil
 
     var accessibilityLabel: String {
         if let subtitle, !subtitle.isEmpty {

@@ -152,6 +152,26 @@ actor TimelineDatabase {
         )
     }
 
+    /// Stays inside a window, for the naming context's routine and the trip that
+    /// led here.
+    func visits(from: Date, to: Date) throws -> [TimelineVisit] {
+        try loadVisits(includingShadowed: false)
+            .filter { $0.end >= from && $0.start <= to }
+            .sorted { $0.start < $1.start }
+    }
+
+    /// Earlier stays at one place — the strongest evidence there is about what a
+    /// place is, and usually empty, since we only ask about unnamed ones.
+    func visits(placeKey: String, since: Date, limit: Int = 20) throws -> [TimelineVisit] {
+        let merges = try loadPlaceMerges()
+        return try loadVisits(includingShadowed: false)
+            .map { Self.remapped($0, merges: merges) }
+            .filter { $0.placeKey == placeKey && $0.start >= since }
+            .sorted { $0.start > $1.start }
+            .prefix(limit)
+            .map { $0 }
+    }
+
     func shadowedVisitCount() throws -> Int {
         try scalar("SELECT COUNT(*) FROM visits WHERE shadowed = 1")
     }

@@ -46,7 +46,8 @@ struct PlaceGuessService: PlaceGuessing {
                     source: .map,
                     visitCount: 0,
                     distanceMeters: distance,
-                    targetPlaceID: nil
+                    targetPlaceID: nil,
+                    category: category
                 )
             }
             .sorted { $0.distanceMeters < $1.distanceMeters }

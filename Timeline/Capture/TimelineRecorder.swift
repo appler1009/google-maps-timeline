@@ -33,6 +33,7 @@ final class TimelineRecorder {
     private let settings: TrackingSettings
     private let health: HealthSource?
     private let guesser: any PlaceGuessing
+    private let ranker: any PlaceRanking
     /// Injectable so the quiet-hours and daily-cap paths are testable at any hour.
     private let now: () -> Date
     private var fixBuffer: [CapturedFix] = []
@@ -51,11 +52,13 @@ final class TimelineRecorder {
         settings: TrackingSettings? = nil,
         health: HealthSource? = nil,
         guesser: any PlaceGuessing = PlaceGuessService(),
+        ranker: (any PlaceRanking)? = nil,
         now: @escaping () -> Date = Date.init
     ) {
         self.database = database ?? TimelineDatabase()
         self.settings = settings ?? TrackingSettings.shared
         self.guesser = guesser
+        self.ranker = ranker ?? ModelPlaceRanker(chooser: PlaceChooserFactory.make())
         self.now = now
         #if os(iOS)
         self.stops = stops ?? DeviceLocationSource()
@@ -206,7 +209,15 @@ final class TimelineRecorder {
                 },
                 excluding: match.placeKey
             )
-            let guesses = await guesser.guesses(around: stop.coordinate, visited: visited, limit: 2)
+            // Ask for a shortlist rather than the final two: ranking has to see
+            // more than it will show.
+            let candidates = await guesser.guesses(
+                around: stop.coordinate,
+                visited: visited,
+                limit: ModelPlaceRanker.shortlistSize + 3
+            )
+            let context = await namingContext(for: stop, placeKey: match.placeKey)
+            let guesses = Array(await ranker.rank(candidates, context: context).prefix(2))
             let area = await guesser.address(at: stop.coordinate)?.subtitle
             #if os(iOS)
             await VisitNotifier.shared.notify(
@@ -219,6 +230,26 @@ final class TimelineRecorder {
             #endif
             NotificationCenter.default.post(name: .timelineWantsPlaceName, object: match.placeKey)
         }
+    }
+
+    /// Everything the ranker gets to reason about, read once per notification.
+    private func namingContext(for stop: CapturedStop, placeKey: String) async -> VisitNamingContext {
+        let end = stop.end ?? now()
+        let weekAgo = end.addingTimeInterval(-7 * 24 * 60 * 60)
+        let recent = (try? await database.visits(from: weekAgo, to: end)) ?? []
+        let priorHere = (try? await database.visits(
+            placeKey: placeKey,
+            since: end.addingTimeInterval(-90 * 24 * 60 * 60)
+        )) ?? []
+        let names = (try? await database.loadPlaceNames()) ?? [:]
+        return VisitNamingContextBuilder.build(
+            stop: stop,
+            placeKey: placeKey,
+            recentVisits: recent,
+            priorVisitsHere: priorHere,
+            names: names,
+            calendar: .current
+        )
     }
 
     // MARK: - Fixes and movement
