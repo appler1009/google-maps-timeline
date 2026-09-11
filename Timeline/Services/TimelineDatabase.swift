@@ -463,6 +463,69 @@ actor TimelineDatabase {
         }
     }
 
+    /// The system fields of the last record CloudKit acknowledged — its change
+    /// tag above all. Saving without one is an *insert*, which the server refuses
+    /// the moment the row already exists.
+    func cloudRecordArchive(_ recordName: String) throws -> Data? {
+        guard let db else { return nil }
+        var statement: OpaquePointer?
+        defer { sqlite3_finalize(statement) }
+        guard sqlite3_prepare_v2(db, "SELECT archive FROM ck_records WHERE record_name = ?", -1, &statement, nil) == SQLITE_OK else {
+            return nil
+        }
+        sqlite3_bind_text(statement, 1, recordName, -1, Self.transient)
+        guard sqlite3_step(statement) == SQLITE_ROW else { return nil }
+        return blob(statement, 0)
+    }
+
+    func cloudRecordArchives(_ names: [String]) throws -> [String: Data] {
+        var found: [String: Data] = [:]
+        for name in names {
+            if let data = try cloudRecordArchive(name) { found[name] = data }
+        }
+        return found
+    }
+
+    /// Passing nil forgets the record, so the next save is a fresh insert.
+    func setCloudRecordArchive(_ recordName: String, _ data: Data?) throws {
+        guard let db else { throw TimelineDatabaseError.open }
+        guard let data else {
+            var delete: OpaquePointer?
+            defer { sqlite3_finalize(delete) }
+            guard sqlite3_prepare_v2(db, "DELETE FROM ck_records WHERE record_name = ?", -1, &delete, nil) == SQLITE_OK else { return }
+            sqlite3_bind_text(delete, 1, recordName, -1, Self.transient)
+            sqlite3_step(delete)
+            return
+        }
+        var statement: OpaquePointer?
+        defer { sqlite3_finalize(statement) }
+        guard sqlite3_prepare_v2(
+            db,
+            """
+            INSERT INTO ck_records (record_name, archive, updated_at) VALUES (?, ?, ?)
+            ON CONFLICT(record_name) DO UPDATE SET archive = excluded.archive, updated_at = excluded.updated_at
+            """,
+            -1,
+            &statement,
+            nil
+        ) == SQLITE_OK else { throw TimelineDatabaseError.execute(errmsg()) }
+        sqlite3_bind_text(statement, 1, recordName, -1, Self.transient)
+        bindBlob(statement, 2, data)
+        sqlite3_bind_double(statement, 3, Date().timeIntervalSince1970)
+        guard sqlite3_step(statement) == SQLITE_DONE else {
+            throw TimelineDatabaseError.execute(errmsg())
+        }
+    }
+
+    func cloudRecordArchiveCount() throws -> Int {
+        try scalar("SELECT COUNT(*) FROM ck_records")
+    }
+
+    /// Forget every change tag — for a sign-out, or a deliberate fresh upload.
+    func clearCloudRecordArchives() throws {
+        try exec("DELETE FROM ck_records")
+    }
+
     /// Rows that arrived from another device. Written exactly like local rows but
     /// without queueing themselves to be sent straight back.
     func applyRemote(_ batch: TimelineBatch) throws {
@@ -1086,6 +1149,11 @@ actor TimelineDatabase {
                 PRIMARY KEY (kind, row_id)
             );
             CREATE INDEX IF NOT EXISTS change_log_seq ON change_log(seq);
+            CREATE TABLE IF NOT EXISTS ck_records (
+                record_name TEXT PRIMARY KEY,
+                archive BLOB NOT NULL,
+                updated_at REAL NOT NULL
+            );
             CREATE TABLE IF NOT EXISTS sync_state (
                 key TEXT PRIMARY KEY,
                 int_value INTEGER NOT NULL DEFAULT 0,

@@ -1861,3 +1861,108 @@ final class CaptureValueTests: XCTestCase {
         XCTAssertEqual(VisitNotificationPolicy.durationPhrase(7_200), "2 hours")
     }
 }
+
+// MARK: - Keeping CloudKit's change tags
+
+final class CloudRecordArchiveTests: XCTestCase {
+    private let zoneID = CKRecordZone.ID(zoneName: TimelineRecordMapper.zoneName, ownerName: CKCurrentUserDefaultName)
+    private let origin = Date(timeIntervalSince1970: 1_700_000_000)
+
+    private func sampleVisit(_ id: String = "v1") -> TimelineVisit {
+        TimelineVisit(
+            id: id,
+            start: origin,
+            end: origin.addingTimeInterval(1_800),
+            coordinate: home,
+            semanticType: nil,
+            placeKey: "cafe"
+        )
+    }
+
+    func testSystemFieldsRoundTrip() throws {
+        let original = TimelineRecordMapper.record(for: sampleVisit(), in: zoneID)
+        let restored = try XCTUnwrap(
+            TimelineRecordMapper.decodeSystemFields(TimelineRecordMapper.encodeSystemFields(original))
+        )
+        XCTAssertEqual(restored.recordID, original.recordID)
+        XCTAssertEqual(restored.recordType, original.recordType)
+        // Only the system fields travel; the values live in the library.
+        XCTAssertNil(restored[TimelineRecordMapper.Field.placeKey])
+    }
+
+    func testASaveIsBuiltOnTheAcknowledgedRecord() {
+        // The whole bug: a fresh CKRecord has no change tag, so the server reads
+        // the save as an insert and refuses it once the row exists.
+        let acknowledged = TimelineRecordMapper.record(for: sampleVisit(), in: zoneID)
+        let rebuilt = TimelineRecordMapper.record(for: sampleVisit(), in: zoneID, base: acknowledged)
+        XCTAssertTrue(rebuilt === acknowledged, "the update must be written onto the server's own record")
+        XCTAssertEqual(rebuilt[TimelineRecordMapper.Field.placeKey] as? String, "cafe")
+    }
+
+    func testAMismatchedBaseIsIgnored() {
+        let otherRow = TimelineRecordMapper.record(for: sampleVisit("somebody-else"), in: zoneID)
+        let rebuilt = TimelineRecordMapper.record(for: sampleVisit("v1"), in: zoneID, base: otherRow)
+        XCTAssertFalse(rebuilt === otherRow)
+        XCTAssertEqual(rebuilt.recordID.recordName, "v1")
+
+        let wrongType = TimelineRecordMapper.record(
+            forPlaceKey: "v1",
+            name: PlaceIdentityName(name: "Cafe", updatedAt: 1),
+            in: zoneID
+        )
+        let fresh = TimelineRecordMapper.record(for: sampleVisit("v1"), in: zoneID, base: wrongType)
+        XCTAssertFalse(fresh === wrongType, "a PlaceName record is not a canvas for a Visit")
+        XCTAssertEqual(fresh.recordType, "Visit")
+    }
+
+    func testArchivesPersistAndCanBeForgotten() async throws {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("ckrecords-\(UUID().uuidString).sqlite")
+        defer { try? FileManager.default.removeItem(at: url) }
+        let db = TimelineDatabase(fileURL: url)
+
+        let record = TimelineRecordMapper.record(for: sampleVisit(), in: zoneID)
+        let archive = TimelineRecordMapper.encodeSystemFields(record)
+        try await db.setCloudRecordArchive("v1", archive)
+
+        // A background relaunch gets a new handle and must still know the tag.
+        let reopened = TimelineDatabase(fileURL: url)
+        let stored = try await reopened.cloudRecordArchive("v1")
+        XCTAssertEqual(stored, archive)
+        let count = try await reopened.cloudRecordArchiveCount()
+        XCTAssertEqual(count, 1)
+
+        // Forgetting makes the next save a clean insert, which is what we want
+        // after the server says the record is gone.
+        try await reopened.setCloudRecordArchive("v1", nil)
+        let cleared = try await reopened.cloudRecordArchive("v1")
+        XCTAssertNil(cleared)
+    }
+
+    func testArchivesAreFetchedInBulkForABatch() async throws {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("ckbulk-\(UUID().uuidString).sqlite")
+        defer { try? FileManager.default.removeItem(at: url) }
+        let db = TimelineDatabase(fileURL: url)
+
+        for id in ["a", "b"] {
+            let record = TimelineRecordMapper.record(for: sampleVisit(id), in: zoneID)
+            try await db.setCloudRecordArchive(id, TimelineRecordMapper.encodeSystemFields(record))
+        }
+        let found = try await db.cloudRecordArchives(["a", "b", "never-sent"])
+        XCTAssertEqual(Set(found.keys), ["a", "b"], "a row we have never sent simply has no tag yet")
+    }
+
+    func testSigningOutForgetsEveryTag() async throws {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("ckwipe-\(UUID().uuidString).sqlite")
+        defer { try? FileManager.default.removeItem(at: url) }
+        let db = TimelineDatabase(fileURL: url)
+
+        let record = TimelineRecordMapper.record(for: sampleVisit(), in: zoneID)
+        try await db.setCloudRecordArchive("v1", TimelineRecordMapper.encodeSystemFields(record))
+        try await db.clearCloudRecordArchives()
+        let count = try await db.cloudRecordArchiveCount()
+        XCTAssertEqual(count, 0, "another account's change tags must never be quoted")
+    }
+}

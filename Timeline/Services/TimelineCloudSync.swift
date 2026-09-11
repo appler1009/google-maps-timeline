@@ -28,6 +28,11 @@ actor TimelineCloudSync {
     /// Rows the engine is currently sending, so the acknowledgement can name them
     /// precisely rather than clearing whatever happens to be queued.
     private var inFlight: [String: PendingChange] = [:]
+    /// Conflicts resolve by adopting the server's record and retrying once. A
+    /// record that keeps failing after that is a bug, not a race, and retrying it
+    /// forever is how 400 rows became 3,400 failed requests.
+    private var conflictRetries: [String: Int] = [:]
+    private static let maximumConflictRetries = 3
 
     init(database: TimelineDatabase, containerIdentifier: String = TimelineCloudSync.containerIdentifier) {
         self.database = database
@@ -162,7 +167,12 @@ extension TimelineCloudSync: CKSyncEngineDelegate {
         guard !pending.isEmpty else { return nil }
 
         let batch = (try? await database.changeBatch(limit: Self.batchLimit)) ?? ChangeBatch()
-        let records = recordsByName(from: batch)
+        // Build each save on the record CloudKit last acknowledged, so it carries
+        // the change tag and reads as an update rather than an insert.
+        let names = batch.changes.map(\.rowID)
+        let archives = (try? await database.cloudRecordArchives(names)) ?? [:]
+        let bases = archives.compactMapValues { TimelineRecordMapper.decodeSystemFields($0) }
+        let records = recordsByName(from: batch, bases: bases)
 
         return await CKSyncEngine.RecordZoneChangeBatch(pendingChanges: pending) { recordID in
             records[recordID.recordName]
@@ -171,22 +181,22 @@ extension TimelineCloudSync: CKSyncEngineDelegate {
 
     /// The rows a batch names, keyed by record name so the engine's provider can
     /// answer in constant time.
-    private func recordsByName(from batch: ChangeBatch) -> [String: CKRecord] {
+    private func recordsByName(from batch: ChangeBatch, bases: [String: CKRecord]) -> [String: CKRecord] {
         var records: [String: CKRecord] = [:]
         for visit in batch.visits {
-            records[visit.id] = TimelineRecordMapper.record(for: visit, in: zoneID)
+            records[visit.id] = TimelineRecordMapper.record(for: visit, in: zoneID, base: bases[visit.id])
         }
         for activity in batch.activities {
-            records[activity.id] = TimelineRecordMapper.record(for: activity, in: zoneID)
+            records[activity.id] = TimelineRecordMapper.record(for: activity, in: zoneID, base: bases[activity.id])
         }
         for path in batch.paths {
-            records[path.id] = TimelineRecordMapper.record(for: path, in: zoneID)
+            records[path.id] = TimelineRecordMapper.record(for: path, in: zoneID, base: bases[path.id])
         }
         for (key, name) in batch.names {
-            records[key] = TimelineRecordMapper.record(forPlaceKey: key, name: name, in: zoneID)
+            records[key] = TimelineRecordMapper.record(forPlaceKey: key, name: name, in: zoneID, base: bases[key])
         }
         for (key, merge) in batch.merges {
-            records[key] = TimelineRecordMapper.record(forPlaceKey: key, merge: merge, in: zoneID)
+            records[key] = TimelineRecordMapper.record(forPlaceKey: key, merge: merge, in: zoneID, base: bases[key])
         }
         return records
     }
@@ -200,6 +210,12 @@ extension TimelineCloudSync: CKSyncEngineDelegate {
 
         // applyRemote deliberately does not log these as local changes — that is
         // what stops an incoming row from being queued straight back out.
+        for record in modifications {
+            try? await database.setCloudRecordArchive(
+                record.recordID.recordName,
+                TimelineRecordMapper.encodeSystemFields(record)
+            )
+        }
         try? await database.applyRemote(parsed.rows)
         for (key, name) in parsed.names {
             _ = try? await database.applyPlaceNameIfNewer(
@@ -217,6 +233,7 @@ extension TimelineCloudSync: CKSyncEngineDelegate {
             )
         }
         for deletion in deletions {
+            try? await database.setCloudRecordArchive(deletion.recordID.recordName, nil)
             guard let kind = TimelineRecordMapper.kind(forRecordType: deletion.recordType) else { continue }
             try? await database.applyRemoteDeletion(kind: kind, rowID: deletion.recordID.recordName)
         }
@@ -231,22 +248,27 @@ extension TimelineCloudSync: CKSyncEngineDelegate {
     }
 
     private func acknowledge(_ sent: CKSyncEngine.Event.SentRecordZoneChanges) async {
+        // A saved record carries the change tag the next save has to quote.
+        for record in sent.savedRecords {
+            try? await database.setCloudRecordArchive(
+                record.recordID.recordName,
+                TimelineRecordMapper.encodeSystemFields(record)
+            )
+            conflictRetries.removeValue(forKey: record.recordID.recordName)
+        }
+
         let saved = sent.savedRecords.map(\.recordID.recordName) + sent.deletedRecordIDs.map(\.recordName)
         let acknowledged = saved.compactMap { inFlight[$0] }
         if !acknowledged.isEmpty {
             try? await database.acknowledge(acknowledged)
             for name in saved { inFlight.removeValue(forKey: name) }
         }
+        for name in sent.deletedRecordIDs.map(\.recordName) {
+            try? await database.setCloudRecordArchive(name, nil)
+        }
 
         for failure in sent.failedRecordSaves {
-            let name = failure.record.recordID.recordName
-            inFlight.removeValue(forKey: name)
-            // A row left in the change log is retried on the next send, which is
-            // the right answer for a rate limit or a dropped connection.
-            TimelineLog.error(
-                "cloud sync record failed",
-                ["record": name, "error": failure.error.localizedDescription]
-            )
+            await handle(failure: failure)
         }
 
         if !acknowledged.isEmpty {
@@ -254,6 +276,68 @@ extension TimelineCloudSync: CKSyncEngineDelegate {
         }
         // Drain whatever the change log gained while this batch was in flight.
         await enqueuePendingChanges()
+    }
+
+    /// Not every failure deserves another attempt. Leaving them all in the change
+    /// log turned a permanent rejection into an endless retry.
+    private func handle(failure: CKSyncEngine.Event.SentRecordZoneChanges.FailedRecordSave) async {
+        let name = failure.record.recordID.recordName
+        let change = inFlight.removeValue(forKey: name)
+        let error = failure.error as? CKError
+
+        switch error?.code {
+        case .serverRecordChanged:
+            // The row exists and our copy was stale — adopt the server's record so
+            // the next save quotes the right change tag. This is the exact failure
+            // that fired 3,400 times: a fresh CKRecord has no tag at all.
+            if let server = error?.serverRecord {
+                try? await database.setCloudRecordArchive(
+                    name,
+                    TimelineRecordMapper.encodeSystemFields(server)
+                )
+            }
+            await retryOrGiveUp(name: name, change: change, reason: "conflict")
+
+        case .unknownItem:
+            // Gone from the server. Forget the tag and let it insert cleanly.
+            try? await database.setCloudRecordArchive(name, nil)
+            await retryOrGiveUp(name: name, change: change, reason: "missing on server")
+
+        case .zoneNotFound, .userDeletedZone:
+            try? await database.clearCloudRecordArchives()
+            engine?.state.add(pendingDatabaseChanges: [.saveZone(CKRecordZone(zoneID: zoneID))])
+            await retryOrGiveUp(name: name, change: change, reason: "zone missing")
+
+        case .networkFailure, .networkUnavailable, .requestRateLimited,
+             .serviceUnavailable, .zoneBusy, .operationCancelled:
+            // Transient: leave it queued and let the next send pick it up.
+            break
+
+        default:
+            // Permanent and unhandled. Drop it rather than spin, and say so.
+            if let change { try? await database.acknowledge([change]) }
+            TimelineLog.error(
+                "cloud sync record dropped",
+                ["record": name, "error": failure.error.localizedDescription]
+            )
+        }
+    }
+
+    private func retryOrGiveUp(name: String, change: PendingChange?, reason: String) async {
+        let attempts = (conflictRetries[name] ?? 0) + 1
+        conflictRetries[name] = attempts
+        guard attempts <= Self.maximumConflictRetries else {
+            if let change { try? await database.acknowledge([change]) }
+            conflictRetries.removeValue(forKey: name)
+            TimelineLog.error(
+                "cloud sync record gave up",
+                ["record": name, "reason": reason, "attempts": "\(attempts)"]
+            )
+            return
+        }
+        engine?.state.add(pendingRecordZoneChanges: [.saveRecord(CKRecord.ID(recordName: name, zoneID: zoneID))])
+        if let change { inFlight[name] = change }
+        TimelineLog.info("cloud sync retrying", ["record": name, "reason": reason, "attempt": "\(attempts)"])
     }
 
     private func handleAccountChange(_ change: CKSyncEngine.Event.AccountChange) async {
@@ -271,6 +355,7 @@ extension TimelineCloudSync: CKSyncEngineDelegate {
         case .switchAccounts, .signOut:
             // Do not push one person's timeline into another's account.
             try? await database.clearChangeLog()
+            try? await database.clearCloudRecordArchives()
             try? await database.setSyncStateData(Self.stateKey, nil)
             stop()
         @unknown default:
