@@ -548,9 +548,16 @@ final class TimelineStore {
     /// of months. Falls back to the newest day there is — after a fresh import
     /// that is usually a day in the past, which is still more useful than nothing.
     private func openTodayIfLaunching() {
+        // One decision per process, taken whether or not it opens anything. iOS
+        // relaunches a tracking app in the background for every visit, and each
+        // of those loads the library too — without consuming the chance here, a
+        // stay recorded while the app was open would reveal the map underneath
+        // whatever the user was actually looking at.
         guard !hasOpenedOnLaunch else { return }
         hasOpenedOnLaunch = true
         guard TimelineLaunch.opensOnToday else { return }
+        // A launch the user cannot see is not a launch to open a map for.
+        guard UIApplication.shared.applicationState != .background else { return }
         let today = Calendar.current.startOfDay(for: Date())
         guard let day = daysByID[today] ?? newestDay() else { return }
         // Match the filters to the day being shown, or the sidebar would come
