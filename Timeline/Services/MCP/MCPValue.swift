@@ -60,12 +60,14 @@ enum MCPValue: Equatable, Sendable {
     // MARK: - Crossing the wire
 
     init(json: Any) {
+        // NSNumber before Bool, and the type asked of the original object: a
+        // Swift Bool cast to CFTypeRef is always a CFBoolean, so testing the
+        // bridged value turns every 0 and 1 into true and false — which quietly
+        // rewrote JSON-RPC request ids.
         switch json {
         case is NSNull: self = .null
-        case let value as Bool where CFGetTypeID(value as CFTypeRef) == CFBooleanGetTypeID():
-            self = .bool(value)
         case let value as NSNumber:
-            if CFGetTypeID(value as CFTypeRef) == CFBooleanGetTypeID() {
+            if CFGetTypeID(json as CFTypeRef) == CFBooleanGetTypeID() {
                 self = .bool(value.boolValue)
             } else {
                 self = .number(value.doubleValue)

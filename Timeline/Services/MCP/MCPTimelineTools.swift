@@ -281,21 +281,33 @@ struct MCPTimelineTools: MCPToolProviding {
         let counts = try await database.stayCountsByPlace()
         let merges = try await database.loadPlaceMerges()
 
-        // Two names standing in the same doorway.
-        var overlapping: [MCPValue] = []
-        let positioned = places.values.filter { $0.coordinate != nil && !($0.name ?? "").isEmpty }
-        for (index, place) in positioned.enumerated() {
-            for other in positioned.dropFirst(index + 1) {
+        // The same name twice is the one worth acting on without thinking. A
+        // plaza puts a bank, an off-licence and a supermarket within fifty
+        // metres of each other and none of them is a duplicate, so distance
+        // alone says almost nothing — it only means something when the names
+        // agree, or when two things are close enough to be one doorway.
+        var sameName: [MCPValue] = []
+        var suspiciouslyClose: [MCPValue] = []
+        let named = places.values.filter { $0.coordinate != nil && !($0.name ?? "").isEmpty }
+        for (index, place) in named.enumerated() {
+            for other in named.dropFirst(index + 1) {
                 guard let here = place.coordinate, let there = other.coordinate else { continue }
+                // Already folded into one another is not a duplicate — it is a
+                // duplicate that was dealt with, and reporting it again asks for
+                // the same work twice.
+                guard merges[place.id] != other.id, merges[other.id] != place.id else { continue }
                 let metres = RoutePlanner.meters(here, there)
-                guard metres <= 60 else { continue }
-                overlapping.append(.object([
+                let matching = place.name?.caseInsensitiveCompare(other.name ?? "") == .orderedSame
+                guard metres <= (matching ? Self.sameNameRadius : Self.sameDoorwayRadius) else { continue }
+                let pair = MCPValue.object([
                     "a": .string(place.id), "a_name": .string(place.name ?? ""),
                     "a_stays": .number(Double(counts[place.id] ?? 0)),
                     "b": .string(other.id), "b_name": .string(other.name ?? ""),
                     "b_stays": .number(Double(counts[other.id] ?? 0)),
-                    "metres_apart": .number(metres.rounded())
-                ]))
+                    "metres_apart": .number(metres.rounded()),
+                    "note": "merge_places folds one into the other — send the smaller into the larger"
+                ])
+                if matching { sameName.append(pair) } else { suspiciouslyClose.append(pair) }
             }
         }
 
@@ -313,19 +325,45 @@ struct MCPTimelineTools: MCPToolProviding {
             ]))
         }
 
-        // Places carrying real history with nothing to call them.
+        // Places carrying real history with nothing to call them. A place that
+        // knows it is home or work reads fine without a name of its own, so it
+        // is not a problem to be fixed.
         let unnamed = places.values
-            .filter { ($0.name ?? "").isEmpty && (counts[$0.id] ?? 0) >= 5 }
+            .filter { place in
+                (place.name ?? "").isEmpty
+                    && (place.semanticType ?? "").isEmpty
+                    && (counts[place.id] ?? 0) >= 5
+            }
             .sorted { (counts[$0.id] ?? 0) > (counts[$1.id] ?? 0) }
             .prefix(limit)
             .map { Self.describe($0, stays: counts[$0.id] ?? 0) }
 
+        // Named rows holding nothing. A place that was folded into another is
+        // meant to be empty, so it does not count: what is left is the row that
+        // lost its stays some other way and is now just a name on the map.
+        let empty = places.values
+            .filter { place in
+                !(place.name ?? "").isEmpty
+                    && (counts[place.id] ?? 0) == 0
+                    && (merges[place.id] ?? "").isEmpty
+            }
+            .prefix(limit)
+            .map { Self.describe($0, stays: 0) }
+
         return .object([
-            "places_on_top_of_each_other": .array(Array(overlapping.prefix(limit))),
+            "same_name_twice": .array(Array(sameName.prefix(limit))),
+            "close_enough_to_be_one_doorway": .array(Array(suspiciouslyClose.prefix(limit))),
             "folds_that_swallowed_the_bigger_place": .array(Array(lopsided.prefix(limit))),
-            "unnamed_places_with_history": .array(Array(unnamed))
+            "unnamed_places_with_history": .array(Array(unnamed)),
+            "places_holding_nothing": .array(Array(empty))
         ])
     }
+
+    /// Two rows with the same name this close are one place written twice.
+    private static let sameNameRadius: Double = 150
+    /// Different names need to be nearly touching before it means anything: a
+    /// plaza is full of distinct shops fifty metres apart.
+    private static let sameDoorwayRadius: Double = 20
 
     // MARK: - Fixing
 
