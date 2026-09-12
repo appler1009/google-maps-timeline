@@ -1479,6 +1479,42 @@ actor TimelineDatabase {
         try record(batch: TimelineBatch(visits: [opened], activities: [], paths: []))
     }
 
+    /// Give the stay we are inside a row, if it has not got one.
+    ///
+    /// A stay becomes a row when Core Location reports the arrival. A stay that
+    /// was already in flight when the app was replaced never gets that report —
+    /// the arrival happened under the previous build — so it would sit in
+    /// open_visit forever, invisible to the other device, until the next time
+    /// you left and came back.
+    @discardableResult
+    func backfillOpenStayRow(now: Date = Date()) throws -> Bool {
+        guard let open = try openStop(), open.stop.arrivalIsKnown, !open.placeKey.isEmpty else {
+            return false
+        }
+        let since = now.timeIntervalSince(open.stop.start)
+        guard since >= 0, since <= Self.longestOpenStay else { return false }
+        let id = PlaceClusterer.visitID(placeKey: open.placeKey, start: open.stop.start)
+        if try loadVisits().contains(where: { $0.id == id }) { return false }
+        try record(
+            batch: TimelineBatch(
+                visits: [
+                    TimelineVisit(
+                        id: id,
+                        start: open.stop.start,
+                        end: open.stop.start,
+                        coordinate: open.stop.coordinate,
+                        semanticType: nil,
+                        placeKey: open.placeKey,
+                        isOpen: true
+                    )
+                ],
+                activities: [],
+                paths: []
+            )
+        )
+        return true
+    }
+
     func clearOpenStop() throws {
         try exec("DELETE FROM open_visit")
     }
@@ -2315,6 +2351,13 @@ actor TimelineDatabase {
         for id in ids { try logChange(.visit, id) }
         try logChange(.place, placeKey)
         return ids.count
+    }
+
+    /// Empty the stays table. Reproduces a library that has the note about the
+    /// stay you are inside but no row for it, which is what replacing the app
+    /// mid-stay used to leave behind.
+    func clearVisitsForTesting() throws {
+        try exec("DELETE FROM visits")
     }
 
     /// Drop every recorded merge origin. Reproduces the state a merge arriving

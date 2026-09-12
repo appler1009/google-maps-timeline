@@ -583,4 +583,55 @@ final class OpenStayTests: XCTestCase {
         )
     }
 
+
+    /// A stay already in flight when the app is replaced never gets an arrival
+    /// report under the new build, so it has no row — and a stay with no row
+    /// cannot travel, however well it reads on the device holding it. The
+    /// commonest case of all: being at home when you update the app.
+    func testAStayAlreadyInFlightIsGivenARow() async throws {
+        let (db, url) = database()
+        defer { try? FileManager.default.removeItem(at: url) }
+        let arrived = Date(timeIntervalSince1970: Date().timeIntervalSince1970 - 5 * 3_600)
+
+        try await db.setOpenStop(
+            CapturedStop(coordinate: home, horizontalAccuracy: 50, start: arrived, end: nil),
+            placeKey: "home"
+        )
+        // What the old build left: the note to itself, and no row behind it.
+        try await db.clearVisitsForTesting()
+        try await db.clearChangeLog()
+
+        let written = try await db.backfillOpenStayRow()
+        XCTAssertTrue(written)
+
+        let loaded = try await db.loadBatch()
+        let open = try XCTUnwrap(loaded?.visits.first { $0.isOpen })
+        XCTAssertEqual(open.start.timeIntervalSince1970, arrived.timeIntervalSince1970, accuracy: 1)
+        XCTAssertEqual(open.placeKey, "home")
+        XCTAssertFalse(open.isDerived, "a row, not a reading of open_visit")
+
+        // Which is the whole point: it is queued to reach the other device.
+        let queued = try await db.pendingChanges().map(\.rowID)
+        XCTAssertTrue(queued.contains(open.id))
+    }
+
+    /// Nothing to do when the stay already has one, which is every stay opened
+    /// by a build that writes the row itself.
+    func testBackfillingChangesNothingWhenTheRowIsAlreadyThere() async throws {
+        let (db, url) = database()
+        defer { try? FileManager.default.removeItem(at: url) }
+        try await db.setOpenStop(
+            CapturedStop(coordinate: home, horizontalAccuracy: 50, start: Date().addingTimeInterval(-3_600), end: nil),
+            placeKey: "home"
+        )
+        let redundant = try await db.backfillOpenStayRow()
+        XCTAssertFalse(redundant, "setOpenStop already wrote it")
+
+        try await db.clearVisitsForTesting()
+        let needed = try await db.backfillOpenStayRow()
+        XCTAssertTrue(needed)
+        let again = try await db.backfillOpenStayRow()
+        XCTAssertFalse(again, "and not twice")
+    }
+
 }

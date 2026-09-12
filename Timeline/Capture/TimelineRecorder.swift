@@ -117,6 +117,11 @@ final class TimelineRecorder {
     /// recorded while we were not running, then tidy.
     func catchUp() async {
         guard settings.mode.isRecording else { return }
+        // A stay already in flight when the app was replaced never got an
+        // arrival report under this build, so it has no row and cannot travel.
+        if (try? await database.backfillOpenStayRow()) == true {
+            TimelineLog.info("open stay given a row")
+        }
         await backfillMotion()
         await flushFixes()
         await enrichFromHealth()
