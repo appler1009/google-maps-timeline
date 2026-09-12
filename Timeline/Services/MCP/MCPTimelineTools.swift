@@ -184,16 +184,20 @@ struct MCPTimelineTools: MCPToolProviding {
                 ])
             ),
             MCPTool(
-                name: "list_deleted_stays",
-                description: "What is in the bin, most recently removed first, with when and why.",
+                name: "stay_history",
+                description: "Every version of a stay that something replaced, most recent first — deleted, retimed or split — with when and why. Nothing here is lost; restore_stay puts any of it back.",
                 schema: .object([
                     "type": "object",
-                    "properties": .object(["limit": .object(["type": "number", "description": "default 50"])])
+                    "properties": .object([
+                        "stay_id": .object(["type": "string", "description": "narrow to one stay; omit for everything"]),
+                        "only_deleted": .object(["type": "boolean", "description": "just the bin"]),
+                        "limit": .object(["type": "number", "description": "default 50"])
+                    ])
                 ])
             ),
             MCPTool(
                 name: "restore_stay",
-                description: "Put a stay from the bin back into the timeline.",
+                description: "Put a stay back as it was before the last thing that changed it — whether that was a delete, a retime or a split. Restoring is itself recorded, so it can be undone too.",
                 schema: .object([
                     "type": "object",
                     "properties": .object(["stay_id": .object(["type": "string"])]),
@@ -257,7 +261,7 @@ struct MCPTimelineTools: MCPToolProviding {
         case "set_stay_times": return try await setStayTimes(arguments)
         case "split_stay": return try await splitStay(arguments)
         case "delete_stay": return try await deleteStay(arguments)
-        case "list_deleted_stays": return try await listDeletedStays(arguments)
+        case "stay_history": return try await stayHistory(arguments)
         case "restore_stay": return try await restoreStay(arguments)
         case "find_place_on_map": return try await findPlaceOnMap(arguments)
         case "stays_at_place": return try await staysAtPlace(arguments)
@@ -686,29 +690,33 @@ struct MCPTimelineTools: MCPToolProviding {
         ])
     }
 
-    private func listDeletedStays(_ arguments: MCPValue) async throws -> MCPValue {
+    private func stayHistory(_ arguments: MCPValue) async throws -> MCPValue {
         let limit = arguments["limit"]?.intValue ?? 50
-        let removed = try await database.deletedVisits(limit: limit)
+        let onlyDeleted = arguments["only_deleted"]?.boolValue ?? false
+        let stayID = arguments["stay_id"]?.stringValue
+        let versions = try await database.visitHistory(id: stayID, onlyDeleted: onlyDeleted, limit: limit)
         let names = try await placeNames()
-        let described = removed.map { entry in
+        let described = versions.map { version in
             MCPValue.of([
-                "stay_id": .string(entry.visit.id),
-                "from": .string(Self.stamp.string(from: entry.visit.start)),
-                "to": .string(Self.stamp.string(from: entry.visit.end)),
-                "place": .string(names[entry.visit.placeKey] ?? entry.visit.placeKey),
-                "deleted_at": .string(Self.stamp.string(from: entry.deletedAt)),
-                "reason": entry.reason.map { MCPValue.string($0) }
+                "stay_id": .string(version.visit.id),
+                "was_from": .string(Self.stamp.string(from: version.visit.start)),
+                "was_to": .string(Self.stamp.string(from: version.visit.end)),
+                "place": .string(names[version.visit.placeKey] ?? version.visit.placeKey),
+                "change": .string(version.change.rawValue),
+                "changed_at": .string(Self.stamp.string(from: version.changedAt)),
+                "reason": version.reason.map { MCPValue.string($0) },
+                "still_in_timeline": .bool(!version.isGone)
             ])
         }
-        return .object(["deleted": .array(described)])
+        return .object(["versions": .array(described)])
     }
 
     private func restoreStay(_ arguments: MCPValue) async throws -> MCPValue {
         guard let id = arguments["stay_id"]?.stringValue, !id.isEmpty else {
             throw MCPToolFailure(message: "stay_id is required")
         }
-        guard let restored = try await database.restoreDeletedVisit(id: id) else {
-            throw MCPToolFailure(message: "nothing in the bin with id \(id)")
+        guard let restored = try await database.restoreVisit(id: id) else {
+            throw MCPToolFailure(message: "no earlier version of \(id) was kept")
         }
         onChanged()
         return .object([
