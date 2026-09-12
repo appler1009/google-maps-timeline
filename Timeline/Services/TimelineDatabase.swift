@@ -57,11 +57,10 @@ actor TimelineDatabase {
 
     func loadBatch(includingShadowed: Bool = false) throws -> TimelineBatch? {
         if try isEmpty() { return nil }
-        let merges = try loadPlaceMerges()
-        let locations = Self.resolved(try loadPlaceLocations(), merges: merges)
+        // Merges are materialised in place_id now, so nothing is resolved here.
+        let locations = Self.resolved(try loadPlaceLocations(), merges: try loadPlaceMerges())
         return TimelineBatch(
             visits: try loadVisits(includingShadowed: includingShadowed)
-                .map { Self.remapped($0, merges: merges) }
                 .map { Self.relocated($0, locations: locations) },
             activities: try loadActivities(),
             paths: try loadPaths()
@@ -290,7 +289,15 @@ actor TimelineDatabase {
         guard let db, !id.isEmpty, !placeKey.isEmpty else { return }
         var statement: OpaquePointer?
         defer { sqlite3_finalize(statement) }
-        guard sqlite3_prepare_v2(db, "UPDATE visits SET place_key = ? WHERE id = ?", -1, &statement, nil) == SQLITE_OK else {
+        // place_id is what reads resolve through; place_key is kept in step only
+        // so an older build reading the same file still sees the move.
+        guard sqlite3_prepare_v2(
+            db,
+            "UPDATE visits SET place_id = ?1, place_key = ?1 WHERE id = ?2",
+            -1,
+            &statement,
+            nil
+        ) == SQLITE_OK else {
             throw TimelineDatabaseError.execute(errmsg())
         }
         sqlite3_bind_text(statement, 1, placeKey, -1, Self.transient)
@@ -299,6 +306,357 @@ actor TimelineDatabase {
             throw TimelineDatabaseError.execute(errmsg())
         }
         try logChange(.visit, id)
+    }
+
+    /// Build the `places` rows and point every stay at one.
+    ///
+    /// Idempotent: it only acts on stays that have no place yet, so it can run on
+    /// every launch until the library is fully migrated and then cost nothing.
+    @discardableResult
+    func migrateToPlaceEntities() throws -> PlaceEntityMigration.Result {
+        guard let db else { return PlaceEntityMigration.Result() }
+        let pending = try scalar("SELECT COUNT(*) FROM visits WHERE place_id IS NULL")
+        guard pending > 0 else { return PlaceEntityMigration.Result() }
+
+        let visitKeys = try allVisitPlaceKeys()
+        let names = try loadPlaceNameRecords().filter { !$0.value.name.isEmpty }.mapValues(\.name)
+        let locations = try loadPlaceLocations()
+        let merges = try loadPlaceMerges()
+        let semantics = try semanticTypesByPlaceKey()
+        let averages = try averageCoordinatesByPlaceKey()
+
+        let planned = PlaceEntityMigration.plan(
+            visitKeys: visitKeys,
+            names: names,
+            locations: locations,
+            merges: merges,
+            semanticTypes: semantics,
+            averageCoordinates: averages
+        )
+        let linkage = PlaceEntityMigration.linkage(for: planned)
+
+        var result = PlaceEntityMigration.Result()
+        result.placesCreated = planned.count
+        result.mergesFolded = merges.count
+        result.namesCarried = planned.filter { $0.name != nil }.count
+        result.locationsCarried = locations.count
+
+        try exec("BEGIN IMMEDIATE")
+        do {
+            for place in planned {
+                try upsertPlaceRow(place, db: db)
+            }
+            var linked = 0
+            for (key, placeID) in linkage {
+                linked += try linkVisits(placeKey: key, to: placeID, db: db)
+            }
+            // Some imported segments carry no place at all. They are still stays,
+            // and "every stay points at a place" has to stay true, so each gets
+            // one of its own from where it happened.
+            let orphans = try placelessVisits()
+            for orphan in orphans {
+                let placeID = orphan.coordinate.map { Geo.placeKey(id: nil, coordinate: $0) }
+                    ?? "unplaced:\(orphan.id)"
+                try upsertPlaceRow(
+                    PlaceEntityMigration.PlannedPlace(
+                        id: placeID,
+                        name: nil,
+                        coordinate: orphan.coordinate,
+                        semanticType: nil,
+                        keys: []
+                    ),
+                    db: db
+                )
+                linked += try linkVisit(id: orphan.id, to: placeID, db: db)
+                result.placesCreated += 1
+            }
+            result.visitsLinked = linked
+            // The legacy key still holds where each stay was before its merges
+            // were folded into place ids, which is exactly the provenance
+            // unmerging needs.
+            try exec(
+                """
+                UPDATE visits SET origin_place_id = place_key
+                WHERE origin_place_id IS NULL AND place_id IS NOT NULL AND place_id != place_key
+                """
+            )
+            try exec("COMMIT")
+        } catch {
+            sqlite3_exec(db, "ROLLBACK", nil, nil, nil)
+            throw error
+        }
+        return result
+    }
+
+    private func upsertPlaceRow(_ place: PlaceEntityMigration.PlannedPlace, db: OpaquePointer) throws {
+        var statement: OpaquePointer?
+        defer { sqlite3_finalize(statement) }
+        guard sqlite3_prepare_v2(
+            db,
+            """
+            INSERT INTO places (id, name, lat, lon, semantic_type, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+                name = COALESCE(excluded.name, places.name),
+                lat = COALESCE(excluded.lat, places.lat),
+                lon = COALESCE(excluded.lon, places.lon),
+                semantic_type = COALESCE(excluded.semantic_type, places.semantic_type)
+            """,
+            -1,
+            &statement,
+            nil
+        ) == SQLITE_OK else { throw TimelineDatabaseError.execute(errmsg()) }
+        sqlite3_bind_text(statement, 1, place.id, -1, Self.transient)
+        if let name = place.name {
+            sqlite3_bind_text(statement, 2, name, -1, Self.transient)
+        } else {
+            sqlite3_bind_null(statement, 2)
+        }
+        bindCoord(statement, index: 3, coordinate: place.coordinate)
+        if let semantic = place.semanticType {
+            sqlite3_bind_text(statement, 5, semantic, -1, Self.transient)
+        } else {
+            sqlite3_bind_null(statement, 5)
+        }
+        sqlite3_bind_double(statement, 6, Date().timeIntervalSince1970)
+        guard sqlite3_step(statement) == SQLITE_DONE else {
+            throw TimelineDatabaseError.execute(errmsg())
+        }
+    }
+
+    private func linkVisits(placeKey: String, to placeID: String, db: OpaquePointer) throws -> Int {
+        var statement: OpaquePointer?
+        defer { sqlite3_finalize(statement) }
+        guard sqlite3_prepare_v2(
+            db,
+            "UPDATE visits SET place_id = ? WHERE place_key = ? AND place_id IS NULL",
+            -1,
+            &statement,
+            nil
+        ) == SQLITE_OK else { throw TimelineDatabaseError.execute(errmsg()) }
+        sqlite3_bind_text(statement, 1, placeID, -1, Self.transient)
+        sqlite3_bind_text(statement, 2, placeKey, -1, Self.transient)
+        guard sqlite3_step(statement) == SQLITE_DONE else {
+            throw TimelineDatabaseError.execute(errmsg())
+        }
+        return Int(sqlite3_changes(db))
+    }
+
+    /// Stays with no place key at all — Google sometimes exports a segment
+    /// without one.
+    private func placelessVisits() throws -> [(id: String, coordinate: CLLocationCoordinate2D?)] {
+        guard let db else { return [] }
+        var statement: OpaquePointer?
+        defer { sqlite3_finalize(statement) }
+        guard sqlite3_prepare_v2(
+            db,
+            "SELECT id, lat, lon FROM visits WHERE place_id IS NULL",
+            -1,
+            &statement,
+            nil
+        ) == SQLITE_OK else { return [] }
+        var rows: [(id: String, coordinate: CLLocationCoordinate2D?)] = []
+        while sqlite3_step(statement) == SQLITE_ROW {
+            guard let id = text(statement, 0) else { continue }
+            rows.append((id, coordinate(statement, lat: 1, lon: 2)))
+        }
+        return rows
+    }
+
+    private func linkVisit(id: String, to placeID: String, db: OpaquePointer) throws -> Int {
+        var statement: OpaquePointer?
+        defer { sqlite3_finalize(statement) }
+        guard sqlite3_prepare_v2(
+            db,
+            "UPDATE visits SET place_id = ? WHERE id = ? AND place_id IS NULL",
+            -1,
+            &statement,
+            nil
+        ) == SQLITE_OK else { throw TimelineDatabaseError.execute(errmsg()) }
+        sqlite3_bind_text(statement, 1, placeID, -1, Self.transient)
+        sqlite3_bind_text(statement, 2, id, -1, Self.transient)
+        guard sqlite3_step(statement) == SQLITE_DONE else {
+            throw TimelineDatabaseError.execute(errmsg())
+        }
+        return Int(sqlite3_changes(db))
+    }
+
+    private func allVisitPlaceKeys() throws -> [String] {
+        guard let db else { return [] }
+        var statement: OpaquePointer?
+        defer { sqlite3_finalize(statement) }
+        guard sqlite3_prepare_v2(db, "SELECT DISTINCT place_key FROM visits", -1, &statement, nil) == SQLITE_OK else {
+            return []
+        }
+        var keys: [String] = []
+        while sqlite3_step(statement) == SQLITE_ROW {
+            if let key = text(statement, 0) { keys.append(key) }
+        }
+        return keys
+    }
+
+    private func semanticTypesByPlaceKey() throws -> [String: String] {
+        guard let db else { return [:] }
+        var statement: OpaquePointer?
+        defer { sqlite3_finalize(statement) }
+        guard sqlite3_prepare_v2(
+            db,
+            """
+            SELECT place_key, semantic_type FROM visits
+            WHERE semantic_type IS NOT NULL AND semantic_type NOT IN ('', 'Unknown', 'unknown')
+            """,
+            -1,
+            &statement,
+            nil
+        ) == SQLITE_OK else { return [:] }
+        var found: [String: String] = [:]
+        while sqlite3_step(statement) == SQLITE_ROW {
+            guard let key = text(statement, 0), let type = text(statement, 1) else { continue }
+            // Home and Work outrank anything else said about the place.
+            if found[key] == nil || type == "Home" || type == "Work" { found[key] = type }
+        }
+        return found
+    }
+
+    private func averageCoordinatesByPlaceKey() throws -> [String: CLLocationCoordinate2D] {
+        guard let db else { return [:] }
+        var statement: OpaquePointer?
+        defer { sqlite3_finalize(statement) }
+        guard sqlite3_prepare_v2(
+            db,
+            """
+            SELECT place_key, AVG(lat), AVG(lon) FROM visits
+            WHERE lat IS NOT NULL AND lon IS NOT NULL
+            GROUP BY place_key
+            """,
+            -1,
+            &statement,
+            nil
+        ) == SQLITE_OK else { return [:] }
+        var found: [String: CLLocationCoordinate2D] = [:]
+        while sqlite3_step(statement) == SQLITE_ROW {
+            guard let key = text(statement, 0) else { continue }
+            let coordinate = CLLocationCoordinate2D(
+                latitude: sqlite3_column_double(statement, 1),
+                longitude: sqlite3_column_double(statement, 2)
+            )
+            if CLLocationCoordinate2DIsValid(coordinate) { found[key] = coordinate }
+        }
+        return found
+    }
+
+    /// Collapse rows that describe one stay under two different places.
+    ///
+    /// A stay's id used to be hashed from its place, so re-clustering the same
+    /// stop wrote a second row rather than updating the first. Same source, same
+    /// minute in and out: one stay. The row whose place has a name survives,
+    /// since that is the one the user has already reasoned about.
+    @discardableResult
+    func collapseDuplicateStays() throws -> Int {
+        guard let db else { return 0 }
+        var statement: OpaquePointer?
+        defer { sqlite3_finalize(statement) }
+        let sql = """
+            SELECT v.id, v.start, v.end, v.source,
+                   CASE WHEN p.name IS NOT NULL AND p.name != '' THEN 1 ELSE 0 END AS named
+            FROM visits v
+            LEFT JOIN places p ON p.id = v.place_id
+            WHERE (v.source, v.start, v.end) IN (
+                SELECT source, start, end FROM visits
+                GROUP BY source, start, end HAVING COUNT(*) > 1
+            )
+            ORDER BY v.start, named DESC, v.id
+            """
+        guard sqlite3_prepare_v2(db, sql, -1, &statement, nil) == SQLITE_OK else { return 0 }
+
+        var keepByGroup: [String: String] = [:]
+        var doomed: [String] = []
+        while sqlite3_step(statement) == SQLITE_ROW {
+            guard let id = text(statement, 0), let source = text(statement, 3) else { continue }
+            let group = "\(source)|\(sqlite3_column_double(statement, 1))|\(sqlite3_column_double(statement, 2))"
+            if keepByGroup[group] == nil {
+                keepByGroup[group] = id
+            } else {
+                doomed.append(id)
+            }
+        }
+        guard !doomed.isEmpty else { return 0 }
+
+        try exec("BEGIN IMMEDIATE")
+        do {
+            for id in doomed {
+                try exec("DELETE FROM visits WHERE id = \(quote(id))")
+                try logChange(.visit, id, .delete)
+            }
+            try exec("COMMIT")
+        } catch {
+            sqlite3_exec(db, "ROLLBACK", nil, nil, nil)
+            throw error
+        }
+        return doomed.count
+    }
+
+    /// Everything a place knows about itself. One read, so the name and the
+    /// location can never disagree about which place they describe.
+    func loadPlaces() throws -> [String: PlaceEntity] {
+        guard let db else { return [:] }
+        var statement: OpaquePointer?
+        defer { sqlite3_finalize(statement) }
+        guard sqlite3_prepare_v2(
+            db,
+            "SELECT id, name, lat, lon, semantic_type FROM places",
+            -1,
+            &statement,
+            nil
+        ) == SQLITE_OK else { return [:] }
+        var found: [String: PlaceEntity] = [:]
+        while sqlite3_step(statement) == SQLITE_ROW {
+            guard let id = text(statement, 0) else { continue }
+            found[id] = PlaceEntity(
+                id: id,
+                name: text(statement, 1),
+                coordinate: coordinate(statement, lat: 2, lon: 3),
+                semanticType: text(statement, 4)
+            )
+        }
+        return found
+    }
+
+    /// Keep the place row in step with a name or location edit, so reads that go
+    /// through `places` see it immediately.
+    private func syncPlaceRow(id: String, name: String? = nil, coordinate: CLLocationCoordinate2D? = nil) throws {
+        guard let db, !id.isEmpty else { return }
+        var statement: OpaquePointer?
+        defer { sqlite3_finalize(statement) }
+        guard sqlite3_prepare_v2(
+            db,
+            """
+            INSERT INTO places (id, name, lat, lon, updated_at)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+                name = COALESCE(excluded.name, places.name),
+                lat = COALESCE(excluded.lat, places.lat),
+                lon = COALESCE(excluded.lon, places.lon),
+                updated_at = excluded.updated_at
+            """,
+            -1,
+            &statement,
+            nil
+        ) == SQLITE_OK else { return }
+        sqlite3_bind_text(statement, 1, id, -1, Self.transient)
+        if let name, !name.isEmpty {
+            sqlite3_bind_text(statement, 2, name, -1, Self.transient)
+        } else {
+            sqlite3_bind_null(statement, 2)
+        }
+        bindCoord(statement, index: 3, coordinate: coordinate)
+        sqlite3_bind_double(statement, 5, Date().timeIntervalSince1970)
+        sqlite3_step(statement)
+    }
+
+    /// Stays still carrying only an old-style key. Zero once migrated.
+    func unlinkedVisitCount() throws -> Int {
+        try scalar("SELECT COUNT(*) FROM visits WHERE place_id IS NULL")
     }
 
     /// Every place we could snap a new stay onto, with how often it was visited
@@ -895,31 +1253,47 @@ actor TimelineDatabase {
         sqlite3_step(statement)
     }
 
-    func pathRoute(id: String) throws -> [CLLocationCoordinate2D]? {
+    /// A cached route, but only if it still runs between the same two points.
+    ///
+    /// A hop is identified by the stays it joins, and a stay keeps its id when
+    /// its place is corrected — so the id alone cannot say whether the geometry
+    /// is still right. Correcting a place used to leave every route into and out
+    /// of it pointing at where the place used to be. The anchor is what the route
+    /// was drawn between; when it no longer matches, the row is a miss.
+    func pathRoute(id: String, anchor: String) throws -> [CLLocationCoordinate2D]? {
         guard let db else { return nil }
         var statement: OpaquePointer?
         defer { sqlite3_finalize(statement) }
-        guard sqlite3_prepare_v2(db, "SELECT points FROM path_routes WHERE path_id = ?", -1, &statement, nil) == SQLITE_OK else {
+        guard sqlite3_prepare_v2(
+            db,
+            "SELECT points, anchor FROM path_routes WHERE path_id = ?",
+            -1,
+            &statement,
+            nil
+        ) == SQLITE_OK else {
             return nil
         }
         sqlite3_bind_text(statement, 1, id, -1, Self.transient)
         guard sqlite3_step(statement) == SQLITE_ROW else { return nil }
+        // Rows written before anchors carry none; re-route them once.
+        guard let stored = text(statement, 1), stored == anchor else { return nil }
         return CoordBlob.unpack(blob(statement, 0))
     }
 
-    func savePathRoute(id: String, points: [CLLocationCoordinate2D]) throws {
+    func savePathRoute(id: String, anchor: String, points: [CLLocationCoordinate2D]) throws {
         guard let db, points.count >= 2 else { return }
         var statement: OpaquePointer?
         defer { sqlite3_finalize(statement) }
         guard sqlite3_prepare_v2(
             db,
-            "INSERT OR REPLACE INTO path_routes (path_id, points) VALUES (?, ?)",
+            "INSERT OR REPLACE INTO path_routes (path_id, anchor, points) VALUES (?, ?, ?)",
             -1,
             &statement,
             nil
         ) == SQLITE_OK else { return }
         sqlite3_bind_text(statement, 1, id, -1, Self.transient)
-        bindBlob(statement, 2, CoordBlob.pack(points))
+        sqlite3_bind_text(statement, 2, anchor, -1, Self.transient)
+        bindBlob(statement, 3, CoordBlob.pack(points))
         sqlite3_step(statement)
     }
 
@@ -976,6 +1350,7 @@ actor TimelineDatabase {
             throw TimelineDatabaseError.execute(errmsg())
         }
         try logChange(.placeName, placeKey)
+        try syncPlaceRow(id: placeKey, name: trimmed)
     }
 
     /// Apply a remote name when it is strictly newer than the local row.
@@ -1051,6 +1426,7 @@ actor TimelineDatabase {
             throw TimelineDatabaseError.execute(errmsg())
         }
         try logChange(.placeLocation, placeKey)
+        try syncPlaceRow(id: placeKey, coordinate: coordinate)
     }
 
     /// Put a place back where the data said it was.
@@ -1182,12 +1558,145 @@ actor TimelineDatabase {
                 WHERE to_key = \(quote(fromKey))
                 """
             )
+            // Move the stays themselves. Reads resolve through place_id now, so
+            // this is what the merge actually means; the alias above is kept only
+            // until the sync format catches up.
+            try repointStays(from: fromKey, to: toKey)
             try setPlaceName(placeKey: fromKey, name: "", updatedAt: stamp)
             try exec("COMMIT")
         } catch {
             sqlite3_exec(db, "ROLLBACK", nil, nil, nil)
             throw error
         }
+    }
+
+    /// Move every stay at one place to another, remembering where it came from so
+    /// the merge can be undone.
+    private func repointStays(from fromKey: String, to toKey: String) throws {
+        guard let db else { throw TimelineDatabaseError.open }
+        var moved: [String] = []
+        var select: OpaquePointer?
+        defer { sqlite3_finalize(select) }
+        if sqlite3_prepare_v2(db, "SELECT id FROM visits WHERE place_id = ?", -1, &select, nil) == SQLITE_OK {
+            sqlite3_bind_text(select, 1, fromKey, -1, Self.transient)
+            while sqlite3_step(select) == SQLITE_ROW {
+                if let id = text(select, 0) { moved.append(id) }
+            }
+        }
+        guard !moved.isEmpty else { return }
+
+        // COALESCE keeps the *first* origin through a chain of merges, so
+        // unmerging steps back one place at a time rather than losing the trail.
+        try exec(
+            """
+            UPDATE visits
+            SET place_id = \(quote(toKey)),
+                origin_place_id = COALESCE(origin_place_id, \(quote(fromKey)))
+            WHERE place_id = \(quote(fromKey))
+            """
+        )
+        for id in moved {
+            try logChange(.visit, id)
+        }
+    }
+
+    /// The named places visited in a window, for a maintenance pass. Takes epochs
+    /// rather than a date string: SQLite's `localtime` depends on the process
+    /// timezone, which is not the user's in a test runner.
+    func namedPlaces(from: Date, to: Date) throws -> [PlaceEntity] {
+        guard let db else { return [] }
+        var statement: OpaquePointer?
+        defer { sqlite3_finalize(statement) }
+        guard sqlite3_prepare_v2(
+            db,
+            """
+            SELECT DISTINCT p.id, p.name, p.lat, p.lon, p.semantic_type
+            FROM visits v JOIN places p ON p.id = v.place_id
+            WHERE v.start >= ? AND v.start < ?
+              AND p.name IS NOT NULL AND p.name != ''
+            """,
+            -1,
+            &statement,
+            nil
+        ) == SQLITE_OK else { return [] }
+        sqlite3_bind_double(statement, 1, from.timeIntervalSince1970)
+        sqlite3_bind_double(statement, 2, to.timeIntervalSince1970)
+        var found: [PlaceEntity] = []
+        while sqlite3_step(statement) == SQLITE_ROW {
+            guard let id = text(statement, 0) else { continue }
+            found.append(
+                PlaceEntity(
+                    id: id,
+                    name: text(statement, 1),
+                    coordinate: coordinate(statement, lat: 2, lon: 3),
+                    semanticType: text(statement, 4)
+                )
+            )
+        }
+        return found
+    }
+
+    /// How many stays each place holds. Which of two duplicates is the stray.
+    func stayCountsByPlace() throws -> [String: Int] {
+        guard let db else { return [:] }
+        var statement: OpaquePointer?
+        defer { sqlite3_finalize(statement) }
+        guard sqlite3_prepare_v2(
+            db,
+            "SELECT place_id, COUNT(*) FROM visits WHERE place_id IS NOT NULL GROUP BY place_id",
+            -1,
+            &statement,
+            nil
+        ) == SQLITE_OK else { return [:] }
+        var counts: [String: Int] = [:]
+        while sqlite3_step(statement) == SQLITE_ROW {
+            guard let id = text(statement, 0) else { continue }
+            counts[id] = Int(sqlite3_column_int64(statement, 1))
+        }
+        return counts
+    }
+
+    /// Every place's folded-in origins in one read, for the menus.
+    func mergedOriginsByPlace() throws -> [String: [String]] {
+        guard let db else { return [:] }
+        var statement: OpaquePointer?
+        defer { sqlite3_finalize(statement) }
+        guard sqlite3_prepare_v2(
+            db,
+            """
+            SELECT DISTINCT place_id, origin_place_id FROM visits
+            WHERE origin_place_id IS NOT NULL AND place_id IS NOT NULL AND place_id != origin_place_id
+            """,
+            -1,
+            &statement,
+            nil
+        ) == SQLITE_OK else { return [:] }
+        var found: [String: [String]] = [:]
+        while sqlite3_step(statement) == SQLITE_ROW {
+            guard let place = text(statement, 0), let origin = text(statement, 1) else { continue }
+            found[place, default: []].append(origin)
+        }
+        return found
+    }
+
+    /// The places folded into this one, for the Unmerge menu.
+    func mergedOrigins(into placeID: String) throws -> [String] {
+        guard let db, !placeID.isEmpty else { return [] }
+        var statement: OpaquePointer?
+        defer { sqlite3_finalize(statement) }
+        guard sqlite3_prepare_v2(
+            db,
+            "SELECT DISTINCT origin_place_id FROM visits WHERE place_id = ? AND origin_place_id IS NOT NULL",
+            -1,
+            &statement,
+            nil
+        ) == SQLITE_OK else { return [] }
+        sqlite3_bind_text(statement, 1, placeID, -1, Self.transient)
+        var origins: [String] = []
+        while sqlite3_step(statement) == SQLITE_ROW {
+            if let origin = text(statement, 0), origin != placeID { origins.append(origin) }
+        }
+        return origins
     }
 
     /// Undo a merge: tombstone the alias and restore any hard-remapped visits whose
@@ -1226,6 +1735,8 @@ actor TimelineDatabase {
                 throw TimelineDatabaseError.execute(errmsg())
             }
             try logChange(.placeMerge, fromKey)
+            // Send the stays home.
+            try restoreStays(originallyAt: fromKey)
             try exec("COMMIT")
         } catch {
             sqlite3_exec(db, "ROLLBACK", nil, nil, nil)
@@ -1263,7 +1774,7 @@ actor TimelineDatabase {
         defer { sqlite3_finalize(update) }
         guard sqlite3_prepare_v2(
             db,
-            "UPDATE visits SET place_key = ? WHERE id = ?",
+            "UPDATE visits SET place_id = ?1, place_key = ?1 WHERE id = ?2",
             -1,
             &update,
             nil
@@ -1310,6 +1821,32 @@ actor TimelineDatabase {
             placeKey: visit.placeKey,
             isDerived: visit.isDerived
         )
+    }
+
+    /// Put back every stay a merge moved away from this place.
+    private func restoreStays(originallyAt originKey: String) throws {
+        guard let db else { throw TimelineDatabaseError.open }
+        var moved: [String] = []
+        var select: OpaquePointer?
+        defer { sqlite3_finalize(select) }
+        if sqlite3_prepare_v2(db, "SELECT id FROM visits WHERE origin_place_id = ?", -1, &select, nil) == SQLITE_OK {
+            sqlite3_bind_text(select, 1, originKey, -1, Self.transient)
+            while sqlite3_step(select) == SQLITE_ROW {
+                if let id = text(select, 0) { moved.append(id) }
+            }
+        }
+        guard !moved.isEmpty else { return }
+
+        try exec(
+            """
+            UPDATE visits
+            SET place_id = origin_place_id, origin_place_id = NULL
+            WHERE origin_place_id = \(quote(originKey))
+            """
+        )
+        for id in moved {
+            try logChange(.visit, id)
+        }
     }
 
     private static func remapped(_ visit: TimelineVisit, merges: [String: String]) -> TimelineVisit {
@@ -1380,6 +1917,14 @@ actor TimelineDatabase {
                 name TEXT NOT NULL,
                 updated_at REAL NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS places (
+                id TEXT PRIMARY KEY,
+                name TEXT,
+                lat REAL,
+                lon REAL,
+                semantic_type TEXT,
+                updated_at REAL NOT NULL DEFAULT 0
+            );
             CREATE TABLE IF NOT EXISTS place_locations (
                 place_key TEXT PRIMARY KEY,
                 lat REAL NOT NULL,
@@ -1442,6 +1987,14 @@ actor TimelineDatabase {
         }
         // Imported rows a recording supersedes are hidden, never deleted.
         try addColumn(db, table: "visits", column: "shadowed INTEGER NOT NULL DEFAULT 0")
+        // A stay points at a place rather than carrying one inside its identity.
+        try addColumn(db, table: "visits", column: "place_id TEXT")
+        // What a cached route was drawn between, so moving a place invalidates it.
+        try addColumn(db, table: "path_routes", column: "anchor TEXT")
+        // Where the stay was before a merge moved it, so unmerging can put it
+        // back. Repointing without this would be a one-way door.
+        try addColumn(db, table: "visits", column: "origin_place_id TEXT")
+        try exec(db, "CREATE INDEX IF NOT EXISTS visits_place_id ON visits(place_id)")
         try addColumn(db, table: "sync_state", column: "blob_value BLOB")
     }
 
@@ -1464,8 +2017,8 @@ actor TimelineDatabase {
         var statement: OpaquePointer?
         defer { sqlite3_finalize(statement) }
         let sql = """
-            INSERT INTO visits (id, start, end, lat, lon, place_key, semantic_type, source)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO visits (id, start, end, lat, lon, place_key, semantic_type, source, place_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
                 start = excluded.start,
                 end = excluded.end,
@@ -1508,11 +2061,58 @@ actor TimelineDatabase {
                 sqlite3_bind_null(statement, 7)
             }
             sqlite3_bind_text(statement, 8, source.rawValue, -1, Self.transient)
+            // Every stay points at a place from the moment it is written. Leaving
+            // that to the migration meant a stay recorded in the background had
+            // no place until the app was next opened.
+            sqlite3_bind_text(statement, 9, visit.placeKey, -1, Self.transient)
             guard sqlite3_step(statement) == SQLITE_DONE else {
                 throw TimelineDatabaseError.execute(errmsg())
             }
+            try ensurePlaceRow(
+                id: visit.placeKey,
+                coordinate: visit.coordinate,
+                semanticType: visit.semanticType,
+                db: db
+            )
             try logChange(.visit, visit.id)
         }
+    }
+
+    /// Create the place a stay points at, if this is the first time we have seen
+    /// it. Never overwrites what is already known about it — a recorded fix is
+    /// weaker evidence than a name or a correction the user has given.
+    private func ensurePlaceRow(
+        id: String,
+        coordinate: CLLocationCoordinate2D?,
+        semanticType: String?,
+        db: OpaquePointer
+    ) throws {
+        guard !id.isEmpty else { return }
+        var statement: OpaquePointer?
+        defer { sqlite3_finalize(statement) }
+        guard sqlite3_prepare_v2(
+            db,
+            """
+            INSERT INTO places (id, name, lat, lon, semantic_type, updated_at)
+            VALUES (?, NULL, ?, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+                lat = COALESCE(places.lat, excluded.lat),
+                lon = COALESCE(places.lon, excluded.lon),
+                semantic_type = COALESCE(places.semantic_type, excluded.semantic_type)
+            """,
+            -1,
+            &statement,
+            nil
+        ) == SQLITE_OK else { return }
+        sqlite3_bind_text(statement, 1, id, -1, Self.transient)
+        bindCoord(statement, index: 2, coordinate: coordinate)
+        if let semanticType, !semanticType.isEmpty, !["Unknown", "unknown"].contains(semanticType) {
+            sqlite3_bind_text(statement, 4, semanticType, -1, Self.transient)
+        } else {
+            sqlite3_bind_null(statement, 4)
+        }
+        sqlite3_bind_double(statement, 5, Date().timeIntervalSince1970)
+        sqlite3_step(statement)
     }
 
     private func upsertActivities(_ activities: [TimelineActivity], db: OpaquePointer, source: RecordSource) throws {
@@ -1588,7 +2188,7 @@ actor TimelineDatabase {
         defer { sqlite3_finalize(statement) }
         guard sqlite3_prepare_v2(
             db,
-            "SELECT id, start, end, lat, lon, place_key, semantic_type FROM visits" + filter,
+            "SELECT id, start, end, lat, lon, COALESCE(place_id, place_key), semantic_type FROM visits" + filter,
             -1,
             &statement,
             nil

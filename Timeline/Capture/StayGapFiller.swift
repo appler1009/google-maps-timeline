@@ -15,6 +15,27 @@ enum StayGapFiller {
     static let minimumGap: TimeInterval = 30 * 60
     /// Longer than this and we are asserting something about days we never saw.
     static let maximumGap: TimeInterval = 36 * 60 * 60
+    /// A walk this short is pottering, not leaving: round the block, out to the
+    /// bins, down to the lobby for a parcel.
+    static let potteringDuration: TimeInterval = 10 * 60
+    /// …unless it actually covered ground. Round the block and back is a couple
+    /// of hundred metres; past that you went somewhere, however briefly.
+    static let potteringDistance: Double = 200
+
+    /// Did this journey mean leaving, or just moving about?
+    ///
+    /// Treating every recorded trip as a departure is what lost the night at
+    /// home: the last thing recorded that evening was a four-minute walk, and it
+    /// ended the stay as surely as a drive to another city would have. A walk
+    /// that short cannot take you anywhere you did not come straight back from.
+    static func isDeparture(_ trip: TimelineActivity) -> Bool {
+        let duration = trip.end.timeIntervalSince(trip.start)
+        guard case .walking = trip.kind else { return true }
+        guard duration <= potteringDuration else { return true }
+        // Distance is zero when there were no fixes to measure it with, which is
+        // not evidence of going somewhere.
+        return trip.distance > potteringDistance
+    }
 
     /// One inferred stay per gap, continuing the place the gap opened at.
     ///
@@ -28,7 +49,9 @@ enum StayGapFiller {
     ) -> [TimelineVisit] {
         guard !visits.isEmpty else { return [] }
         let orderedVisits = visits.sorted { $0.start < $1.start }
-        let orderedTrips = trips.sorted { $0.start < $1.start }
+        // Pottering neither opens a gap nor closes one: the stay simply continues
+        // through it.
+        let orderedTrips = trips.filter(isDeparture).sorted { $0.start < $1.start }
 
         let visitStarts = orderedVisits.map(\.start)
         let tripStarts = orderedTrips.map(\.start)

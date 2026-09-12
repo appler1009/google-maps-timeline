@@ -209,3 +209,90 @@ final class DuplicateVisitCollapseTests: XCTestCase {
         XCTAssertEqual(collapsed, 0, "choosing between sources is reconciliation's job")
     }
 }
+
+/// A short walk is pottering, not leaving. Treating every recorded trip as a
+/// departure is what lost the night at home.
+final class PotteringTests: XCTestCase {
+    private let home = CLLocationCoordinate2D(latitude: 49.2645, longitude: -123.2460)
+    private let origin = Date(timeIntervalSince1970: 1_800_000_000)
+
+    private func at(_ hours: Double) -> Date { origin.addingTimeInterval(hours * 3_600) }
+
+    private func visit(_ id: String, from: Double, to: Double) -> TimelineVisit {
+        TimelineVisit(
+            id: id,
+            start: at(from),
+            end: at(to),
+            coordinate: home,
+            semanticType: "Home",
+            placeKey: "home"
+        )
+    }
+
+    private func trip(
+        _ id: String,
+        from: Double,
+        to: Double,
+        kind: TravelKind = .walking,
+        metres: Double = 0
+    ) -> TimelineActivity {
+        TimelineActivity(
+            id: id,
+            start: at(from),
+            end: at(to),
+            distance: metres,
+            startCoordinate: home,
+            endCoordinate: home,
+            kind: kind
+        )
+    }
+
+    func testAFourMinuteWalkIsNotLeaving() {
+        XCTAssertFalse(StayGapFiller.isDeparture(trip("walk", from: 17.4, to: 17.47)))
+    }
+
+    func testAWalkThatCoveredGroundIsLeaving() {
+        // Same four minutes, but the fixes say two kilometres — so it was not a
+        // walk round the block, whatever the clock says.
+        XCTAssertTrue(StayGapFiller.isDeparture(trip("hike", from: 17.4, to: 17.47, metres: 2_000)))
+    }
+
+    func testTheBarForCoveringGroundIsLow() {
+        // Three hundred metres is down the road and back, not pottering.
+        XCTAssertTrue(StayGapFiller.isDeparture(trip("errand", from: 17.4, to: 17.5, metres: 300)))
+        // A hundred and fifty is round the block.
+        XCTAssertFalse(StayGapFiller.isDeparture(trip("block", from: 17.4, to: 17.5, metres: 150)))
+    }
+
+    func testALongWalkIsLeaving() {
+        XCTAssertTrue(StayGapFiller.isDeparture(trip("stroll", from: 1, to: 1.5)))
+    }
+
+    func testAShortDriveIsAlwaysLeaving() {
+        // Four minutes in a car is a couple of kilometres.
+        XCTAssertTrue(StayGapFiller.isDeparture(trip("drive", from: 1, to: 1.07, kind: .automobile)))
+    }
+
+    func testTheNightSurvivesAnEveningWalk() {
+        // The reported case: home until 16:47, a four-minute walk at 17:24, then
+        // nothing until the morning drive. The night should read as one stay.
+        let visits = [visit("evening", from: 14, to: 16.78)]
+        let trips = [
+            trip("evening-walk", from: 17.4, to: 17.47),
+            trip("morning-drive", from: 32.58, to: 32.9, kind: .automobile, metres: 10_000),
+        ]
+        let filled = StayGapFiller.fill(visits: visits, trips: trips, now: at(40))
+
+        XCTAssertEqual(filled.count, 1, "one continuous stay, not one either side of the walk")
+        XCTAssertEqual(filled.first?.start, at(16.78))
+        XCTAssertEqual(filled.first?.end, at(32.58), "up to the moment the morning drive begins")
+        XCTAssertEqual(filled.first?.placeKey, "home")
+    }
+
+    func testARealDepartureStillEndsTheStay() {
+        let visits = [visit("evening", from: 14, to: 16.78)]
+        let trips = [trip("out", from: 17.4, to: 17.9, kind: .automobile, metres: 8_000)]
+        let filled = StayGapFiller.fill(visits: visits, trips: trips, now: at(40))
+        XCTAssertEqual(filled.first?.end, at(17.4), "a drive out is leaving")
+    }
+}

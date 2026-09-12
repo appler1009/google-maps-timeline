@@ -55,8 +55,13 @@ enum PlaceClusterer {
     }
 
     /// Stable across re-recording the same stay, and distinct from any import id.
-    static func visitID(placeKey: String, start: Date) -> String {
-        Geo.segmentID("dv", Geo.millis(start), placeKey)
+    ///
+    /// Deliberately *not* built from the place. It used to be, and re-clustering
+    /// the same stop — which happens whenever the known places change underneath
+    /// it — minted a second id instead of updating the first, so one stop at
+    /// Staples appeared twice.
+    static func visitID(placeKey: String = "", start: Date) -> String {
+        Geo.segmentID("dv", Geo.millis(start))
     }
 
     static func visit(for stop: CapturedStop, placeKey: String, semanticType: String? = nil) -> TimelineVisit? {
