@@ -107,6 +107,11 @@ struct TimelineAppScene: View {
                     VisitNotifier.shared.start()
                     TimelineRecorder.shared.start()
                     applyPendingVisitChoice()
+                    // Catching up is not only for coming back from the
+                    // background. onChange(of:) does not fire at launch —
+                    // the scene is already active by then — so a cold start,
+                    // which is what every rebuild is, would skip it entirely.
+                    Task { await TimelineRecorder.shared.catchUp() }
                     #endif
                 }
                 #if os(iOS)
