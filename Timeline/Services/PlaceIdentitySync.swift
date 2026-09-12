@@ -1,8 +1,26 @@
 import Foundation
+import CoreLocation
 
 struct PlaceIdentityName: Hashable, Sendable {
     var name: String
     var updatedAt: TimeInterval
+}
+
+struct PlaceLocation: Hashable, Sendable {
+    var coordinate: CLLocationCoordinate2D
+    var updatedAt: TimeInterval
+
+    static func == (lhs: PlaceLocation, rhs: PlaceLocation) -> Bool {
+        lhs.updatedAt == rhs.updatedAt
+            && lhs.coordinate.latitude == rhs.coordinate.latitude
+            && lhs.coordinate.longitude == rhs.coordinate.longitude
+    }
+
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(updatedAt)
+        hasher.combine(coordinate.latitude)
+        hasher.combine(coordinate.longitude)
+    }
 }
 
 struct PlaceIdentityMerge: Hashable, Sendable {

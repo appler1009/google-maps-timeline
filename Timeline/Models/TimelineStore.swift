@@ -238,6 +238,45 @@ final class TimelineStore {
         }
     }
 
+    /// Put a place where it really is.
+    ///
+    /// Google ships one coordinate per Place ID and it is sometimes the wrong end
+    /// of the block; a recorded stay sits wherever the fix landed. Neither is
+    /// something the user can argue with today, so this overrides both.
+    func setPlaceLocation(_ placeID: String, to coordinate: CLLocationCoordinate2D) {
+        isLoading = true
+        Task {
+            try? await database.setPlaceLocation(placeKey: placeID, coordinate: coordinate)
+            TimelineLog.info(
+                "place location corrected",
+                ["placeKey": placeID, "lat": String(format: "%.5f", coordinate.latitude)]
+            )
+            isLoading = false
+            refreshFromLibrary()
+        }
+    }
+
+    /// Put it back where the data said it was.
+    func clearPlaceLocation(_ placeID: String) {
+        isLoading = true
+        Task {
+            try? await database.clearPlaceLocation(placeKey: placeID)
+            isLoading = false
+            refreshFromLibrary()
+        }
+    }
+
+    /// True when this place has been moved by hand, so the menu can offer to undo it.
+    func hasCorrectedLocation(_ placeID: String) -> Bool {
+        correctedLocations.contains(placeID)
+    }
+
+    private var correctedLocations: Set<String> = []
+
+    func refreshCorrectedLocations() async {
+        correctedLocations = Set((try? await database.loadPlaceLocations().keys).map(Array.init) ?? [])
+    }
+
     /// Fold `sourceID` into `targetID` so Places shows a single entry.
     func mergePlace(from sourceID: String, into targetID: String) {
         guard sourceID != targetID, let target = placesByID[targetID] else { return }
@@ -694,6 +733,7 @@ final class TimelineStore {
     private func refreshPlaceIdentity() async {
         placeNames = (try? await database.loadPlaceNames()) ?? placeNames
         placeMerges = (try? await database.loadPlaceMerges()) ?? placeMerges
+        await refreshCorrectedLocations()
     }
 
     private func refreshPlaceNames() async {

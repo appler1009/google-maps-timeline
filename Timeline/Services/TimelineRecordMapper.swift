@@ -43,6 +43,7 @@ enum TimelineRecordMapper {
         case .path: return "Path"
         case .placeName: return "PlaceName"
         case .placeMerge: return "PlaceMerge"
+        case .placeLocation: return "PlaceLocation"
         }
     }
 
@@ -71,6 +72,7 @@ enum TimelineRecordMapper {
         case .visit, .activity, .path: return nil
         case .placeName: return "name:"
         case .placeMerge: return "merge:"
+        case .placeLocation: return "loc:"
         }
     }
 
@@ -202,6 +204,24 @@ enum TimelineRecordMapper {
         return record
     }
 
+    static func record(
+        forPlaceKey key: String,
+        location: PlaceLocation,
+        in zoneID: CKRecordZone.ID,
+        base: CKRecord? = nil
+    ) -> CKRecord {
+        let record = canvas(
+            base: base,
+            type: recordType(for: .placeLocation),
+            recordName: recordName(for: .placeLocation, rowID: key),
+            in: zoneID
+        )
+        record[Field.latitude] = location.coordinate.latitude as NSNumber
+        record[Field.longitude] = location.coordinate.longitude as NSNumber
+        record[Field.updatedAt] = location.updatedAt as NSNumber
+        return record
+    }
+
     // MARK: - Record → row
 
     /// Older records predate the field and were all device recordings.
@@ -270,16 +290,26 @@ enum TimelineRecordMapper {
         return (key, PlaceIdentityMerge(toKey: toKey, updatedAt: updatedAt))
     }
 
+    static func placeLocation(from record: CKRecord) -> (key: String, location: PlaceLocation)? {
+        guard record.recordType == recordType(for: .placeLocation),
+              let updatedAt = record[Field.updatedAt] as? Double,
+              let coordinate = coordinate(record, Field.latitude, Field.longitude) else { return nil }
+        let key = rowID(fromRecordName: record.recordID.recordName, kind: .placeLocation)
+        return (key, PlaceLocation(coordinate: coordinate, updatedAt: updatedAt))
+    }
+
     /// Sort fetched records into the shapes the database writes.
     static func batch(from records: [CKRecord]) -> (
         rows: TimelineBatch,
         names: [String: PlaceIdentityName],
         merges: [String: PlaceIdentityMerge],
+        locations: [String: PlaceLocation],
         visitSources: [String: RecordSource]
     ) {
         var rows = TimelineBatch(visits: [], activities: [], paths: [])
         var names: [String: PlaceIdentityName] = [:]
         var merges: [String: PlaceIdentityMerge] = [:]
+        var locations: [String: PlaceLocation] = [:]
         var visitSources: [String: RecordSource] = [:]
         for record in records {
             switch kind(forRecordType: record.recordType) {
@@ -296,11 +326,13 @@ enum TimelineRecordMapper {
                 if let parsed = placeName(from: record) { names[parsed.key] = parsed.name }
             case .placeMerge:
                 if let parsed = placeMerge(from: record) { merges[parsed.key] = parsed.merge }
+            case .placeLocation:
+                if let parsed = placeLocation(from: record) { locations[parsed.key] = parsed.location }
             case nil:
                 continue
             }
         }
-        return (rows, names, merges, visitSources)
+        return (rows, names, merges, locations, visitSources)
     }
 
     private static func coordinate(_ record: CKRecord, _ latField: String, _ lonField: String) -> CLLocationCoordinate2D? {
