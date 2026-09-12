@@ -57,11 +57,10 @@ actor TimelineDatabase {
 
     func loadBatch(includingShadowed: Bool = false) throws -> TimelineBatch? {
         if try isEmpty() { return nil }
-        let merges = try loadPlaceMerges()
-        let locations = Self.resolved(try loadPlaceLocations(), merges: merges)
+        // Merges are materialised in place_id now, so nothing is resolved here.
+        let locations = Self.resolved(try loadPlaceLocations(), merges: try loadPlaceMerges())
         return TimelineBatch(
             visits: try loadVisits(includingShadowed: includingShadowed)
-                .map { Self.remapped($0, merges: merges) }
                 .map { Self.relocated($0, locations: locations) },
             activities: try loadActivities(),
             paths: try loadPaths()
@@ -1583,6 +1582,29 @@ actor TimelineDatabase {
         for id in moved {
             try logChange(.visit, id)
         }
+    }
+
+    /// Every place's folded-in origins in one read, for the menus.
+    func mergedOriginsByPlace() throws -> [String: [String]] {
+        guard let db else { return [:] }
+        var statement: OpaquePointer?
+        defer { sqlite3_finalize(statement) }
+        guard sqlite3_prepare_v2(
+            db,
+            """
+            SELECT DISTINCT place_id, origin_place_id FROM visits
+            WHERE origin_place_id IS NOT NULL AND place_id IS NOT NULL AND place_id != origin_place_id
+            """,
+            -1,
+            &statement,
+            nil
+        ) == SQLITE_OK else { return [:] }
+        var found: [String: [String]] = [:]
+        while sqlite3_step(statement) == SQLITE_ROW {
+            guard let place = text(statement, 0), let origin = text(statement, 1) else { continue }
+            found[place, default: []].append(origin)
+        }
+        return found
     }
 
     /// The places folded into this one, for the Unmerge menu.

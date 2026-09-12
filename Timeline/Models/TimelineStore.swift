@@ -319,13 +319,18 @@ final class TimelineStore {
     }
 
     /// Places previously folded into `placeID` (for Unmerge in the place menu).
+    ///
+    /// Read from where the stays say they came from, rather than from the alias
+    /// table — a merge moves stays now, and the alias survives only for devices
+    /// still on the old sync format.
     func sourcesMerged(into placeID: String) -> [(id: String, title: String)] {
-        placeMerges.compactMap { fromKey, toKey -> (id: String, title: String)? in
-            guard toKey == placeID else { return nil }
-            return (fromKey, mergeSourceTitle(fromKey))
-        }
-        .sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
+        mergedOrigins[placeID, default: []]
+            .map { (id: $0, title: mergeSourceTitle($0)) }
+            .sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
     }
+
+    /// Cached per place, refreshed with the rest of the place identity.
+    private var mergedOrigins: [String: [String]] = [:]
 
     /// Split `sourceID` back out of whatever it was merged into.
     func unmergePlace(from sourceID: String) {
@@ -755,6 +760,7 @@ final class TimelineStore {
     private func refreshPlaceIdentity() async {
         placeNames = (try? await database.loadPlaceNames()) ?? placeNames
         placeMerges = (try? await database.loadPlaceMerges()) ?? placeMerges
+        mergedOrigins = (try? await database.mergedOriginsByPlace()) ?? mergedOrigins
         await refreshCorrectedLocations()
     }
 
