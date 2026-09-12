@@ -390,6 +390,29 @@ final class ScriptedMotionSource: MotionSource {
         XCTAssertTrue(rows.isEmpty)
     }
 
+
+    /// Merging discards the other place. Ask first when the one being discarded
+    /// is the one holding the history — seventy-nine stays at a supermarket went
+    /// into an insurance office twelve doors down because the two sat side by
+    /// side in a suggestion list.
+    func testFoldingAwayTheLargerHistoryIsFlagged() {
+        XCTAssertTrue(PlaceGuessRanker.foldsAwayTheLargerHistory(source: 79, target: 12))
+    }
+
+    /// The ordinary direction — a place you have been to once turning out to be
+    /// somewhere you go weekly — stays silent.
+    func testFoldingASmallPlaceIntoABigOneIsSilent() {
+        XCTAssertFalse(PlaceGuessRanker.foldsAwayTheLargerHistory(source: 1, target: 413))
+        XCTAssertFalse(PlaceGuessRanker.foldsAwayTheLargerHistory(source: 12, target: 79))
+    }
+
+    /// Two places you have barely visited are not worth interrupting over, and
+    /// merging places of comparable weight is a judgement call either way.
+    func testSmallOrComparableMergesAreSilent() {
+        XCTAssertFalse(PlaceGuessRanker.foldsAwayTheLargerHistory(source: 4, target: 1))
+        XCTAssertFalse(PlaceGuessRanker.foldsAwayTheLargerHistory(source: 30, target: 20))
+    }
+
 }
 
 final class CaptureDatabaseTests: XCTestCase {

@@ -12,6 +12,7 @@ struct PlaceRenameView: View {
     @State private var draft: String
     @State private var suggester = PlaceNameSuggester()
     @State private var highlightedIndex: Int?
+    @State private var pendingMerge: PlaceNameSuggestion?
     @FocusState private var nameFocused: Bool
 
     init(
@@ -94,6 +95,22 @@ struct PlaceRenameView: View {
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
             #endif
+            .confirmationDialog(
+                "Merge into \(pendingMerge?.title ?? "")?",
+                isPresented: Binding(
+                    get: { pendingMerge != nil },
+                    set: { if !$0 { pendingMerge = nil } }
+                ),
+                titleVisibility: .visible
+            ) {
+                Button("Merge", role: .destructive) {
+                    if let target = pendingMerge?.targetPlaceID { onMerge(target) }
+                    pendingMerge = nil
+                }
+                Button("Cancel", role: .cancel) { pendingMerge = nil }
+            } message: {
+                Text(mergeWarning)
+            }
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel", action: onCancel)
@@ -235,11 +252,31 @@ struct PlaceRenameView: View {
 
     private func applySuggestion(_ suggestion: PlaceNameSuggestion) {
         if let targetPlaceID = suggestion.targetPlaceID {
+            // Picking a place you have been to is a merge, and a merge discards
+            // the other place. Ask first when the one being discarded is the one
+            // holding the history.
+            if PlaceGuessRanker.foldsAwayTheLargerHistory(
+                source: place.visitCount,
+                target: suggestion.visitCount
+            ) {
+                pendingMerge = suggestion
+                return
+            }
             onMerge(targetPlaceID)
             return
         }
         draft = suggestion.title
         onSave(suggestion.title)
+    }
+
+    private var mergeWarning: String {
+        guard let pendingMerge else { return "" }
+        let mine = place.visitCount
+        let theirs = pendingMerge.visitCount
+        return """
+        \(initialName) has \(mine) \(mine == 1 ? "stay" : "stays") and \(pendingMerge.title) has \(theirs). \
+        Merging moves all of them to \(pendingMerge.title) and drops the name \(initialName).
+        """
     }
 
     private func save() {

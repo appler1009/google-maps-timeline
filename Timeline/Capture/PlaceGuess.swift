@@ -167,6 +167,18 @@ enum PlaceGuessRanker {
         .map(\.0)
     }
 
+    /// Would folding one place into another throw away the greater history?
+    ///
+    /// A merge names the survivor and discards the other place's identity. Doing
+    /// that to the place holding most of the visits is almost always a mis-tap:
+    /// seventy-nine stays at a supermarket went into an insurance office twelve
+    /// doors down because the two sat side by side in a suggestion list, and
+    /// until the unmerge was repaired there was no way back. Small places folding
+    /// into big ones is the ordinary case and stays silent.
+    static func foldsAwayTheLargerHistory(source: Int, target: Int) -> Bool {
+        source >= 10 && source >= target * 3
+    }
+
     /// How far away a place can be and still be worth offering.
     ///
     /// A flat radius throws away the strongest evidence there is. Adding a stay
