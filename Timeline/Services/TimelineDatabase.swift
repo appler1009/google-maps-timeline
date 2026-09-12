@@ -58,8 +58,11 @@ actor TimelineDatabase {
     func loadBatch(includingShadowed: Bool = false) throws -> TimelineBatch? {
         if try isEmpty() { return nil }
         let merges = try loadPlaceMerges()
+        let locations = try loadPlaceLocations()
         return TimelineBatch(
-            visits: try loadVisits(includingShadowed: includingShadowed).map { Self.remapped($0, merges: merges) },
+            visits: try loadVisits(includingShadowed: includingShadowed)
+                .map { Self.remapped($0, merges: merges) }
+                .map { Self.relocated($0, locations: locations) },
             activities: try loadActivities(),
             paths: try loadPaths()
         )
@@ -324,6 +327,7 @@ actor TimelineDatabase {
             throw TimelineDatabaseError.execute(errmsg())
         }
         let merges = try loadPlaceMerges()
+        let locations = try loadPlaceLocations()
         var anchors: [String: PlaceAnchor] = [:]
         while sqlite3_step(statement) == SQLITE_ROW {
             guard let rawKey = text(statement, 0) else { continue }
@@ -351,7 +355,16 @@ actor TimelineDatabase {
                 )
             }
         }
-        return Array(anchors.values)
+        // Snap future stays to the corrected spot, not the one we were told.
+        return anchors.values.map { anchor in
+            guard let corrected = locations[anchor.placeKey] else { return anchor }
+            return PlaceAnchor(
+                placeKey: anchor.placeKey,
+                coordinate: corrected.coordinate,
+                visitCount: anchor.visitCount,
+                isNamed: anchor.isNamed
+            )
+        }
     }
 
     // MARK: - Change tracking
@@ -485,6 +498,10 @@ actor TimelineDatabase {
         if !mergeKeys.isEmpty {
             batch.merges = try loadPlaceMergeRecords().filter { mergeKeys.contains($0.key) }
         }
+        let locationKeys = ids(.placeLocation)
+        if !locationKeys.isEmpty {
+            batch.locations = try loadPlaceLocations().filter { locationKeys.contains($0.key) }
+        }
         return batch
     }
 
@@ -525,6 +542,7 @@ actor TimelineDatabase {
             for path in try loadPaths() { try logChange(.path, path.id) }
             for key in try loadPlaceNameRecords().keys { try logChange(.placeName, key) }
             for key in try loadPlaceMergeRecords().keys { try logChange(.placeMerge, key) }
+            for key in try loadPlaceLocations().keys { try logChange(.placeLocation, key) }
             try exec("COMMIT")
         } catch {
             sqlite3_exec(db, "ROLLBACK", nil, nil, nil)
@@ -678,6 +696,7 @@ actor TimelineDatabase {
         case .path: table = "paths"; column = "id"
         case .placeName: table = "place_names"; column = "place_key"
         case .placeMerge: table = "place_merges"; column = "from_key"
+        case .placeLocation: table = "place_locations"; column = "place_key"
         }
         guard let db else { throw TimelineDatabaseError.open }
         var statement: OpaquePointer?
@@ -970,6 +989,96 @@ actor TimelineDatabase {
     }
 
     /// Active `from_key → to_key` aliases (tombstones omitted). Values are chain-resolved.
+    /// Where a place really is, when the recorded or imported coordinate was
+    /// wrong. Google ships one coordinate per Place ID and it is sometimes the
+    /// wrong end of the block; a recorded stay is wherever the fix landed.
+    func loadPlaceLocations() throws -> [String: PlaceLocation] {
+        guard let db else { return [:] }
+        var statement: OpaquePointer?
+        defer { sqlite3_finalize(statement) }
+        guard sqlite3_prepare_v2(
+            db,
+            "SELECT place_key, lat, lon, updated_at FROM place_locations",
+            -1,
+            &statement,
+            nil
+        ) == SQLITE_OK else { return [:] }
+        var found: [String: PlaceLocation] = [:]
+        while sqlite3_step(statement) == SQLITE_ROW {
+            guard let key = text(statement, 0) else { continue }
+            let coordinate = CLLocationCoordinate2D(
+                latitude: sqlite3_column_double(statement, 1),
+                longitude: sqlite3_column_double(statement, 2)
+            )
+            guard CLLocationCoordinate2DIsValid(coordinate) else { continue }
+            found[key] = PlaceLocation(
+                coordinate: coordinate,
+                updatedAt: sqlite3_column_double(statement, 3)
+            )
+        }
+        return found
+    }
+
+    func setPlaceLocation(
+        placeKey: String,
+        coordinate: CLLocationCoordinate2D,
+        updatedAt: TimeInterval? = nil
+    ) throws {
+        guard let db, !placeKey.isEmpty, CLLocationCoordinate2DIsValid(coordinate) else { return }
+        let stamp = updatedAt ?? Date().timeIntervalSince1970
+        var statement: OpaquePointer?
+        defer { sqlite3_finalize(statement) }
+        guard sqlite3_prepare_v2(
+            db,
+            """
+            INSERT INTO place_locations (place_key, lat, lon, updated_at)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(place_key) DO UPDATE SET
+                lat = excluded.lat,
+                lon = excluded.lon,
+                updated_at = excluded.updated_at
+            WHERE excluded.updated_at >= place_locations.updated_at
+            """,
+            -1,
+            &statement,
+            nil
+        ) == SQLITE_OK else { throw TimelineDatabaseError.execute(errmsg()) }
+        sqlite3_bind_text(statement, 1, placeKey, -1, Self.transient)
+        sqlite3_bind_double(statement, 2, coordinate.latitude)
+        sqlite3_bind_double(statement, 3, coordinate.longitude)
+        sqlite3_bind_double(statement, 4, stamp)
+        guard sqlite3_step(statement) == SQLITE_DONE else {
+            throw TimelineDatabaseError.execute(errmsg())
+        }
+        try logChange(.placeLocation, placeKey)
+    }
+
+    /// Put a place back where the data said it was.
+    func clearPlaceLocation(placeKey: String) throws {
+        guard let db, !placeKey.isEmpty else { return }
+        var statement: OpaquePointer?
+        defer { sqlite3_finalize(statement) }
+        guard sqlite3_prepare_v2(db, "DELETE FROM place_locations WHERE place_key = ?", -1, &statement, nil) == SQLITE_OK else {
+            return
+        }
+        sqlite3_bind_text(statement, 1, placeKey, -1, Self.transient)
+        sqlite3_step(statement)
+        try logChange(.placeLocation, placeKey, .delete)
+    }
+
+    /// Apply a corrected location that is newer than the one held locally.
+    func applyPlaceLocationIfNewer(
+        placeKey: String,
+        coordinate: CLLocationCoordinate2D,
+        updatedAt: TimeInterval
+    ) throws -> Bool {
+        if let local = try loadPlaceLocations()[placeKey], local.updatedAt >= updatedAt { return false }
+        try applyingRemotely {
+            try setPlaceLocation(placeKey: placeKey, coordinate: coordinate, updatedAt: updatedAt)
+        }
+        return true
+    }
+
     func loadPlaceMerges() throws -> [String: String] {
         try loadPlaceMergeRecords()
             .filter { !$0.value.isTombstone }
@@ -1170,6 +1279,21 @@ actor TimelineDatabase {
         }
     }
 
+    /// A corrected location wins over whatever was recorded or imported, so the
+    /// pin, the day's framing and the routes all agree with it.
+    private static func relocated(_ visit: TimelineVisit, locations: [String: PlaceLocation]) -> TimelineVisit {
+        guard let corrected = locations[visit.placeKey] else { return visit }
+        return TimelineVisit(
+            id: visit.id,
+            start: visit.start,
+            end: visit.end,
+            coordinate: corrected.coordinate,
+            semanticType: visit.semanticType,
+            placeKey: visit.placeKey,
+            isDerived: visit.isDerived
+        )
+    }
+
     private static func remapped(_ visit: TimelineVisit, merges: [String: String]) -> TimelineVisit {
         guard let target = merges[visit.placeKey], target != visit.placeKey else { return visit }
         return TimelineVisit(
@@ -1236,6 +1360,12 @@ actor TimelineDatabase {
             CREATE TABLE IF NOT EXISTS place_names (
                 place_key TEXT PRIMARY KEY,
                 name TEXT NOT NULL,
+                updated_at REAL NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS place_locations (
+                place_key TEXT PRIMARY KEY,
+                lat REAL NOT NULL,
+                lon REAL NOT NULL,
                 updated_at REAL NOT NULL
             );
             CREATE TABLE IF NOT EXISTS place_merges (

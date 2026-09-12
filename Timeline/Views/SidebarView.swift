@@ -4,6 +4,8 @@ struct SidebarView: View {
     @Environment(TimelineStore.self) private var store
     @Binding var importerPresented: Bool
     @State private var renamingPlaceID: String?
+    /// The place whose "Set location…" was chosen.
+    @State private var relocatingPlaceID: String?
 
     var body: some View {
         @Bindable var store = store
@@ -37,6 +39,7 @@ struct SidebarView: View {
         }
         .foregroundStyle(Palette.parchment)
         .placeRenameSheet(placeID: $renamingPlaceID, store: store)
+        .setPlaceLocationSheet(placeID: $relocatingPlaceID, store: store)
     }
 
     private var tabPicker: some View {
@@ -236,6 +239,9 @@ struct SidebarView: View {
                     showsActions: store.showsPlaceActions(place),
                     onRename: {
                         renamingPlaceID = place.id
+                    },
+                    onSetLocation: {
+                        relocatingPlaceID = place.id
                     }
                 )
                     .tag(place.id)
@@ -348,6 +354,7 @@ struct PlaceRow: View {
     let subtitle: String
     var showsActions = false
     var onRename: (() -> Void)?
+    var onSetLocation: (() -> Void)?
 
     var body: some View {
         HStack(spacing: 10) {
@@ -374,7 +381,11 @@ struct PlaceRow: View {
             }
             Spacer(minLength: 4)
             if showsActions {
-                PlaceActionsMenu(placeID: place.id, onRename: { onRename?() })
+                PlaceActionsMenu(
+                    placeID: place.id,
+                    onRename: { onRename?() },
+                    onSetLocation: { onSetLocation?() }
+                )
             }
         }
         .padding(.vertical, 4)
@@ -397,6 +408,7 @@ struct PlaceActionsMenu: View {
     @Environment(TimelineStore.self) private var store
     let placeID: String
     var onRename: () -> Void
+    var onSetLocation: (() -> Void)?
 
     private var mergedSources: [(id: String, title: String)] {
         store.sourcesMerged(into: placeID)
@@ -406,6 +418,12 @@ struct PlaceActionsMenu: View {
         Menu {
             if let place = store.place(for: placeID), store.canRename(place) {
                 Button("Rename…", action: onRename)
+            }
+            if let onSetLocation {
+                Button(
+                    store.hasCorrectedLocation(placeID) ? "Change location…" : "Set location…",
+                    action: onSetLocation
+                )
             }
             if !mergedSources.isEmpty {
                 Menu("Unmerge") {
