@@ -727,31 +727,35 @@ actor TimelineDatabase {
         guard let db else { return [] }
         var statement: OpaquePointer?
         defer { sqlite3_finalize(statement) }
+        // Grouped by the place a stay points at, not the key it was clustered
+        // under. The two drift: place_key is where clustering put the stay at
+        // the time, place_id is where it belongs now, and merging, unmerging and
+        // moving a stay all change the second without touching the first.
+        // Anchoring on the old column meant clustering kept answering with a
+        // place the library had already stopped believing in.
         let sql = """
-            SELECT v.place_key,
+            SELECT COALESCE(v.place_id, v.place_key),
                    AVG(v.lat),
                    AVG(v.lon),
                    COUNT(*),
                    MAX(CASE
-                       WHEN n.name IS NOT NULL AND n.name != '' THEN 1
+                       WHEN p.name IS NOT NULL AND p.name != '' THEN 1
                        WHEN v.semantic_type IS NOT NULL
                             AND v.semantic_type NOT IN ('', 'Unknown', 'unknown') THEN 1
                        ELSE 0
                    END)
             FROM visits v
-            LEFT JOIN place_names n ON n.place_key = v.place_key
+            LEFT JOIN places p ON p.id = COALESCE(v.place_id, v.place_key)
             WHERE v.lat IS NOT NULL AND v.lon IS NOT NULL
-            GROUP BY v.place_key
+            GROUP BY COALESCE(v.place_id, v.place_key)
             """
         guard sqlite3_prepare_v2(db, sql, -1, &statement, nil) == SQLITE_OK else {
             throw TimelineDatabaseError.execute(errmsg())
         }
-        let merges = try loadPlaceMerges()
-        let locations = Self.resolved(try loadPlaceLocations(), merges: merges)
+        let locations = try loadPlaceLocations()
         var anchors: [String: PlaceAnchor] = [:]
         while sqlite3_step(statement) == SQLITE_ROW {
-            guard let rawKey = text(statement, 0) else { continue }
-            let key = merges[rawKey] ?? rawKey
+            guard let key = text(statement, 0), !key.isEmpty else { continue }
             let coordinate = CLLocationCoordinate2D(
                 latitude: sqlite3_column_double(statement, 1),
                 longitude: sqlite3_column_double(statement, 2)

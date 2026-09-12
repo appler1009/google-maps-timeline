@@ -141,4 +141,36 @@ final class MergeRepointingTests: XCTestCase {
         XCTAssertEqual(restored.count, 2, "both stays go back to the place they were clustered under")
     }
 
+
+    /// Clustering must answer with the place a stay belongs to now, not the one
+    /// it was filed under when it was captured.
+    ///
+    /// place_key is where clustering put a stay at the time; place_id is where
+    /// it belongs after merging, unmerging or moving it. Anchoring on the old
+    /// column meant a place the library had already stopped believing in kept
+    /// winning: a supermarket's seventy-nine stays had been folded into an
+    /// insurance office, and every new stop there was still offered the office
+    /// even after the fold was undone.
+    func testAnchorsFollowThePlaceAStayPointsAtNow() async throws {
+        let (db, url) = database()
+        defer { try? FileManager.default.removeItem(at: url) }
+        try await seed(db)
+
+        // "annex" holds two stays, "main" one. Fold annex into main, so the
+        // stays keep place_key "annex" while pointing at "main".
+        try await db.mergePlace(from: "annex", into: "main", targetSemantic: nil)
+
+        let merged = try await db.placeAnchors()
+        XCTAssertNil(merged.first { $0.placeKey == "annex" }, "annex is not a place any more")
+        XCTAssertEqual(merged.first { $0.placeKey == "main" }?.visitCount, 3)
+
+        // Undo it: the stays point at annex again, though nothing rewrote
+        // place_key on the way back either.
+        try await db.unmergePlace(from: "annex")
+
+        let restored = try await db.placeAnchors()
+        XCTAssertEqual(restored.first { $0.placeKey == "annex" }?.visitCount, 2)
+        XCTAssertEqual(restored.first { $0.placeKey == "main" }?.visitCount, 1)
+    }
+
 }

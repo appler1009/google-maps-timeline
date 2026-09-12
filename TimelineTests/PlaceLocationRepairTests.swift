@@ -198,4 +198,23 @@ final class MergeRepairTests: XCTestCase {
         print("[rename] \(key) now holds \(after[key] ?? 0) stays")
     }
 
+
+    /// Move one stay to another place.
+    ///
+    ///     defaults write com.appler.Timeline.tests moveVisitID -string "<visit id>"
+    ///     defaults write com.appler.Timeline.tests moveToPlace -string "<place key>"
+    func testMoveOneStay() async throws {
+        guard let visitID = settings?.string(forKey: "moveVisitID"),
+              let target = settings?.string(forKey: "moveToPlace") else {
+            throw XCTSkip("set moveVisitID and moveToPlace to run this")
+        }
+        try XCTSkipUnless(FileManager.default.fileExists(atPath: libraryPath), "no library")
+        let db = TimelineDatabase(fileURL: URL(fileURLWithPath: libraryPath))
+        let places = try await db.loadPlaces()
+        print("[move] \(visitID) -> \(places[target]?.name ?? target)")
+        try await db.moveVisit(id: visitID, toPlaceKey: target)
+        let counts = try await db.stayCountsByPlace()
+        print("[move] \(target) now holds \(counts[target] ?? 0) stays")
+    }
+
 }
