@@ -43,3 +43,42 @@ final class RealLibraryMigrationTests: XCTestCase {
         XCTAssertEqual(again.visitsLinked, 0)
     }
 }
+
+/// The reported case, checked against the real library: the night of 10–11
+/// September should read as one stay at home, not vanish because a three-minute
+/// walk was treated as leaving.
+final class RealLibraryOvernightTests: XCTestCase {
+    private let path = "/tmp/realcopy.sqlite"
+
+    func testTheNightBeforeTheMorningDriveIsAccountedFor() async throws {
+        try XCTSkipUnless(FileManager.default.fileExists(atPath: path), "no library copy at \(path)")
+        let working = URL(fileURLWithPath: "/tmp/realcopy-overnight.sqlite")
+        try? FileManager.default.removeItem(at: working)
+        try FileManager.default.copyItem(at: URL(fileURLWithPath: path), to: working)
+        defer { try? FileManager.default.removeItem(at: working) }
+
+        let db = TimelineDatabase(fileURL: working)
+        _ = try await db.migrateToPlaceEntities()
+        let loaded = try await db.loadBatch()
+        let batch = try XCTUnwrap(loaded)
+
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "America/Vancouver")!
+        // 08:35 local on 11 September, when the drive to the school begins.
+        let driveStart = calendar.date(
+            from: DateComponents(year: 2026, month: 9, day: 11, hour: 8, minute: 35)
+        )!
+        let theNightBefore = driveStart.addingTimeInterval(-6 * 3_600)
+
+        let parsed = TimelineParser.assemble(batch, sourceName: "real", now: driveStart)
+        let covering = parsed.days
+            .flatMap(\.visits)
+            .filter { $0.start <= theNightBefore && $0.end >= theNightBefore }
+
+        XCTAssertFalse(
+            covering.isEmpty,
+            "the small hours of 11 September should be accounted for, not a hole in the day"
+        )
+        print("[overnight] \(covering.count) stay(s) cover 02:35, derived: \(covering.map(\.isDerived))")
+    }
+}
