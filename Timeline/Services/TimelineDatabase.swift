@@ -1253,31 +1253,47 @@ actor TimelineDatabase {
         sqlite3_step(statement)
     }
 
-    func pathRoute(id: String) throws -> [CLLocationCoordinate2D]? {
+    /// A cached route, but only if it still runs between the same two points.
+    ///
+    /// A hop is identified by the stays it joins, and a stay keeps its id when
+    /// its place is corrected — so the id alone cannot say whether the geometry
+    /// is still right. Correcting a place used to leave every route into and out
+    /// of it pointing at where the place used to be. The anchor is what the route
+    /// was drawn between; when it no longer matches, the row is a miss.
+    func pathRoute(id: String, anchor: String) throws -> [CLLocationCoordinate2D]? {
         guard let db else { return nil }
         var statement: OpaquePointer?
         defer { sqlite3_finalize(statement) }
-        guard sqlite3_prepare_v2(db, "SELECT points FROM path_routes WHERE path_id = ?", -1, &statement, nil) == SQLITE_OK else {
+        guard sqlite3_prepare_v2(
+            db,
+            "SELECT points, anchor FROM path_routes WHERE path_id = ?",
+            -1,
+            &statement,
+            nil
+        ) == SQLITE_OK else {
             return nil
         }
         sqlite3_bind_text(statement, 1, id, -1, Self.transient)
         guard sqlite3_step(statement) == SQLITE_ROW else { return nil }
+        // Rows written before anchors carry none; re-route them once.
+        guard let stored = text(statement, 1), stored == anchor else { return nil }
         return CoordBlob.unpack(blob(statement, 0))
     }
 
-    func savePathRoute(id: String, points: [CLLocationCoordinate2D]) throws {
+    func savePathRoute(id: String, anchor: String, points: [CLLocationCoordinate2D]) throws {
         guard let db, points.count >= 2 else { return }
         var statement: OpaquePointer?
         defer { sqlite3_finalize(statement) }
         guard sqlite3_prepare_v2(
             db,
-            "INSERT OR REPLACE INTO path_routes (path_id, points) VALUES (?, ?)",
+            "INSERT OR REPLACE INTO path_routes (path_id, anchor, points) VALUES (?, ?, ?)",
             -1,
             &statement,
             nil
         ) == SQLITE_OK else { return }
         sqlite3_bind_text(statement, 1, id, -1, Self.transient)
-        bindBlob(statement, 2, CoordBlob.pack(points))
+        sqlite3_bind_text(statement, 2, anchor, -1, Self.transient)
+        bindBlob(statement, 3, CoordBlob.pack(points))
         sqlite3_step(statement)
     }
 
@@ -1917,6 +1933,8 @@ actor TimelineDatabase {
         try addColumn(db, table: "visits", column: "shadowed INTEGER NOT NULL DEFAULT 0")
         // A stay points at a place rather than carrying one inside its identity.
         try addColumn(db, table: "visits", column: "place_id TEXT")
+        // What a cached route was drawn between, so moving a place invalidates it.
+        try addColumn(db, table: "path_routes", column: "anchor TEXT")
         // Where the stay was before a merge moved it, so unmerging can put it
         // back. Repointing without this would be a one-way door.
         try addColumn(db, table: "visits", column: "origin_place_id TEXT")
