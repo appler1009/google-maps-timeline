@@ -36,10 +36,17 @@ enum VisitTimingGuesser {
         }
     }
 
-    /// `fixes` should be the day's fixes, in any order.
+    /// `fixes` should be the day's fixes, in any order; `paths` the day's routes.
+    ///
+    /// Fixes are the better evidence — they carry speed, so they can tell a stop
+    /// from a pass — but they are local scaffolding: pruned after a week and
+    /// never synced. On the other device there are none at all, which is why
+    /// adding a stay there could only ever propose midday. Paths do sync, so
+    /// fall back to those.
     static func guess(
         placeCoordinate: CLLocationCoordinate2D,
         fixes: [CapturedFix],
+        paths: [TimelinePath] = [],
         fallbackMidpoint: Date
     ) -> Guess {
         let ordered = fixes.sorted { $0.timestamp < $1.timestamp }
@@ -50,6 +57,13 @@ enum VisitTimingGuesser {
             RoutePlanner.meters($0.coordinate, placeCoordinate)
                 < RoutePlanner.meters($1.coordinate, placeCoordinate)
         }) else {
+            if let passed = passingTime(placeCoordinate: placeCoordinate, paths: paths) {
+                return Guess(
+                    start: passed.addingTimeInterval(-driveByDuration / 2),
+                    end: passed.addingTimeInterval(driveByDuration / 2),
+                    basis: .droveBy
+                )
+            }
             return Guess(
                 start: fallbackMidpoint.addingTimeInterval(-blindDuration / 2),
                 end: fallbackMidpoint.addingTimeInterval(blindDuration / 2),
@@ -69,6 +83,36 @@ enum VisitTimingGuesser {
             end: closest.timestamp.addingTimeInterval(driveByDuration / 2),
             basis: .droveBy
         )
+    }
+
+    /// When the day's route came closest to a place.
+    ///
+    /// A path carries only its own start and end times, so the moment is read
+    /// off the distance travelled: a point a third of the way along the line
+    /// happened about a third of the way through the journey. Coarse — a route
+    /// is not walked at a constant speed — but a coarse time inside the right
+    /// half-hour beats midday, and the sheet is there to be adjusted.
+    static func passingTime(
+        placeCoordinate: CLLocationCoordinate2D,
+        paths: [TimelinePath]
+    ) -> Date? {
+        var best: (distance: CLLocationDistance, at: Date)?
+        for path in paths where path.points.count >= 2 {
+            let legs = zip(path.points, path.points.dropFirst()).map { RoutePlanner.meters($0, $1) }
+            let total = legs.reduce(0, +)
+            guard total > 0 else { continue }
+            var travelled: CLLocationDistance = 0
+            for (index, point) in path.points.enumerated() {
+                if index > 0 { travelled += legs[index - 1] }
+                let away = RoutePlanner.meters(point, placeCoordinate)
+                guard away <= approachRadius else { continue }
+                guard best == nil || away < best!.distance else { continue }
+                let fraction = travelled / total
+                let span = path.end.timeIntervalSince(path.start)
+                best = (away, path.start.addingTimeInterval(span * fraction))
+            }
+        }
+        return best?.at
     }
 
     /// The unbroken run of slow fixes containing the closest approach. Returns nil

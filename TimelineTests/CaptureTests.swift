@@ -283,7 +283,8 @@ final class PlaceGuessRankerTests: XCTestCase {
             places: [
                 (id: "a", title: "Continental Coffee", visitCount: 9, coordinate: offset(home, metersNorth: 30)),
                 (id: "b", title: "JJ Bean", visitCount: 2, coordinate: offset(home, metersNorth: 10)),
-                (id: "c", title: "Too Far", visitCount: 40, coordinate: offset(home, metersNorth: 4_000)),
+                // Unfamiliar and far: reach is earned by visits, and one buys none.
+                (id: "c", title: "Too Far", visitCount: 1, coordinate: offset(home, metersNorth: 4_000)),
             ],
             excluding: "self"
         )
@@ -353,6 +354,42 @@ final class ScriptedMotionSource: MotionSource {
     func emit(_ kind: MotionKind) {
         liveHandler?(MotionSample(start: Date(), kind: kind, confidence: 2))
     }
+
+    /// A place you go to constantly must be offered even when the guessed centre
+    /// is nowhere near it.
+    ///
+    /// Adding a stay centres on the middle of the day's movement, which on any
+    /// day with driving in it is a point you were never at. Under a flat radius
+    /// a music school visited four hundred times fell outside the circle and was
+    /// not offered at all, while one-off places beside that meaningless midpoint
+    /// were.
+    func testAFamiliarPlaceIsOfferedFromFurtherAway() {
+        let centre = CLLocationCoordinate2D(latitude: 49.2645, longitude: -123.2460)
+        // Roughly 8 km east — well outside the 1.5 km default.
+        let academy = CLLocationCoordinate2D(latitude: 49.2749, longitude: -123.1444)
+        let rows = PlaceGuessRanker.visitedRows(
+            near: centre,
+            places: [
+                ("academy", "Vancouver Academy of Music", 413, academy),
+                ("once", "Somewhere Once", 1, CLLocationCoordinate2D(latitude: 49.2650, longitude: -123.2450))
+            ],
+            excluding: ""
+        )
+        XCTAssertEqual(rows.first?.title, "Vancouver Academy of Music")
+        XCTAssertEqual(rows.count, 2, "the nearby one-off is still offered")
+    }
+
+    /// Reach is earned, not given: somewhere visited once still has to be close.
+    func testAPlaceVisitedOnceStaysLocal() {
+        let centre = CLLocationCoordinate2D(latitude: 49.2645, longitude: -123.2460)
+        let rows = PlaceGuessRanker.visitedRows(
+            near: centre,
+            places: [("once", "Somewhere Once", 1, CLLocationCoordinate2D(latitude: 49.2749, longitude: -123.1444))],
+            excluding: ""
+        )
+        XCTAssertTrue(rows.isEmpty)
+    }
+
 }
 
 final class CaptureDatabaseTests: XCTestCase {

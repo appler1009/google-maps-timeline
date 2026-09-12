@@ -141,7 +141,7 @@ enum PlaceGuessRanker {
         places.compactMap { place -> (PlaceNameSuggestion, Double)? in
             guard place.id != placeID else { return nil }
             let distance = RoutePlanner.meters(coordinate, place.coordinate)
-            guard distance <= meters else { return nil }
+            guard distance <= reach(visitCount: place.visitCount, base: meters) else { return nil }
             let title = place.title.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !title.isEmpty, title != "Unnamed place", title != "Place" else { return nil }
             let plural = place.visitCount == 1 ? "" : "s"
@@ -165,6 +165,19 @@ enum PlaceGuessRanker {
             return $0.1 < $1.1
         }
         .map(\.0)
+    }
+
+    /// How far away a place can be and still be worth offering.
+    ///
+    /// A flat radius throws away the strongest evidence there is. Adding a stay
+    /// is centred on the middle of the day's movement, which on a day with any
+    /// driving in it is a point you were never at — so a music school visited
+    /// four hundred times fell outside the circle and was not offered at all,
+    /// while one-off places beside that meaningless midpoint were. Familiarity
+    /// earns reach: somewhere you went once has to be right here, somewhere you
+    /// go every week is worth offering across town.
+    static func reach(visitCount: Int, base: CLLocationDistance) -> CLLocationDistance {
+        base * min(8, (Double(max(visitCount, 1))).squareRoot())
     }
 
     static func distanceLabel(_ meters: Double) -> String {

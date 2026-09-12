@@ -604,6 +604,7 @@ final class TimelineStore {
         return VisitTimingGuesser.guess(
             placeCoordinate: coordinate,
             fixes: fixes,
+            paths: daysByID[dayStart]?.paths ?? [],
             fallbackMidpoint: midpoint
         )
     }

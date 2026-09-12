@@ -155,4 +155,68 @@ final class VisitTimingGuesserTests: XCTestCase {
         )
         XCTAssertEqual(calendar.component(.hour, from: midpoint), 12)
     }
+
+    /// The other device has no fixes at all — they are local scaffolding, pruned
+    /// weekly and never synced — so adding a stay there could only ever propose
+    /// midday. The day's route does sync, and knowing when it passed the place
+    /// is enough to put the guess in the right half-hour.
+    func testFallsBackToTheDaysRouteWhenThereAreNoFixes() {
+        let start = Date(timeIntervalSince1970: 1_800_000_000)
+        // A straight half-hour drive; the place sits at the three-quarter mark.
+        let a = CLLocationCoordinate2D(latitude: 49.2600, longitude: -123.1000)
+        let b = CLLocationCoordinate2D(latitude: 49.2600, longitude: -123.1400)
+        let place = CLLocationCoordinate2D(latitude: 49.2600, longitude: -123.1300)
+        let path = TimelinePath(
+            id: "drive",
+            start: start,
+            end: start.addingTimeInterval(1_800),
+            points: [
+                a,
+                CLLocationCoordinate2D(latitude: 49.2600, longitude: -123.1200),
+                place,
+                b
+            ],
+            kind: .automobile
+        )
+
+        let guess = VisitTimingGuesser.guess(
+            placeCoordinate: place,
+            fixes: [],
+            paths: [path],
+            fallbackMidpoint: start.addingTimeInterval(40_000)
+        )
+        XCTAssertEqual(guess.basis, .droveBy, "the route passed it, so this is not a blind guess")
+        // Three quarters of the way along a 30-minute drive.
+        let expected = start.addingTimeInterval(1_350)
+        XCTAssertEqual(
+            guess.start.addingTimeInterval(VisitTimingGuesser.driveByDuration / 2).timeIntervalSince(expected),
+            0,
+            accuracy: 60
+        )
+    }
+
+    /// A route that never goes near the place says nothing about when you were
+    /// there, so the blind guess still applies.
+    func testARouteThatMissesThePlaceIsNotEvidence() {
+        let start = Date(timeIntervalSince1970: 1_800_000_000)
+        let path = TimelinePath(
+            id: "elsewhere",
+            start: start,
+            end: start.addingTimeInterval(1_800),
+            points: [
+                CLLocationCoordinate2D(latitude: 49.30, longitude: -123.10),
+                CLLocationCoordinate2D(latitude: 49.31, longitude: -123.11)
+            ],
+            kind: .automobile
+        )
+        let midpoint = start.addingTimeInterval(40_000)
+        let guess = VisitTimingGuesser.guess(
+            placeCoordinate: CLLocationCoordinate2D(latitude: 49.2600, longitude: -123.1300),
+            fixes: [],
+            paths: [path],
+            fallbackMidpoint: midpoint
+        )
+        XCTAssertEqual(guess.basis, .unknown)
+    }
+
 }
