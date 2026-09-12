@@ -8,9 +8,9 @@ struct TimelineAppScene: View {
     #if os(macOS)
     @State private var cloudSettingsPresented = false
     #endif
+    @Environment(\.scenePhase) private var scenePhase
     #if os(iOS)
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
-    @Environment(\.scenePhase) private var scenePhase
     @State private var showingCompactMap = false
     @State private var trackingSettingsPresented = false
     @State private var renamingPlaceID: String?
@@ -50,6 +50,7 @@ struct TimelineAppScene: View {
                 guard phase == .active, !TimelineLaunch.isUITesting else { return }
                 applyPendingVisitChoice()
                 Task { await TimelineRecorder.shared.catchUp() }
+                CloudSyncController.shared.fetchNow()
             }
             #endif
             #if os(macOS)
@@ -62,6 +63,10 @@ struct TimelineAppScene: View {
             }
             .onReceive(NotificationCenter.default.publisher(for: .cloudSyncSettingsRequested)) { _ in
                 cloudSettingsPresented = true
+            }
+            .onChange(of: scenePhase) { _, phase in
+                guard phase == .active, !TimelineLaunch.isUITesting else { return }
+                CloudSyncController.shared.fetchNow()
             }
             #endif
             .sheet(isPresented: $luxSettingsPresented) {
