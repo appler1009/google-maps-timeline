@@ -93,29 +93,21 @@ struct MoveVisitView: View {
     }
 
     private func move(to suggestion: PlaceNameSuggestion) {
-        store.moveVisit(
-            visit.id,
-            toPlaceNamed: suggestion.title,
-            coordinate: coordinate(of: suggestion) ?? visit.coordinate,
-            existingPlaceID: suggestion.targetPlaceID
-        )
-        onDone()
-    }
-
-    /// Visited suggestions name a place we already hold; map results carry their
-    /// coordinate in the id, which is where the search put them.
-    private func coordinate(of suggestion: PlaceNameSuggestion) -> CLLocationCoordinate2D? {
-        if let id = suggestion.targetPlaceID, let place = store.place(for: id), let coordinate = place.coordinate {
-            return coordinate
+        Task {
+            // Moving onto a place we already hold needs no lookup; a typed result
+            // does, since the completer gives a name without a position.
+            let resolved = suggestion.targetPlaceID == nil
+                ? await suggester.coordinate(for: suggestion)
+                : store.place(for: suggestion.targetPlaceID!)?.coordinate
+            guard let coordinate = resolved ?? visit.coordinate else { return }
+            store.moveVisit(
+                visit.id,
+                toPlaceNamed: suggestion.title,
+                coordinate: coordinate,
+                existingPlaceID: suggestion.targetPlaceID
+            )
+            onDone()
         }
-        let parts = suggestion.id.split(separator: ":")
-        guard parts.count >= 2 else { return nil }
-        let pair = parts[1].split(separator: ",")
-        guard pair.count == 2, let latitude = Double(pair[0]), let longitude = Double(pair[1]) else {
-            return nil
-        }
-        let coordinate = CLLocationCoordinate2D(latitude: latitude, longitude: longitude)
-        return CLLocationCoordinate2DIsValid(coordinate) ? coordinate : nil
     }
 }
 

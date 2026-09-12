@@ -20,6 +20,9 @@ struct AddVisitView: View {
     @State private var end = Date()
     @State private var basis: VisitTimingGuesser.Guess.Basis?
     @State private var isGuessing = false
+    /// Resolved when the place is chosen. Nil means we do not know where it is,
+    /// and guessing would put the stay somewhere it never happened.
+    @State private var chosenCoordinate: CLLocationCoordinate2D?
     @FocusState private var searchFocused: Bool
 
     var body: some View {
@@ -57,7 +60,9 @@ struct AddVisitView: View {
                     } header: {
                         Text("When")
                     } footer: {
-                        Text(timingExplanation)
+                        Text(chosenCoordinate == nil && !isGuessing
+                            ? "Could not find where this place is. Pick another result."
+                            : timingExplanation)
                     }
                 } else {
                     suggestionList
@@ -74,7 +79,7 @@ struct AddVisitView: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Add", action: save)
-                        .disabled(chosen == nil)
+                        .disabled(chosen == nil || chosenCoordinate == nil)
                         .accessibilityIdentifier("add-visit-save")
                 }
             }
@@ -142,9 +147,16 @@ struct AddVisitView: View {
     private func choose(_ suggestion: PlaceNameSuggestion) {
         chosen = suggestion
         query = suggestion.title
-        guard let coordinate = coordinate(of: suggestion) else { return }
+        chosenCoordinate = nil
         isGuessing = true
         Task {
+            // A typed result is a name and a subtitle with no position; the
+            // suggester runs it through a search to find out where it is.
+            guard let coordinate = await suggester.coordinate(for: suggestion) else {
+                isGuessing = false
+                return
+            }
+            chosenCoordinate = coordinate
             let guess = await store.suggestedTiming(for: coordinate, on: day)
             start = guess.start
             end = guess.end
@@ -153,27 +165,10 @@ struct AddVisitView: View {
         }
     }
 
-    /// Visited suggestions carry a place we already know; map results carry the
-    /// coordinate in their id, which is where the search put it.
-    private func coordinate(of suggestion: PlaceNameSuggestion) -> CLLocationCoordinate2D? {
-        if let id = suggestion.targetPlaceID, let place = store.place(for: id), let coordinate = place.coordinate {
-            return coordinate
-        }
-        let parts = suggestion.id.split(separator: ":")
-        guard parts.count >= 2 else { return nil }
-        let pair = parts[1].split(separator: ",")
-        guard pair.count == 2, let latitude = Double(pair[0]), let longitude = Double(pair[1]) else {
-            return nil
-        }
-        let coordinate = CLLocationCoordinate2D(latitude: latitude, longitude: longitude)
-        return CLLocationCoordinate2DIsValid(coordinate) ? coordinate : nil
-    }
-
     private func save() {
-        guard let chosen else { return }
-        let coordinate = self.coordinate(of: chosen)
-            ?? store.day(for: day)?.region.center
-            ?? CLLocationCoordinate2D(latitude: 49.25, longitude: -123.12)
+        // Never fall back to the middle of the map: a stay placed there did not
+        // happen anywhere.
+        guard let chosen, let coordinate = chosenCoordinate else { return }
         store.addVisit(
             name: chosen.title,
             coordinate: coordinate,

@@ -46,6 +46,7 @@
 		47BBE77E14934B024C0FF848 /* ModelPlaceRanker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4303F223CA304F18735B6D0A /* ModelPlaceRanker.swift */; };
 		49ED099754F9D3372D6304A9 /* ModelPlaceRanker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4303F223CA304F18735B6D0A /* ModelPlaceRanker.swift */; };
 		4EDBBF8CCA6D77BC993A4BCC /* SidebarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E27C0E12EC51D3A3D0B395AC /* SidebarView.swift */; };
+		4F681B1F035A7011344261D2 /* SuggestionCoordinateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C85B263BE63A6FD3CBF6FAFB /* SuggestionCoordinateTests.swift */; };
 		4FD3FDCDF9FF9D477C311B5F /* MapCanvasView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C84392A4A35D3A0FF607D83 /* MapCanvasView.swift */; };
 		52D8575746F1251850C3848C /* VisitNamingContextBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = E296CA76980924F3017D7F8F /* VisitNamingContextBuilder.swift */; };
 		53527DCD3CC12C525EAB1BCB /* eiffel-tower-day.json in Resources */ = {isa = PBXBuildFile; fileRef = 6DA6D178D95EAD82BA6BC956 /* eiffel-tower-day.json */; };
@@ -125,6 +126,7 @@
 		BE71455F71F539A0E487FA4D /* Palette.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9E1B28FC5BF045913929FD4 /* Palette.swift */; };
 		C29BAA64427740392049CADD /* LuxBonjourBrowser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6AD31226AF36728CA62510E2 /* LuxBonjourBrowser.swift */; };
 		C36CFB977724E83B2402615A /* RoutePlannerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3743ECF459145619A53BAFE /* RoutePlannerTests.swift */; };
+		C4175DC2BC03FBDFF94E0EE8 /* SuggestionCoordinateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C85B263BE63A6FD3CBF6FAFB /* SuggestionCoordinateTests.swift */; };
 		C4F0F27A97285AB6F9B96309 /* VisitPhotoStrip.swift in Sources */ = {isa = PBXBuildFile; fileRef = 19D6BC5356EA89FD2F53C904 /* VisitPhotoStrip.swift */; };
 		C58CE72AA30AD5D61AAA6E1A /* VisitTimingGuesserTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 23B1FD9FB2E0EE4DEDC6C473 /* VisitTimingGuesserTests.swift */; };
 		C65D0BCBAFBD2C3C675E2DC8 /* TrackingSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 86B57175D931BF29A0BE2F9A /* TrackingSettingsView.swift */; };
@@ -260,6 +262,7 @@
 		C3C9897691FC0C05406D4C21 /* TimelineRecorder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimelineRecorder.swift; sourceTree = "<group>"; };
 		C4B262EA915626D212E4F5F5 /* PlaceIdentitySync.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaceIdentitySync.swift; sourceTree = "<group>"; };
 		C5F2A5746D23CC00A54DFE5F /* Timeline.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = Timeline.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		C85B263BE63A6FD3CBF6FAFB /* SuggestionCoordinateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SuggestionCoordinateTests.swift; sourceTree = "<group>"; };
 		C9E1B28FC5BF045913929FD4 /* Palette.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Palette.swift; sourceTree = "<group>"; };
 		CD803A969D6C0BD2EF6C8543 /* VisitNotificationPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VisitNotificationPolicy.swift; sourceTree = "<group>"; };
 		D5BA77125DBF486853623401 /* VisitTimingGuesser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VisitTimingGuesser.swift; sourceTree = "<group>"; };
@@ -319,6 +322,7 @@
 				71B4F471B4A574BC0ABB38C6 /* RouteSnapperTests.swift */,
 				EB213F964DB381BD3165B823 /* StayGapFillerTests.swift */,
 				DB8F7FB10F4B9C7394C7A61D /* StopRepairTests.swift */,
+				C85B263BE63A6FD3CBF6FAFB /* SuggestionCoordinateTests.swift */,
 				9E6BAFAEE844C25B64EFCA57 /* TimelineLogTests.swift */,
 				E04A92A7BC968DEE2C1E98C7 /* TimelineParserTests.swift */,
 				23B1FD9FB2E0EE4DEDC6C473 /* VisitTimingGuesserTests.swift */,
@@ -869,6 +873,7 @@
 				FC0A7F53D600B675C1DD07A5 /* RouteSnapperTests.swift in Sources */,
 				0C6B33D5773EEBCBC331CA2F /* StayGapFillerTests.swift in Sources */,
 				3050C9D536B6A55CDE27CE66 /* StopRepairTests.swift in Sources */,
+				C4175DC2BC03FBDFF94E0EE8 /* SuggestionCoordinateTests.swift in Sources */,
 				10065D0E209B87E15CF64C01 /* TimelineLogTests.swift in Sources */,
 				886D2DB443AF6A8852FE2B57 /* TimelineParserTests.swift in Sources */,
 				8D11DC7C6C90AA628A37BD32 /* VisitTimingGuesserTests.swift in Sources */,
@@ -889,6 +894,7 @@
 				18B9EA1106022C3C35237159 /* RouteSnapperTests.swift in Sources */,
 				A767BFF38970F94E6FD33D36 /* StayGapFillerTests.swift in Sources */,
 				1ACE10F721E4F439B3D73E69 /* StopRepairTests.swift in Sources */,
+				4F681B1F035A7011344261D2 /* SuggestionCoordinateTests.swift in Sources */,
 				F52E8C9EAF1FD47A26F835A0 /* TimelineLogTests.swift in Sources */,
 				63F9B3CE39E7714EC22FC434 /* TimelineParserTests.swift in Sources */,
 				C58CE72AA30AD5D61AAA6E1A /* VisitTimingGuesserTests.swift in Sources */,

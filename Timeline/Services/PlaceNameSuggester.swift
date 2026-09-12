@@ -23,6 +23,17 @@ struct PlaceNameSuggestion: Identifiable, Hashable {
     /// you have already visited. Carried separately from `subtitle` because the
     /// ranker reasons about it and the subtitle is display text.
     var category: String? = nil
+    /// Where the place is, when the suggestion already knows. Results from typing
+    /// come from MKLocalSearchCompleter, which carries no coordinate at all — ask
+    /// `PlaceNameSuggester.coordinate(for:)` rather than reading this directly.
+    var latitude: Double? = nil
+    var longitude: Double? = nil
+
+    var coordinate: CLLocationCoordinate2D? {
+        guard let latitude, let longitude else { return nil }
+        let coordinate = CLLocationCoordinate2D(latitude: latitude, longitude: longitude)
+        return CLLocationCoordinate2DIsValid(coordinate) ? coordinate : nil
+    }
 
     var accessibilityLabel: String {
         if let subtitle, !subtitle.isEmpty {
@@ -48,6 +59,8 @@ final class PlaceNameSuggester: NSObject, MKLocalSearchCompleterDelegate {
     private var addressHint: PlaceNameSuggestion?
     private var query = ""
     private var completerResults: [PlaceNameSuggestion] = []
+    /// Kept so a typed result can be resolved to a real place when it is picked.
+    private var completionsByID: [String: MKLocalSearchCompletion] = [:]
     private var searchTask: Task<Void, Never>?
     private var requestID = UUID()
 
@@ -93,7 +106,8 @@ final class PlaceNameSuggester: NSObject, MKLocalSearchCompleterDelegate {
     }
 
     nonisolated func completerDidUpdateResults(_ completer: MKLocalSearchCompleter) {
-        let mapped = completer.results.prefix(12).map { completion in
+        let completions = Array(completer.results.prefix(12))
+        let mapped = completions.map { completion in
             PlaceNameSuggestion(
                 id: "completer:\(completion.title)|\(completion.subtitle)",
                 title: completion.title,
@@ -104,8 +118,12 @@ final class PlaceNameSuggester: NSObject, MKLocalSearchCompleterDelegate {
                 targetPlaceID: nil
             )
         }
+        let pairs = zip(completions, mapped).map { ($0.1.id, $0.0) }
         Task { @MainActor in
             self.completerResults = mapped
+            for (id, completion) in pairs {
+                self.completionsByID[id] = completion
+            }
             self.rebuild()
         }
     }
@@ -130,6 +148,23 @@ final class PlaceNameSuggester: NSObject, MKLocalSearchCompleterDelegate {
         nearbyMap = poiSuggestions
         addressHint = reverse
         rebuild()
+    }
+
+    /// Where a suggestion actually is.
+    ///
+    /// A typed result is an `MKLocalSearchCompletion`: a name and a subtitle, no
+    /// position. It has to be run through a search to become a place. Skipping
+    /// that put a school two kilometres out, at whatever the map happened to be
+    /// centred on.
+    func coordinate(for suggestion: PlaceNameSuggestion) async -> CLLocationCoordinate2D? {
+        if let known = suggestion.coordinate { return known }
+        guard let completion = completionsByID[suggestion.id] else { return nil }
+        let request = MKLocalSearch.Request(completion: completion)
+        request.region = completer.region
+        guard let response = try? await MKLocalSearch(request: request).start() else { return nil }
+        let found = response.mapItems.first?.placemark.coordinate
+        guard let found, CLLocationCoordinate2DIsValid(found) else { return nil }
+        return found
     }
 
     private func rebuild() {
