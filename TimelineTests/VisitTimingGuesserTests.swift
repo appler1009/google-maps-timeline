@@ -219,4 +219,59 @@ final class VisitTimingGuesserTests: XCTestCase {
         XCTAssertEqual(guess.basis, .unknown)
     }
 
+
+    /// The real shape of the problem, from a recorded drive.
+    ///
+    /// A half-hour drive that stopped at a music school came back as six points
+    /// two to six kilometres apart, and the corner where it pulled in was the
+    /// detail the simplification cut: the nearest the stored line came was 571
+    /// metres. A radius tuned for fixes rejects that outright, so the guess fell
+    /// back to midday even though the route says plainly when it went past.
+    func testAStopSurvivesTheRoutesSimplification() {
+        let start = Date(timeIntervalSince1970: 1_800_000_000)
+        let academy = CLLocationCoordinate2D(latitude: 49.2749, longitude: -123.1444)
+        let path = TimelinePath(
+            id: "drive",
+            start: start,
+            end: start.addingTimeInterval(1_783),
+            points: [
+                CLLocationCoordinate2D(latitude: 49.2735, longitude: -123.2436),
+                CLLocationCoordinate2D(latitude: 49.2692, longitude: -123.1848),
+                CLLocationCoordinate2D(latitude: 49.2726, longitude: -123.1514),
+                CLLocationCoordinate2D(latitude: 49.2727, longitude: -123.1583),
+                CLLocationCoordinate2D(latitude: 49.2688, longitude: -123.1992),
+                CLLocationCoordinate2D(latitude: 49.2718, longitude: -123.2494)
+            ],
+            kind: .automobile
+        )
+
+        let guess = VisitTimingGuesser.guess(
+            placeCoordinate: academy,
+            fixes: [],
+            paths: [path],
+            fallbackMidpoint: start.addingTimeInterval(40_000)
+        )
+        XCTAssertEqual(guess.basis, .droveBy)
+        // The route turns around beside the school about fourteen minutes in;
+        // the stay actually added by hand ran 10:01 to 10:02 on a drive that
+        // began at 09:47.
+        let centre = guess.start.addingTimeInterval(guess.duration / 2)
+        XCTAssertEqual(centre.timeIntervalSince(start), 14 * 60, accuracy: 3 * 60)
+    }
+
+    /// Measured to the line, not its corners: a place beside a long straight leg
+    /// is nowhere near either end of it.
+    func testAPlaceBesideALongLegIsFound() {
+        let start = Date(timeIntervalSince1970: 1_800_000_000)
+        let a = CLLocationCoordinate2D(latitude: 49.2600, longitude: -123.2000)
+        let b = CLLocationCoordinate2D(latitude: 49.2600, longitude: -123.1000)
+        // Halfway along, 200 m to the north — kilometres from either corner.
+        let beside = CLLocationCoordinate2D(latitude: 49.2618, longitude: -123.1500)
+        let path = TimelinePath(id: "leg", start: start, end: start.addingTimeInterval(600), points: [a, b], kind: .automobile)
+
+        let passed = try? XCTUnwrap(VisitTimingGuesser.passingTime(placeCoordinate: beside, paths: [path]))
+        XCTAssertNotNil(passed)
+        XCTAssertEqual(passed?.timeIntervalSince(start) ?? 0, 300, accuracy: 30, "halfway along a ten-minute leg")
+    }
+
 }

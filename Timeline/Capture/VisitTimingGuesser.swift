@@ -10,6 +10,12 @@ import CoreLocation
 enum VisitTimingGuesser {
     /// A fix further than this from the place was not a visit to it.
     static let approachRadius: CLLocationDistance = 250
+    /// The same question asked of a stored route, which is a simplification: a
+    /// half-hour drive comes back as a handful of points, and the corner where
+    /// it turned into a car park is exactly the detail that gets cut. Measured
+    /// against a real drive that stopped at a music school, the nearest the
+    /// saved polyline came was some six hundred metres.
+    static let routeApproachRadius: CLLocationDistance = 800
     /// Below this, treat the car as stopped rather than passing. 2 m/s is a brisk
     /// walk, which no car does unless it is pulling in.
     static let stoppedSpeed: CLLocationSpeed = 2.0
@@ -90,8 +96,12 @@ enum VisitTimingGuesser {
     /// A path carries only its own start and end times, so the moment is read
     /// off the distance travelled: a point a third of the way along the line
     /// happened about a third of the way through the journey. Coarse — a route
-    /// is not walked at a constant speed — but a coarse time inside the right
-    /// half-hour beats midday, and the sheet is there to be adjusted.
+    /// is not driven at a constant speed — but a coarse time inside the right
+    /// few minutes beats midday, and the sheet is there to be adjusted.
+    ///
+    /// Measured to the line rather than to its corners. A stored route puts its
+    /// points kilometres apart, so asking only about the corners misses a place
+    /// sitting beside a long straight leg entirely.
     static func passingTime(
         placeCoordinate: CLLocationCoordinate2D,
         paths: [TimelinePath]
@@ -102,17 +112,48 @@ enum VisitTimingGuesser {
             let total = legs.reduce(0, +)
             guard total > 0 else { continue }
             var travelled: CLLocationDistance = 0
-            for (index, point) in path.points.enumerated() {
-                if index > 0 { travelled += legs[index - 1] }
-                let away = RoutePlanner.meters(point, placeCoordinate)
-                guard away <= approachRadius else { continue }
+            for (index, leg) in legs.enumerated() {
+                let from = path.points[index]
+                let to = path.points[index + 1]
+                let (away, fraction) = approach(of: placeCoordinate, toSegmentFrom: from, to: to)
+                defer { travelled += leg }
+                guard away <= routeApproachRadius else { continue }
                 guard best == nil || away < best!.distance else { continue }
-                let fraction = travelled / total
+                let along = (travelled + leg * fraction) / total
                 let span = path.end.timeIntervalSince(path.start)
-                best = (away, path.start.addingTimeInterval(span * fraction))
+                best = (away, path.start.addingTimeInterval(span * along))
             }
         }
         return best?.at
+    }
+
+    /// How close a segment comes to a point, and how far along it that happens.
+    ///
+    /// Flat-earth arithmetic: over the length of one leg of a drive the error is
+    /// far smaller than the simplification already in the line.
+    static func approach(
+        of place: CLLocationCoordinate2D,
+        toSegmentFrom from: CLLocationCoordinate2D,
+        to: CLLocationCoordinate2D
+    ) -> (distance: CLLocationDistance, fraction: Double) {
+        let metresPerDegree = 111_320.0
+        let shrink = cos(place.latitude * .pi / 180)
+        func project(_ c: CLLocationCoordinate2D) -> (x: Double, y: Double) {
+            (c.longitude * metresPerDegree * shrink, c.latitude * metresPerDegree)
+        }
+        let point = project(place)
+        let start = project(from)
+        let end = project(to)
+        let dx = end.x - start.x
+        let dy = end.y - start.y
+        let lengthSquared = dx * dx + dy * dy
+        guard lengthSquared > 0 else {
+            return (RoutePlanner.meters(place, from), 0)
+        }
+        let raw = ((point.x - start.x) * dx + (point.y - start.y) * dy) / lengthSquared
+        let fraction = min(max(raw, 0), 1)
+        let closest = (x: start.x + fraction * dx, y: start.y + fraction * dy)
+        return (hypot(point.x - closest.x, point.y - closest.y), fraction)
     }
 
     /// The unbroken run of slow fixes containing the closest approach. Returns nil
