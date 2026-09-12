@@ -217,8 +217,11 @@ final class TimelineStore {
     }
 
     /// Rename and/or unmerge overflow for a place.
+    /// Every place can at least be given its real location, so every place has
+    /// a menu. Home and Work cannot be renamed, which used to hide the menu from
+    /// them entirely.
     func showsPlaceActions(_ place: PlaceRecord) -> Bool {
-        canRename(place) || !sourcesMerged(into: place.id).isEmpty
+        true
     }
 
     func renamePlace(id: String, to name: String) {
@@ -246,11 +249,16 @@ final class TimelineStore {
     func setPlaceLocation(_ placeID: String, to coordinate: CLLocationCoordinate2D) {
         isLoading = true
         Task {
-            try? await database.setPlaceLocation(placeKey: placeID, coordinate: coordinate)
-            TimelineLog.info(
-                "place location corrected",
-                ["placeKey": placeID, "lat": String(format: "%.5f", coordinate.latitude)]
-            )
+            do {
+                try await database.setPlaceLocation(placeKey: placeID, coordinate: coordinate)
+                TimelineLog.info(
+                    "place location corrected",
+                    ["placeKey": placeID, "lat": String(format: "%.5f", coordinate.latitude)]
+                )
+            } catch {
+                loadError = error.localizedDescription
+                TimelineLog.error("place location failed", ["error": error.localizedDescription])
+            }
             isLoading = false
             refreshFromLibrary()
         }
@@ -260,7 +268,12 @@ final class TimelineStore {
     func clearPlaceLocation(_ placeID: String) {
         isLoading = true
         Task {
-            try? await database.clearPlaceLocation(placeKey: placeID)
+            do {
+                try await database.clearPlaceLocation(placeKey: placeID)
+            } catch {
+                loadError = error.localizedDescription
+                TimelineLog.error("place location reset failed", ["error": error.localizedDescription])
+            }
             isLoading = false
             refreshFromLibrary()
         }

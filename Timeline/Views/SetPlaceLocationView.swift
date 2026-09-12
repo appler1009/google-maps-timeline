@@ -99,7 +99,9 @@ struct SetPlaceLocationView: View {
         suggester.configure(
             around: centre,
             excludingPlaceID: place.id,
-            visitedPlaces: store.visitedPlaceNameCandidates(excluding: place.id)
+            // Not the rename sheet: offering other stays here reads as "merge
+            // Staples into Home", when all that is wanted is a map coordinate.
+            visitedPlaces: []
         )
         query = store.displayName(for: place)
         suggester.updateQuery(query)

@@ -665,6 +665,9 @@ struct SelectionCard: View {
     @State private var addingStayOn: Date?
     /// The stay whose "Move to another place" was chosen.
     @State private var movingVisit: TimelineVisit?
+    /// The place whose "Set location…" was chosen, from the map rather than the
+    /// sidebar — correcting a pin is most natural while looking at it.
+    @State private var relocatingPlaceID: String?
     @Bindable private var lux = LuxPhotoLink.shared
     #if os(iOS)
     /// Full map canvas height — used to stretch the open sheet under the top chrome.
@@ -700,9 +703,11 @@ struct SelectionCard: View {
                             .foregroundStyle(Self.secondary)
                         Spacer(minLength: 8)
                         if store.showsPlaceActions(place) {
-                            PlaceActionsMenu(placeID: place.id) {
-                                renamingPlaceID = place.id
-                            }
+                            PlaceActionsMenu(
+                                placeID: place.id,
+                                onRename: { renamingPlaceID = place.id },
+                                onSetLocation: { relocatingPlaceID = place.id }
+                            )
                         }
                     }
                 }
@@ -755,6 +760,7 @@ struct SelectionCard: View {
         .placeRenameSheet(placeID: $renamingPlaceID, store: store)
         .addVisitSheet(day: $addingStayOn, store: store)
         .moveVisitSheet(visit: $movingVisit, store: store)
+        .setPlaceLocationSheet(placeID: $relocatingPlaceID, store: store)
         .onAppear { lux.refreshPhotos(for: store.activeDay) }
         .onChange(of: store.selectedDayID) { _, _ in
             lux.refreshPhotos(for: store.activeDay)
@@ -1074,9 +1080,11 @@ struct SelectionCard: View {
             }
             Spacer(minLength: 8)
             if store.showsPlaceActions(place) {
-                PlaceActionsMenu(placeID: place.id) {
-                    renamingPlaceID = place.id
-                }
+                PlaceActionsMenu(
+                    placeID: place.id,
+                    onRename: { renamingPlaceID = place.id },
+                    onSetLocation: { relocatingPlaceID = place.id }
+                )
             }
         }
     }

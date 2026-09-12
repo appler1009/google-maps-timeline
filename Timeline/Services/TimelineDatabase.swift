@@ -58,7 +58,7 @@ actor TimelineDatabase {
     func loadBatch(includingShadowed: Bool = false) throws -> TimelineBatch? {
         if try isEmpty() { return nil }
         let merges = try loadPlaceMerges()
-        let locations = try loadPlaceLocations()
+        let locations = Self.resolved(try loadPlaceLocations(), merges: merges)
         return TimelineBatch(
             visits: try loadVisits(includingShadowed: includingShadowed)
                 .map { Self.remapped($0, merges: merges) }
@@ -327,7 +327,7 @@ actor TimelineDatabase {
             throw TimelineDatabaseError.execute(errmsg())
         }
         let merges = try loadPlaceMerges()
-        let locations = try loadPlaceLocations()
+        let locations = Self.resolved(try loadPlaceLocations(), merges: merges)
         var anchors: [String: PlaceAnchor] = [:]
         while sqlite3_step(statement) == SQLITE_ROW {
             guard let rawKey = text(statement, 0) else { continue }
@@ -1277,6 +1277,24 @@ actor TimelineDatabase {
                 throw TimelineDatabaseError.execute(errmsg())
             }
         }
+    }
+
+    /// Corrections are keyed by the place the user was looking at. Merging that
+    /// place into another would otherwise strand the correction on a key nothing
+    /// resolves to any more, so it follows the merge.
+    static func resolved(
+        _ locations: [String: PlaceLocation],
+        merges: [String: String]
+    ) -> [String: PlaceLocation] {
+        var resolved = locations
+        for (fromKey, toKey) in merges {
+            guard let carried = locations[fromKey] else { continue }
+            // A correction made directly on the surviving place wins over one
+            // inherited from a place folded into it.
+            if let existing = resolved[toKey], existing.updatedAt >= carried.updatedAt { continue }
+            resolved[toKey] = carried
+        }
+        return resolved
     }
 
     /// A corrected location wins over whatever was recorded or imported, so the
