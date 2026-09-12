@@ -578,8 +578,10 @@ final class TimelineRecorderTests: XCTestCase {
         await recorder.handle(stop: stop(start: start, minutes: nil))
         let open = try await database.openStop()
         XCTAssertNotNil(open)
+        // Readable from the moment it opens, rather than only once it ends.
         let beforeDeparture = try await database.loadBatch()?.visits.first
-        XCTAssertNil(beforeDeparture)
+        XCTAssertEqual(beforeDeparture?.start, start)
+        XCTAssertEqual(beforeDeparture?.isOpen, true)
 
         // The departure arrives from a slightly different coordinate, as CLVisit
         // departures do — it must still close the same place, not open a second.
@@ -1112,16 +1114,14 @@ final class ChangeLogTests: XCTestCase {
         let (db, url) = database()
         defer { try? FileManager.default.removeItem(at: url) }
 
-        // Fixes, capture marks and the open stay are all device-local scaffolding;
-        // syncing them would be pure noise.
+        // Fixes and capture marks are device-local scaffolding; syncing them
+        // would be pure noise. The stay you are currently inside is not
+        // scaffolding — it is the only way the other device can know where you
+        // are — so it is deliberately not in this list.
         try await db.appendFixes([
             CapturedFix(coordinate: home, timestamp: Date(), horizontalAccuracy: 10, speed: 3)
         ])
         try await db.setCaptureMark(CaptureMark.motion, through: Date())
-        try await db.setOpenStop(
-            CapturedStop(coordinate: home, horizontalAccuracy: 50, start: Date(), end: nil),
-            placeKey: "cafe"
-        )
         let count = try await db.pendingChangeCount()
         XCTAssertEqual(count, 0)
     }

@@ -401,7 +401,10 @@ final class OpenStayTests: XCTestCase {
         XCTAssertEqual(open.start, arrived)
         XCTAssertEqual(open.end, now, "it runs up to the present, not to a departure that has not happened")
         XCTAssertEqual(open.placeKey, "home")
-        XCTAssertTrue(open.isDerived, "there is no row behind it, so it cannot be edited")
+        XCTAssertFalse(
+            open.isDerived,
+            "it is a real row from the moment it opens, so it can be moved like any other"
+        )
     }
 
     /// Three days at home should read as three days at home, not three blanks.
@@ -504,6 +507,80 @@ final class OpenStayTests: XCTestCase {
         // Still drawn a week in, which is an ordinary stretch of working at home.
         let withinReason = try await db.openStay(now: arrived.addingTimeInterval(6 * 24 * 3_600))
         XCTAssertNotNil(withinReason)
+    }
+
+
+    /// The Mac has no recorder, so the only way it can know you are at home is
+    /// to be told — and a stay that has not ended has to be a row before it can
+    /// travel. A week working from home was a week of empty days over there.
+    func testAnOpenStayTravelsToTheOtherDevice() async throws {
+        let (phone, phoneURL) = database()
+        defer { try? FileManager.default.removeItem(at: phoneURL) }
+        let (mac, macURL) = database()
+        defer { try? FileManager.default.removeItem(at: macURL) }
+
+        let arrived = Date(timeIntervalSince1970: 1_800_000_000)
+        try await phone.setOpenStop(
+            CapturedStop(coordinate: home, horizontalAccuracy: 50, start: arrived, end: nil),
+            placeKey: "home"
+        )
+
+        let outgoing = try await phone.changeBatch()
+        let sent = try XCTUnwrap(outgoing.visits.first { $0.isOpen })
+        XCTAssertEqual(sent.start, arrived)
+
+        try await mac.applyRemote(
+            TimelineBatch(visits: [sent], activities: [], paths: []),
+            visitSources: [:]
+        )
+
+        // Three days later the Mac still shows it, grown against its own clock.
+        let threeDaysOn = arrived.addingTimeInterval(3 * 24 * 3_600)
+        let loaded = try await mac.loadBatch(now: threeDaysOn)
+        let batch = try XCTUnwrap(loaded)
+        let open = try XCTUnwrap(batch.visits.first { $0.isOpen })
+        XCTAssertEqual(open.placeKey, "home")
+        XCTAssertEqual(open.end, threeDaysOn, "it runs up to the present on this device too")
+    }
+
+    /// Written once and left alone. However long the stay runs it is one row and
+    /// one send — reading is what grows it.
+    func testAnOpenStayIsNotRewrittenAsItRuns() async throws {
+        let (db, url) = database()
+        defer { try? FileManager.default.removeItem(at: url) }
+        let arrived = Date(timeIntervalSince1970: 1_800_000_000)
+        try await db.setOpenStop(
+            CapturedStop(coordinate: home, horizontalAccuracy: 50, start: arrived, end: nil),
+            placeKey: "home"
+        )
+        let first = try await db.pendingChangeCount()
+        try await db.setOpenStop(
+            CapturedStop(coordinate: home, horizontalAccuracy: 50, start: arrived, end: nil),
+            placeKey: "home"
+        )
+        let second = try await db.pendingChangeCount()
+        XCTAssertEqual(second, first, "the same stay is not queued twice")
+    }
+
+    /// Past a week an unclosed stay means the departure was missed, and drawing
+    /// it further asserts something nobody witnessed.
+    func testAnOpenStayStopsGrowingOnceItIsNotCredible() async throws {
+        let (db, url) = database()
+        defer { try? FileManager.default.removeItem(at: url) }
+        let arrived = Date(timeIntervalSince1970: 1_800_000_000)
+        try await db.setOpenStop(
+            CapturedStop(coordinate: home, horizontalAccuracy: 50, start: arrived, end: nil),
+            placeKey: "home"
+        )
+        let muchLater = arrived.addingTimeInterval(30 * 24 * 3_600)
+        let loaded = try await db.loadBatch(now: muchLater)
+        let batch = try XCTUnwrap(loaded)
+        let open = try XCTUnwrap(batch.visits.first { $0.isOpen })
+        XCTAssertEqual(
+            open.end.timeIntervalSince(arrived),
+            TimelineDatabase.longestOpenStay,
+            accuracy: 1
+        )
     }
 
 }

@@ -33,6 +33,7 @@ enum TimelineRecordMapper {
         static let toKey = "toKey"
         static let updatedAt = "updatedAt"
         static let mergedInto = "mergedInto"
+        static let isOpen = "isOpen"
     }
 
     /// Record types are the change kinds, capitalised — CloudKit convention, and
@@ -141,6 +142,9 @@ enum TimelineRecordMapper {
         if let type = visit.semanticType {
             record[Field.semanticType] = type as NSString
         }
+        // A stay still going on, whose end is only where it had got to when
+        // this was sent. The other device grows it against its own clock.
+        record[Field.isOpen] = visit.isOpen ? 1 as NSNumber : nil
         return record
     }
 
@@ -267,7 +271,8 @@ enum TimelineRecordMapper {
             end: end,
             coordinate: coordinate(record, Field.latitude, Field.longitude),
             semanticType: record[Field.semanticType] as? String,
-            placeKey: placeKey
+            placeKey: placeKey,
+            isOpen: (record[Field.isOpen] as? Int ?? 0) == 1
         )
     }
 

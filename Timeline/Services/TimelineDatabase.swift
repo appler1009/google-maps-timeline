@@ -64,10 +64,10 @@ actor TimelineDatabase {
         let locations = Self.resolved(try loadPlaceLocations(), merges: try loadPlaceMerges())
         var visits = try loadVisits(includingShadowed: includingShadowed)
             .map { Self.relocated($0, locations: locations) }
-        // The stay we are still inside has no row yet — there is no end to write
-        // down until it is over. Read it anyway, running up to now, so a week
-        // working from home is not a week of empty days.
-        if let open {
+            .map { Self.extendedIfOpen($0, now: now) }
+        // Older libraries kept the open stay only in open_visit, with no row
+        // behind it. Read it from there until the next one opens as a row.
+        if let open, !visits.contains(where: { $0.id == open.id }) {
             visits.append(Self.relocated(open, locations: locations))
         }
         return TimelineBatch(
@@ -81,6 +81,29 @@ actor TimelineDatabase {
     /// is ordinary; a month means the departure was missed, or the app has not
     /// run since, and drawing it is asserting something nobody witnessed.
     static let longestOpenStay: TimeInterval = 7 * 24 * 3_600
+
+    /// A stay still going on runs up to the present, not up to the moment it
+    /// began. The row is written once and left alone; this is where it grows.
+    ///
+    /// Capped, because an unclosed stay outlives its own credibility: past a
+    /// week it means the departure was missed or the app has not run, and
+    /// stretching it further asserts something nobody witnessed.
+    private static func extendedIfOpen(_ visit: TimelineVisit, now: Date) -> TimelineVisit {
+        guard visit.isOpen else { return visit }
+        let cap = visit.start.addingTimeInterval(longestOpenStay)
+        let end = max(visit.end, min(now, cap))
+        guard end > visit.end else { return visit }
+        return TimelineVisit(
+            id: visit.id,
+            start: visit.start,
+            end: end,
+            coordinate: visit.coordinate,
+            semanticType: visit.semanticType,
+            placeKey: visit.placeKey,
+            isDerived: visit.isDerived,
+            isOpen: true
+        )
+    }
 
     /// The in-progress stay as a visit ending now, or nil when there isn't one.
     ///
@@ -1193,6 +1216,26 @@ actor TimelineDatabase {
         guard sqlite3_step(statement) == SQLITE_DONE else {
             throw TimelineDatabaseError.execute(errmsg())
         }
+        // And as a row, so the stay exists for everything that reads the
+        // library and travels to the other device. Core Location reports a
+        // visit twice, and waiting for the second report meant a week working
+        // from home was a week of empty days on the Mac, which has no recorder
+        // of its own and no way to learn of a stay that had not ended.
+        //
+        // Written once, ending where it starts. Nothing rewrites it as the day
+        // goes on — reading extends it to the present — so it costs one row and
+        // one send however long the stay runs.
+        guard stop.arrivalIsKnown else { return }
+        let opened = TimelineVisit(
+            id: PlaceClusterer.visitID(placeKey: placeKey, start: stop.start),
+            start: stop.start,
+            end: stop.start,
+            coordinate: stop.coordinate,
+            semanticType: nil,
+            placeKey: placeKey,
+            isOpen: true
+        )
+        try record(batch: TimelineBatch(visits: [opened], activities: [], paths: []))
     }
 
     func clearOpenStop() throws {
@@ -2010,6 +2053,29 @@ actor TimelineDatabase {
         )
     }
 
+    /// Mark every stay at a place as needing to be sent again.
+    ///
+    /// A repair changes rows whose records CloudKit has already acknowledged, so
+    /// nothing would go out on its own and the other device would never learn of
+    /// it.
+    @discardableResult
+    func requeueStays(atPlace placeKey: String) throws -> Int {
+        guard let db, !placeKey.isEmpty else { return 0 }
+        var ids: [String] = []
+        var select: OpaquePointer?
+        defer { sqlite3_finalize(select) }
+        guard sqlite3_prepare_v2(db, "SELECT id FROM visits WHERE place_id = ?", -1, &select, nil) == SQLITE_OK else {
+            return 0
+        }
+        sqlite3_bind_text(select, 1, placeKey, -1, Self.transient)
+        while sqlite3_step(select) == SQLITE_ROW {
+            if let id = text(select, 0) { ids.append(id) }
+        }
+        for id in ids { try logChange(.visit, id) }
+        try logChange(.place, placeKey)
+        return ids.count
+    }
+
     /// Drop every recorded merge origin. Reproduces the state a merge arriving
     /// from another device used to leave behind, so the recovery can be tested.
     func forgetMergeOrigins() throws {
@@ -2198,6 +2264,10 @@ actor TimelineDatabase {
         try addColumn(db, table: "visits", column: "place_id TEXT")
         // What a cached route was drawn between, so moving a place invalidates it.
         try addColumn(db, table: "path_routes", column: "anchor TEXT")
+        // A stay that has begun and not ended. It is a row from the moment it
+        // opens so the other device can see it; its end is only provisional
+        // until it closes.
+        try addColumn(db, table: "visits", column: "is_open INTEGER NOT NULL DEFAULT 0")
         // Where the stay was before a merge moved it, so unmerging can put it
         // back. Repointing without this would be a one-way door.
         try addColumn(db, table: "visits", column: "origin_place_id TEXT")
@@ -2224,8 +2294,8 @@ actor TimelineDatabase {
         var statement: OpaquePointer?
         defer { sqlite3_finalize(statement) }
         let sql = """
-            INSERT INTO visits (id, start, end, lat, lon, place_key, semantic_type, source, place_id)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO visits (id, start, end, lat, lon, place_key, semantic_type, source, place_id, is_open)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
                 start = excluded.start,
                 end = excluded.end,
@@ -2239,6 +2309,7 @@ actor TimelineDatabase {
                 -- and the other device filed it under place_key and went on
                 -- showing the old one.
                 place_id = excluded.place_id,
+                is_open = excluded.is_open,
                 semantic_type = CASE
                     WHEN excluded.semantic_type IS NOT NULL
                          AND excluded.semantic_type NOT IN ('', 'Unknown', 'unknown')
@@ -2279,6 +2350,7 @@ actor TimelineDatabase {
             // that to the migration meant a stay recorded in the background had
             // no place until the app was next opened.
             sqlite3_bind_text(statement, 9, visit.placeKey, -1, Self.transient)
+            sqlite3_bind_int64(statement, 10, visit.isOpen ? 1 : 0)
             guard sqlite3_step(statement) == SQLITE_DONE else {
                 throw TimelineDatabaseError.execute(errmsg())
             }
@@ -2402,7 +2474,7 @@ actor TimelineDatabase {
         defer { sqlite3_finalize(statement) }
         guard sqlite3_prepare_v2(
             db,
-            "SELECT id, start, end, lat, lon, COALESCE(place_id, place_key), semantic_type FROM visits" + filter,
+            "SELECT id, start, end, lat, lon, COALESCE(place_id, place_key), semantic_type, is_open FROM visits" + filter,
             -1,
             &statement,
             nil
@@ -2416,7 +2488,8 @@ actor TimelineDatabase {
                     end: Date(timeIntervalSince1970: sqlite3_column_double(statement, 2)),
                     coordinate: coordinate(statement, lat: 3, lon: 4),
                     semanticType: text(statement, 6),
-                    placeKey: text(statement, 5) ?? ""
+                    placeKey: text(statement, 5) ?? "",
+                    isOpen: sqlite3_column_int64(statement, 7) == 1
                 )
             )
         }

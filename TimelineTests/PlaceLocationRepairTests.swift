@@ -217,4 +217,20 @@ final class MergeRepairTests: XCTestCase {
         print("[move] \(target) now holds \(counts[target] ?? 0) stays")
     }
 
+
+    /// Re-queue every stay at a place, so a repair made here crosses to the
+    /// other device even though its records were already acknowledged.
+    ///
+    ///     defaults write com.appler.Timeline.tests requeuePlace -string "<place key>"
+    func testRequeueStaysAtAPlace() async throws {
+        guard let placeKey = settings?.string(forKey: "requeuePlace") else {
+            throw XCTSkip("set requeuePlace to a place key to run this")
+        }
+        try XCTSkipUnless(FileManager.default.fileExists(atPath: libraryPath), "no library")
+        let db = TimelineDatabase(fileURL: URL(fileURLWithPath: libraryPath))
+        let queued = try await db.requeueStays(atPlace: placeKey)
+        print("[requeue] \(queued) stays at \(placeKey)")
+        XCTAssertGreaterThan(queued, 0)
+    }
+
 }

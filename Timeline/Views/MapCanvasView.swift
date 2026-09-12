@@ -1015,9 +1015,12 @@ struct SelectionCard: View {
             .accessibilityHint("Opens the place for this stay")
             .contextMenu {
                 if group.visits.contains(where: \.isOpen) {
-                    // Still happening: there is no row until it ends, so there
-                    // is nothing here to move either.
+                    // Still happening, and a real row, so it can be put right
+                    // without waiting for it to end.
                     Text("Still here — ends when you leave")
+                    Button("Move to another place…") {
+                        movingVisit = visit
+                    }
                 } else if visit.isDerived {
                     // Nothing to move: this one was inferred from the absence of
                     // travel and has no row behind it.
