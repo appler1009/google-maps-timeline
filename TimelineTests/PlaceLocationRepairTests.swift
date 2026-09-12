@@ -119,3 +119,83 @@ final class PlaceLocationRepairTests: XCTestCase {
         return candidate
     }
 }
+
+
+/// A one-off repair, run by hand against a copy of the real library: undo a
+/// merge that folded a much-visited place into a rarely-visited one.
+///
+///     defaults write com.appler.Timeline.tests unmergeFrom -string "<place key>"
+///     defaults write com.appler.Timeline.tests unmergeApply -bool YES
+final class MergeRepairTests: XCTestCase {
+    private var settings: UserDefaults? { UserDefaults(suiteName: "com.appler.Timeline.tests") }
+    private var libraryPath: String {
+        settings?.string(forKey: "repairLibrary") ?? "/tmp/library.sqlite"
+    }
+
+    func testUndoOneMerge() async throws {
+        guard let fromKey = settings?.string(forKey: "unmergeFrom") else {
+            throw XCTSkip("set unmergeFrom to a place key to run this")
+        }
+        try XCTSkipUnless(FileManager.default.fileExists(atPath: libraryPath), "no library")
+        let apply = settings?.bool(forKey: "unmergeApply") ?? false
+
+        let db = TimelineDatabase(fileURL: URL(fileURLWithPath: libraryPath))
+        let before = try await db.loadPlaces()
+        let merges = try await db.loadPlaceMerges()
+        guard let target = merges[fromKey] else {
+            print("[unmerge] \(fromKey) is not merged into anything")
+            return
+        }
+        print("[unmerge] \(fromKey) -> \(target) (\(before[target]?.name ?? "unnamed"))")
+
+        guard apply else {
+            print("[unmerge] set unmergeApply to write it")
+            return
+        }
+        try await db.unmergePlace(from: fromKey)
+
+        let places = try await db.loadPlaces()
+        let counts = try await db.stayCountsByPlace()
+        print("[unmerge] restored: \(counts[fromKey] ?? 0) stays at \(fromKey)")
+        print("[unmerge] remaining at \(target): \(counts[target] ?? 0)")
+        XCTAssertGreaterThan(counts[fromKey] ?? 0, 0, "the stays should have come back")
+        XCTAssertNotNil(places[fromKey])
+    }
+
+    /// Merging clears the source's name, so an unmerged place comes back
+    /// nameless. Give it back, then fold the near-duplicate that was sitting
+    /// beside it into the one holding the history.
+    ///
+    ///     defaults write com.appler.Timeline.tests renameKey -string "<place key>"
+    ///     defaults write com.appler.Timeline.tests renameTo -string "<name>"
+    func testRenameAndConsolidate() async throws {
+        guard let key = settings?.string(forKey: "renameKey"),
+              let name = settings?.string(forKey: "renameTo") else {
+            throw XCTSkip("set renameKey and renameTo to run this")
+        }
+        try XCTSkipUnless(FileManager.default.fileExists(atPath: libraryPath), "no library")
+        let db = TimelineDatabase(fileURL: URL(fileURLWithPath: libraryPath))
+
+        try await db.setPlaceName(placeKey: key, name: name)
+        let places = try await db.loadPlaces()
+        let counts = try await db.stayCountsByPlace()
+        let survivor = try XCTUnwrap(places[key])
+        print("[rename] \(key) is now \(survivor.name ?? "unnamed") with \(counts[key] ?? 0) stays")
+
+        // Anything else of the same name within a short walk is the same place.
+        guard let here = survivor.coordinate else { return }
+        for other in places.values where other.id != key && other.name == name {
+            guard let there = other.coordinate else { continue }
+            let metres = RoutePlanner.meters(here, there)
+            guard metres <= 150 else { continue }
+            let mine = counts[key] ?? 0
+            let theirs = counts[other.id] ?? 0
+            let (from, into) = mine <= theirs ? (key, other.id) : (other.id, key)
+            print(String(format: "[rename] folding %@ (%d stays) into %@ — %.0f m apart", from, min(mine, theirs), into, metres))
+            try await db.mergePlace(from: from, into: into, targetSemantic: other.semanticType)
+        }
+        let after = try await db.stayCountsByPlace()
+        print("[rename] \(key) now holds \(after[key] ?? 0) stays")
+    }
+
+}

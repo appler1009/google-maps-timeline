@@ -111,4 +111,34 @@ final class MergeRepointingTests: XCTestCase {
         let visits = try await db.loadBatch()?.visits ?? []
         XCTAssertEqual(visits.count, 3)
     }
+
+    /// A merge that arrived from the other device could never be undone.
+    ///
+    /// `origin_place_id` is the record of the move, and only a merge performed
+    /// on this device wrote one. A merge that came over sync was resolved while
+    /// the entity migration linked stays to places, which moved them onto the
+    /// survivor without leaving a trail — so unmerging found nothing to restore.
+    /// This is the real case: seventy-nine stays at a supermarket folded into an
+    /// insurance office, and no way back.
+    func testAMergeWithNoRecordedOriginCanStillBeUndone() async throws {
+        let (db, url) = database()
+        defer { try? FileManager.default.removeItem(at: url) }
+        try await seed(db)
+
+        // The state a synced merge leaves behind: the stay points at the
+        // survivor, still carries the key it was clustered under, and has no
+        // origin recorded.
+        try await db.mergePlace(from: "annex", into: "main", targetSemantic: nil)
+        try await db.forgetMergeOrigins()
+
+        let beforeCount = try await db.loadPlaces()
+        XCTAssertNotNil(beforeCount["main"])
+
+        try await db.unmergePlace(from: "annex")
+
+        let visits = try await db.loadBatch()?.visits ?? []
+        let restored = visits.filter { $0.placeKey == "annex" }
+        XCTAssertEqual(restored.count, 2, "both stays go back to the place they were clustered under")
+    }
+
 }

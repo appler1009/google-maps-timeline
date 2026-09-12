@@ -464,12 +464,27 @@ actor TimelineDatabase {
         }
     }
 
+    /// Point stays at the place their key resolves to.
+    ///
+    /// When that resolution crosses a merge — the key folded into some other
+    /// place — the stay is being moved, and a move has to remember where it came
+    /// from or it can never be undone. Leaving that out is what made a merge
+    /// received over sync permanently stuck: the stays landed on the survivor
+    /// with no trail back.
     private func linkVisits(placeKey: String, to placeID: String, db: OpaquePointer) throws -> Int {
         var statement: OpaquePointer?
         defer { sqlite3_finalize(statement) }
         guard sqlite3_prepare_v2(
             db,
-            "UPDATE visits SET place_id = ? WHERE place_key = ? AND place_id IS NULL",
+            """
+            UPDATE visits
+            SET place_id = ?1,
+                origin_place_id = CASE
+                    WHEN ?1 IS NOT ?2 THEN COALESCE(origin_place_id, ?2)
+                    ELSE origin_place_id
+                END
+            WHERE place_key = ?2 AND place_id IS NULL
+            """,
             -1,
             &statement,
             nil
@@ -1840,11 +1855,46 @@ actor TimelineDatabase {
             try logChange(.place, fromKey)
             // Send the stays home.
             try restoreStays(originallyAt: fromKey)
+            // And give them somewhere to arrive. Merging blanked this place's
+            // name and the reading path goes through `places`, so without a row
+            // the restored stays come back to nowhere and show as unnamed.
+            try reinstatePlaceRow(fromKey, db: db)
             try exec("COMMIT")
         } catch {
             sqlite3_exec(db, "ROLLBACK", nil, nil, nil)
             throw error
         }
+    }
+
+    /// Put a place row back for a key whose stays have just been restored,
+    /// positioned where those stays actually are.
+    ///
+    /// The name is not recoverable: merging cleared it deliberately, and there
+    /// is nothing left to read it from. The place comes back unnamed, which is
+    /// honest, and can be renamed.
+    private func reinstatePlaceRow(_ placeKey: String, db: OpaquePointer) throws {
+        guard !placeKey.isEmpty else { return }
+        var select: OpaquePointer?
+        defer { sqlite3_finalize(select) }
+        guard sqlite3_prepare_v2(
+            db,
+            """
+            SELECT AVG(lat), AVG(lon), COUNT(*)
+            FROM visits
+            WHERE place_id = ? AND lat IS NOT NULL AND lon IS NOT NULL
+            """,
+            -1,
+            &select,
+            nil
+        ) == SQLITE_OK else { return }
+        sqlite3_bind_text(select, 1, placeKey, -1, Self.transient)
+        guard sqlite3_step(select) == SQLITE_ROW, sqlite3_column_int64(select, 2) > 0 else { return }
+        let coordinate = CLLocationCoordinate2D(
+            latitude: sqlite3_column_double(select, 0),
+            longitude: sqlite3_column_double(select, 1)
+        )
+        guard CLLocationCoordinate2DIsValid(coordinate) else { return }
+        try ensurePlaceRow(id: placeKey, coordinate: coordinate, semanticType: nil, db: db)
     }
 
     /// Visits rewritten by older hard merges keep a segment id hashed with the source place key.
@@ -1926,13 +1976,32 @@ actor TimelineDatabase {
         )
     }
 
+    /// Drop every recorded merge origin. Reproduces the state a merge arriving
+    /// from another device used to leave behind, so the recovery can be tested.
+    func forgetMergeOrigins() throws {
+        try exec("UPDATE visits SET origin_place_id = NULL")
+    }
+
     /// Put back every stay a merge moved away from this place.
+    /// Put back every stay a merge moved away from this place.
+    ///
+    /// `origin_place_id` is the record of the move, but only a merge this device
+    /// performed leaves one. A merge that arrived over sync, or one the entity
+    /// migration resolved while linking stays to places, moves the stay without
+    /// writing an origin — and then unmerging found nothing to put back. Every
+    /// such stay still carries the key it was clustered under, which is the same
+    /// answer by a different route, so fall back to that.
     private func restoreStays(originallyAt originKey: String) throws {
         guard let db else { throw TimelineDatabaseError.open }
         var moved: [String] = []
         var select: OpaquePointer?
         defer { sqlite3_finalize(select) }
-        if sqlite3_prepare_v2(db, "SELECT id FROM visits WHERE origin_place_id = ?", -1, &select, nil) == SQLITE_OK {
+        let sql = """
+            SELECT id FROM visits
+            WHERE origin_place_id = ?1
+               OR (origin_place_id IS NULL AND place_key = ?1 AND place_id IS NOT ?1)
+            """
+        if sqlite3_prepare_v2(db, sql, -1, &select, nil) == SQLITE_OK {
             sqlite3_bind_text(select, 1, originKey, -1, Self.transient)
             while sqlite3_step(select) == SQLITE_ROW {
                 if let id = text(select, 0) { moved.append(id) }
@@ -1943,8 +2012,9 @@ actor TimelineDatabase {
         try exec(
             """
             UPDATE visits
-            SET place_id = origin_place_id, origin_place_id = NULL
+            SET place_id = \(quote(originKey)), origin_place_id = NULL
             WHERE origin_place_id = \(quote(originKey))
+               OR (origin_place_id IS NULL AND place_key = \(quote(originKey)))
             """
         )
         for id in moved {
