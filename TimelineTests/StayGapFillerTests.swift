@@ -257,6 +257,13 @@ final class PotteringTests: XCTestCase {
         XCTAssertTrue(StayGapFiller.isDeparture(trip("hike", from: 17.4, to: 17.47, metres: 2_000)))
     }
 
+    func testTheBarForCoveringGroundIsLow() {
+        // Three hundred metres is down the road and back, not pottering.
+        XCTAssertTrue(StayGapFiller.isDeparture(trip("errand", from: 17.4, to: 17.5, metres: 300)))
+        // A hundred and fifty is round the block.
+        XCTAssertFalse(StayGapFiller.isDeparture(trip("block", from: 17.4, to: 17.5, metres: 150)))
+    }
+
     func testALongWalkIsLeaving() {
         XCTAssertTrue(StayGapFiller.isDeparture(trip("stroll", from: 1, to: 1.5)))
     }

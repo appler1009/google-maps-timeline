@@ -18,9 +18,9 @@ enum StayGapFiller {
     /// A walk this short is pottering, not leaving: round the block, out to the
     /// bins, down to the lobby for a parcel.
     static let potteringDuration: TimeInterval = 10 * 60
-    /// …unless it actually covered ground. Ten minutes of walking is about
-    /// eight hundred metres, so anything beyond this went somewhere.
-    static let potteringDistance: Double = 800
+    /// …unless it actually covered ground. Round the block and back is a couple
+    /// of hundred metres; past that you went somewhere, however briefly.
+    static let potteringDistance: Double = 200
 
     /// Did this journey mean leaving, or just moving about?
     ///
