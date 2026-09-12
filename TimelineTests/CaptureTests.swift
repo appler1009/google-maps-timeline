@@ -876,13 +876,14 @@ final class ChangeLogTests: XCTestCase {
         XCTAssertEqual(count, 2)
     }
 
-    func testRenamingAPlaceQueuesTheName() async throws {
+    /// A place syncs as one record, so editing any part of it queues the place.
+    func testRenamingAPlaceQueuesThePlace() async throws {
         let (db, url) = database()
         defer { try? FileManager.default.removeItem(at: url) }
 
         try await db.setPlaceName(placeKey: "cafe", name: "Continental Coffee")
         let pending = try await db.pendingChanges()
-        XCTAssertEqual(pending.map(\.kind), [.placeName])
+        XCTAssertEqual(pending.map(\.kind), [.place])
         XCTAssertEqual(pending[0].rowID, "cafe")
     }
 
@@ -916,7 +917,7 @@ final class ChangeLogTests: XCTestCase {
 
         try await db.mergePlace(from: "annex", into: "cafe", targetSemantic: nil)
         let kinds = Set(try await db.pendingChanges().map(\.kind))
-        XCTAssertTrue(kinds.contains(.placeMerge))
+        XCTAssertTrue(kinds.contains(.place))
     }
 
     func testAcknowledgingClearsTheQueue() async throws {
@@ -1004,7 +1005,7 @@ final class ChangeLogTests: XCTestCase {
         XCTAssertEqual(batch.visits.map(\.id), ["v1"])
         XCTAssertEqual(batch.activities.map(\.id), ["a1"])
         XCTAssertEqual(batch.paths.map(\.id), ["p1"])
-        XCTAssertEqual(batch.names["cafe"]?.name, "Continental Coffee")
+        XCTAssertEqual(batch.places["cafe"]?.name, "Continental Coffee")
     }
 
     func testBatchesDrainOldestFirst() async throws {
@@ -1233,6 +1234,74 @@ final class TimelineRecordMapperTests: XCTestCase {
         XCTAssertEqual(sorted.names["k"]?.name, "Home")
         XCTAssertTrue(sorted.merges.isEmpty)
     }
+
+    /// A place crosses the wire whole.
+    ///
+    /// It used to go as three unrelated records — a name, a location, a merge —
+    /// which could arrive in any order and in any combination, so the receiving
+    /// device could see a place rename itself before it existed, or move before
+    /// it was named. One record carries all of it.
+    func testPlaceRoundTrips() throws {
+        let place = PlaceEntity(
+            id: "ChIJ_school",
+            name: "Lord Byng Secondary School",
+            coordinate: home,
+            semanticType: "Searched Address",
+            mergedInto: nil,
+            updatedAt: origin.timeIntervalSince1970
+        )
+        let record = TimelineRecordMapper.record(for: place, in: zoneID)
+        XCTAssertEqual(record.recordType, "Place")
+        XCTAssertEqual(record.recordID.recordName, "place:ChIJ_school")
+
+        let parsed = try XCTUnwrap(TimelineRecordMapper.place(from: record))
+        XCTAssertEqual(parsed, place)
+    }
+
+    /// A merge is something the folded place knows about itself, so it travels
+    /// with it rather than as a record of its own.
+    func testAFoldedPlaceCarriesWhatItWasFoldedInto() throws {
+        let place = PlaceEntity(
+            id: "49.2641,-123.2250",
+            name: nil,
+            coordinate: nil,
+            semanticType: nil,
+            mergedInto: "ChIJ_school",
+            updatedAt: origin.timeIntervalSince1970
+        )
+        let parsed = try XCTUnwrap(
+            TimelineRecordMapper.place(from: TimelineRecordMapper.record(for: place, in: zoneID))
+        )
+        XCTAssertEqual(parsed.mergedInto, "ChIJ_school")
+        XCTAssertNil(parsed.name)
+        XCTAssertNil(parsed.coordinate)
+    }
+
+    /// Losing a name has to travel too, or the other device keeps showing one
+    /// that was deliberately cleared.
+    func testAClearedNameTravelsAsACleardField() throws {
+        var place = PlaceEntity(id: "cafe", name: "Continental Coffee", updatedAt: 1)
+        let record = TimelineRecordMapper.record(for: place, in: zoneID)
+        place.name = nil
+        place.updatedAt = 2
+        let cleared = TimelineRecordMapper.record(for: place, in: zoneID, base: record)
+        XCTAssertNil(cleared[TimelineRecordMapper.Field.name])
+        XCTAssertNil(try XCTUnwrap(TimelineRecordMapper.place(from: cleared)).name)
+    }
+
+    /// Records already in the cloud were written by the old build. They keep
+    /// being read, so nothing is stranded by the change.
+    func testLegacyPlaceRecordsAreStillUnderstood() throws {
+        let name = TimelineRecordMapper.record(
+            forPlaceKey: "cafe",
+            name: PlaceIdentityName(name: "Continental Coffee", updatedAt: 1),
+            in: zoneID
+        )
+        let parsed = TimelineRecordMapper.batch(from: [name])
+        XCTAssertEqual(parsed.names["cafe"]?.name, "Continental Coffee")
+        XCTAssertTrue(parsed.places.isEmpty)
+    }
+
 }
 
 final class RemoteApplyTests: XCTestCase {

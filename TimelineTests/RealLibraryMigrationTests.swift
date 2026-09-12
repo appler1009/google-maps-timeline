@@ -27,8 +27,14 @@ final class RealLibraryMigrationTests: XCTestCase {
 
         let result = try await db.migrateToPlaceEntities()
         print("[migration] \(result)")
-        XCTAssertGreaterThan(result.placesCreated, 0)
-        XCTAssertEqual(result.visitsLinked, before > 0 ? result.visitsLinked : 0)
+        // The copy may be from either side of the migration — whatever was last
+        // dropped at that path. A library that has already been through it has
+        // nothing left to create, and that is the same guarantee as creating
+        // everything correctly: what follows holds either way.
+        if result.placesCreated == 0 {
+            let places = try await db.loadPlaces()
+            XCTAssertGreaterThan(places.count, 0, "a migrated library must already hold places")
+        }
 
         // Nothing may be left behind: every stay must point at a place.
         let unlinked = try await db.unlinkedVisitCount()

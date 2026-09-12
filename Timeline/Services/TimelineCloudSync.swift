@@ -216,6 +216,10 @@ extension TimelineCloudSync: CKSyncEngineDelegate {
             let key = name(.placeLocation, placeKey)
             records[key] = TimelineRecordMapper.record(forPlaceKey: placeKey, location: value, in: zoneID, base: bases[key])
         }
+        for (placeID, place) in batch.places {
+            let key = name(.place, placeID)
+            records[key] = TimelineRecordMapper.record(for: place, in: zoneID, base: bases[key])
+        }
         return records
     }
 
@@ -235,6 +239,11 @@ extension TimelineCloudSync: CKSyncEngineDelegate {
             )
         }
         try? await database.applyRemote(parsed.rows, visitSources: parsed.visitSources)
+        // Whole places first: the three legacy kinds below are older news about
+        // the same thing, and each is guarded by its own timestamp anyway.
+        for (_, place) in parsed.places {
+            _ = try? await database.applyPlaceIfNewer(place)
+        }
         for (key, name) in parsed.names {
             _ = try? await database.applyPlaceNameIfNewer(
                 placeKey: key,

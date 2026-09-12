@@ -110,11 +110,12 @@ final class PlaceLocationTests: XCTestCase {
 
         try await db.setPlaceLocation(placeKey: "ChIJstaples", coordinate: actual)
         let queued = try await db.pendingChanges()
-        XCTAssertEqual(queued.map(\.kind), [.placeLocation])
+        XCTAssertEqual(queued.map(\.kind), [.place])
         XCTAssertEqual(queued.first?.rowID, "ChIJstaples")
 
+        // The whole place travels, the correction with it.
         let batch = try await db.changeBatch()
-        XCTAssertEqual(batch.locations["ChIJstaples"]?.coordinate.latitude ?? 0, actual.latitude, accuracy: 0.000_001)
+        XCTAssertEqual(batch.places["ChIJstaples"]?.coordinate?.latitude ?? 0, actual.latitude, accuracy: 0.000_001)
     }
 
     func testAnOlderCorrectionDoesNotOverwriteANewerOne() async throws {
@@ -259,4 +260,56 @@ final class PlaceLocationMergeTests: XCTestCase {
         XCTAssertFalse(store.canRename(home), "precondition: Home is not renameable")
         XCTAssertTrue(store.showsPlaceActions(home), "but it still needs a menu to be relocatable")
     }
+
+    /// The whole point of one record: a place arrives complete.
+    ///
+    /// Renaming and correcting a place used to queue two independent records,
+    /// and the receiving device applied whichever turned up first. Here one
+    /// place goes out and the other device ends up with both facts, in one
+    /// write, with nothing queued back.
+    func testAPlaceArrivesWhole() async throws {
+        let (source, sourceURL) = database()
+        defer { try? FileManager.default.removeItem(at: sourceURL) }
+        let (target, targetURL) = database()
+        defer { try? FileManager.default.removeItem(at: targetURL) }
+
+        try await source.setPlaceName(placeKey: "ChIJstaples", name: "Staples")
+        try await source.setPlaceLocation(placeKey: "ChIJstaples", coordinate: actual)
+
+        // One change for the place, not one per aspect.
+        let queued = try await source.pendingChanges()
+        XCTAssertEqual(Set(queued.map(\.kind)), [.place])
+        XCTAssertEqual(Set(queued.map(\.rowID)), ["ChIJstaples"])
+
+        let outgoing = try await source.changeBatch()
+        let place = try XCTUnwrap(outgoing.places["ChIJstaples"])
+        XCTAssertEqual(place.name, "Staples")
+
+        let applied = try await target.applyPlaceIfNewer(place)
+        XCTAssertTrue(applied)
+
+        let places = try await target.loadPlaces()
+        let landed = try XCTUnwrap(places["ChIJstaples"])
+        XCTAssertEqual(landed.name, "Staples")
+        XCTAssertEqual(landed.coordinate?.latitude ?? 0, actual.latitude, accuracy: 0.000_001)
+
+        let echoed = try await target.pendingChangeCount()
+        XCTAssertEqual(echoed, 0, "an incoming place must not queue itself straight back out")
+    }
+
+    /// Last write wins, and an older place does not undo a newer one.
+    func testAnOlderPlaceDoesNotOverwriteANewerOne() async throws {
+        let (db, url) = database()
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let now = Date().timeIntervalSince1970
+        try await db.setPlaceName(placeKey: "cafe", name: "Newer", updatedAt: now)
+
+        let stale = PlaceEntity(id: "cafe", name: "Older", updatedAt: now - 60)
+        let applied = try await db.applyPlaceIfNewer(stale)
+        XCTAssertFalse(applied)
+        let places = try await db.loadPlaces()
+        XCTAssertEqual(places["cafe"]?.name, "Newer")
+    }
+
 }

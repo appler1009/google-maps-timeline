@@ -602,9 +602,14 @@ actor TimelineDatabase {
         guard let db else { return [:] }
         var statement: OpaquePointer?
         defer { sqlite3_finalize(statement) }
+        // The merge target rides along: a place syncs as one record, and what it
+        // was folded into is part of what the place is.
         guard sqlite3_prepare_v2(
             db,
-            "SELECT id, name, lat, lon, semantic_type FROM places",
+            """
+            SELECT p.id, p.name, p.lat, p.lon, p.semantic_type, p.updated_at, m.to_key
+            FROM places p LEFT JOIN place_merges m ON m.from_key = p.id
+            """,
             -1,
             &statement,
             nil
@@ -616,7 +621,9 @@ actor TimelineDatabase {
                 id: id,
                 name: text(statement, 1),
                 coordinate: coordinate(statement, lat: 2, lon: 3),
-                semanticType: text(statement, 4)
+                semanticType: text(statement, 4),
+                mergedInto: text(statement, 6),
+                updatedAt: sqlite3_column_double(statement, 5)
             )
         }
         return found
@@ -860,6 +867,10 @@ actor TimelineDatabase {
         if !locationKeys.isEmpty {
             batch.locations = try loadPlaceLocations().filter { locationKeys.contains($0.key) }
         }
+        let placeIDs = ids(.place)
+        if !placeIDs.isEmpty {
+            batch.places = try loadPlaces().filter { placeIDs.contains($0.key) }
+        }
         return batch
     }
 
@@ -898,9 +909,7 @@ actor TimelineDatabase {
             for visit in try loadVisits() { try logChange(.visit, visit.id) }
             for activity in try loadActivities() { try logChange(.activity, activity.id) }
             for path in try loadPaths() { try logChange(.path, path.id) }
-            for key in try loadPlaceNameRecords().keys { try logChange(.placeName, key) }
-            for key in try loadPlaceMergeRecords().keys { try logChange(.placeMerge, key) }
-            for key in try loadPlaceLocations().keys { try logChange(.placeLocation, key) }
+            for id in try loadPlaces().keys { try logChange(.place, id) }
             try exec("COMMIT")
         } catch {
             sqlite3_exec(db, "ROLLBACK", nil, nil, nil)
@@ -1052,6 +1061,7 @@ actor TimelineDatabase {
         case .visit: table = "visits"; column = "id"
         case .activity: table = "activities"; column = "id"
         case .path: table = "paths"; column = "id"
+        case .place: table = "places"; column = "id"
         case .placeName: table = "place_names"; column = "place_key"
         case .placeMerge: table = "place_merges"; column = "from_key"
         case .placeLocation: table = "place_locations"; column = "place_key"
@@ -1349,7 +1359,7 @@ actor TimelineDatabase {
         guard sqlite3_step(statement) == SQLITE_DONE else {
             throw TimelineDatabaseError.execute(errmsg())
         }
-        try logChange(.placeName, placeKey)
+        try logChange(.place, placeKey)
         try syncPlaceRow(id: placeKey, name: trimmed)
     }
 
@@ -1361,6 +1371,59 @@ actor TimelineDatabase {
             try setPlaceName(placeKey: placeKey, name: name, updatedAt: updatedAt)
         }
         return true
+    }
+
+    /// A whole place arriving from another device.
+    ///
+    /// One record, so the name, the location and the merge land together rather
+    /// than racing each other. It reuses the same setters a local edit goes
+    /// through — the merge especially, which moves stays and remembers where
+    /// they came from — with the origin flipped so nothing is queued straight
+    /// back out.
+    @discardableResult
+    func applyPlaceIfNewer(_ place: PlaceEntity) throws -> Bool {
+        guard !place.id.isEmpty else { return false }
+        if let local = try loadPlaces()[place.id], local.updatedAt >= place.updatedAt, place.updatedAt > 0 {
+            return false
+        }
+        // Each piece goes through the setter a local edit uses, so an incoming
+        // merge still moves the stays and remembers where they came from.
+        try applyingRemotely {
+            try setPlaceName(placeKey: place.id, name: place.name ?? "", updatedAt: place.updatedAt)
+            if let coordinate = place.coordinate {
+                try setPlaceLocation(placeKey: place.id, coordinate: coordinate, updatedAt: place.updatedAt)
+            }
+            try setPlaceSemantic(placeKey: place.id, semanticType: place.semanticType)
+            if let into = place.mergedInto, !into.isEmpty, into != place.id {
+                try mergePlace(
+                    from: place.id,
+                    into: into,
+                    targetSemantic: place.semanticType,
+                    updatedAt: place.updatedAt
+                )
+            }
+        }
+        return true
+    }
+
+    /// What kind of place this is, as the other device sees it. Only ever fills
+    /// a gap: a device that knows a place is Home should not forget it because
+    /// the other one never worked that out.
+    private func setPlaceSemantic(placeKey: String, semanticType: String?) throws {
+        guard let db, !placeKey.isEmpty, let semanticType, !semanticType.isEmpty else { return }
+        guard !["Unknown", "unknown"].contains(semanticType) else { return }
+        var statement: OpaquePointer?
+        defer { sqlite3_finalize(statement) }
+        guard sqlite3_prepare_v2(
+            db,
+            "UPDATE places SET semantic_type = COALESCE(semantic_type, ?) WHERE id = ?",
+            -1,
+            &statement,
+            nil
+        ) == SQLITE_OK else { return }
+        sqlite3_bind_text(statement, 1, semanticType, -1, Self.transient)
+        sqlite3_bind_text(statement, 2, placeKey, -1, Self.transient)
+        sqlite3_step(statement)
     }
 
     /// Active `from_key → to_key` aliases (tombstones omitted). Values are chain-resolved.
@@ -1425,7 +1488,7 @@ actor TimelineDatabase {
         guard sqlite3_step(statement) == SQLITE_DONE else {
             throw TimelineDatabaseError.execute(errmsg())
         }
-        try logChange(.placeLocation, placeKey)
+        try logChange(.place, placeKey)
         try syncPlaceRow(id: placeKey, coordinate: coordinate)
     }
 
@@ -1439,7 +1502,7 @@ actor TimelineDatabase {
         }
         sqlite3_bind_text(statement, 1, placeKey, -1, Self.transient)
         sqlite3_step(statement)
-        try logChange(.placeLocation, placeKey, .delete)
+        try logChange(.place, placeKey)
     }
 
     /// Apply a corrected location that is newer than the one held locally.
@@ -1548,7 +1611,7 @@ actor TimelineDatabase {
             guard sqlite3_step(insert) == SQLITE_DONE else {
                 throw TimelineDatabaseError.execute(errmsg())
             }
-            try logChange(.placeMerge, fromKey)
+            try logChange(.place, fromKey)
 
             // Anything that pointed at fromKey should now point at toKey.
             try exec(
@@ -1734,7 +1797,7 @@ actor TimelineDatabase {
             guard sqlite3_step(insert) == SQLITE_DONE else {
                 throw TimelineDatabaseError.execute(errmsg())
             }
-            try logChange(.placeMerge, fromKey)
+            try logChange(.place, fromKey)
             // Send the stays home.
             try restoreStays(originallyAt: fromKey)
             try exec("COMMIT")
