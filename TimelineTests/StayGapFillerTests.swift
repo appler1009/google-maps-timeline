@@ -348,3 +348,162 @@ final class PotteringTests: XCTestCase {
         XCTAssertEqual(filled.first?.end, at(17.4), "a drive out is leaving")
     }
 }
+
+
+/// A stay that has begun and not ended is still a stay.
+///
+/// Core Location reports a visit twice, on arrival and on departure, and only
+/// the second can be written down — until then there is no end to record. So a
+/// week working from home showed nothing at all: the arrival was witnessed, and
+/// the library stayed silent about it until the day you finally went out.
+final class OpenStayTests: XCTestCase {
+    private let home = CLLocationCoordinate2D(latitude: 49.2645, longitude: -123.2460)
+
+    private func database() -> (TimelineDatabase, URL) {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("openstay-\(UUID().uuidString).sqlite")
+        return (TimelineDatabase(fileURL: url), url)
+    }
+
+    private func stay(_ id: String, from: Date, to: Date) -> TimelineVisit {
+        TimelineVisit(
+            id: id,
+            start: from,
+            end: to,
+            coordinate: home,
+            semanticType: "Home",
+            placeKey: "home"
+        )
+    }
+
+    func testAnOpenStayIsReadAsRunningUpToNow() async throws {
+        let (db, url) = database()
+        defer { try? FileManager.default.removeItem(at: url) }
+        let arrived = Date(timeIntervalSince1970: 1_800_000_000)
+        let now = arrived.addingTimeInterval(3 * 24 * 3_600)
+
+        // Something has to exist or the library reads as empty.
+        try await db.record(
+            batch: TimelineBatch(
+                visits: [stay("earlier", from: arrived.addingTimeInterval(-7_200), to: arrived.addingTimeInterval(-3_600))],
+                activities: [],
+                paths: []
+            )
+        )
+        try await db.setOpenStop(
+            CapturedStop(coordinate: home, horizontalAccuracy: 50, start: arrived, end: nil),
+            placeKey: "home"
+        )
+
+        let loaded = try await db.loadBatch(now: now)
+        let batch = try XCTUnwrap(loaded)
+        let open = try XCTUnwrap(batch.visits.first { $0.isOpen })
+        XCTAssertEqual(open.start, arrived)
+        XCTAssertEqual(open.end, now, "it runs up to the present, not to a departure that has not happened")
+        XCTAssertEqual(open.placeKey, "home")
+        XCTAssertTrue(open.isDerived, "there is no row behind it, so it cannot be edited")
+    }
+
+    /// Three days at home should read as three days at home, not three blanks.
+    func testAMultiDayOpenStayCoversEveryDay() async throws {
+        let (db, url) = database()
+        defer { try? FileManager.default.removeItem(at: url) }
+        let arrived = Date(timeIntervalSince1970: 1_800_000_000)
+        let now = arrived.addingTimeInterval(3 * 24 * 3_600)
+
+        try await db.record(
+            batch: TimelineBatch(
+                visits: [stay("earlier", from: arrived.addingTimeInterval(-7_200), to: arrived.addingTimeInterval(-3_600))],
+                activities: [],
+                paths: []
+            )
+        )
+        try await db.setOpenStop(
+            CapturedStop(coordinate: home, horizontalAccuracy: 50, start: arrived, end: nil),
+            placeKey: "home"
+        )
+        let loaded = try await db.loadBatch(now: now)
+        let batch = try XCTUnwrap(loaded)
+        let parsed = TimelineParser.assemble(batch, sourceName: "test", now: now)
+
+        let covered = parsed.days.filter { day in
+            day.visits.contains { $0.placeKey == "home" }
+        }
+        XCTAssertGreaterThanOrEqual(covered.count, 3, "every day of the stay should show it")
+    }
+
+    /// Core Location reports an arrival it missed as `.distantPast` — it knows
+    /// you are somewhere but not since when. A stay running back to the
+    /// beginning of time is worse than none.
+    func testAnArrivalItNeverSawIsRefused() async throws {
+        let (db, url) = database()
+        defer { try? FileManager.default.removeItem(at: url) }
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        try await db.record(
+            batch: TimelineBatch(
+                visits: [stay("earlier", from: now.addingTimeInterval(-7_200), to: now.addingTimeInterval(-3_600))],
+                activities: [],
+                paths: []
+            )
+        )
+        var stop = CapturedStop(coordinate: home, horizontalAccuracy: 50, start: .distantPast, end: nil)
+        stop.arrivalIsKnown = false
+        try await db.setOpenStop(stop, placeKey: "home")
+
+        let loaded = try await db.loadBatch(now: now)
+        let batch = try XCTUnwrap(loaded)
+        XCTAssertFalse(batch.visits.contains { $0.isOpen })
+    }
+
+    /// When it finally ends, the written row replaces it rather than sitting
+    /// beside it: the id is hashed from the arrival time, which does not change.
+    func testClosingTheStayDoesNotLeaveTwo() async throws {
+        let (db, url) = database()
+        defer { try? FileManager.default.removeItem(at: url) }
+        let arrived = Date(timeIntervalSince1970: 1_800_000_000)
+        let left = arrived.addingTimeInterval(7_200)
+
+        try await db.setOpenStop(
+            CapturedStop(coordinate: home, horizontalAccuracy: 50, start: arrived, end: nil),
+            placeKey: "home"
+        )
+        let loadedOpen = try await db.loadBatch(now: arrived.addingTimeInterval(3_600))
+        let whileOpen = try XCTUnwrap(loadedOpen)
+        let openID = try XCTUnwrap(whileOpen.visits.first { $0.isOpen }).id
+
+        let closed = try XCTUnwrap(PlaceClusterer.visit(
+            for: CapturedStop(coordinate: home, horizontalAccuracy: 50, start: arrived, end: left),
+            placeKey: "home"
+        ))
+        XCTAssertEqual(closed.id, openID, "the same stay keeps the same identity")
+
+        try await db.record(batch: TimelineBatch(visits: [closed], activities: [], paths: []))
+        try await db.clearOpenStop()
+        let loadedAfter = try await db.loadBatch(now: left.addingTimeInterval(60))
+        let after = try XCTUnwrap(loadedAfter)
+        XCTAssertEqual(after.visits.filter { $0.id == openID }.count, 1)
+        XCTAssertFalse(after.visits.contains { $0.isOpen })
+    }
+
+    /// An open stay that outlives any plausible visit was a departure nobody
+    /// saw, or an app that has not run in a month. Drawing it asserts something
+    /// nobody witnessed.
+    func testAStaleOpenStayIsNotDrawn() async throws {
+        let (db, url) = database()
+        defer { try? FileManager.default.removeItem(at: url) }
+        let arrived = Date(timeIntervalSince1970: 1_800_000_000)
+        let muchLater = arrived.addingTimeInterval(TimelineDatabase.longestOpenStay + 3_600)
+
+        try await db.setOpenStop(
+            CapturedStop(coordinate: home, horizontalAccuracy: 50, start: arrived, end: nil),
+            placeKey: "home"
+        )
+        let stale = try await db.openStay(now: muchLater)
+        XCTAssertNil(stale)
+
+        // Still drawn a week in, which is an ordinary stretch of working at home.
+        let withinReason = try await db.openStay(now: arrived.addingTimeInterval(6 * 24 * 3_600))
+        XCTAssertNotNil(withinReason)
+    }
+
+}

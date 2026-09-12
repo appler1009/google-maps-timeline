@@ -55,15 +55,55 @@ actor TimelineDatabase {
         try string("SELECT source_name FROM imports ORDER BY imported_at DESC LIMIT 1")
     }
 
-    func loadBatch(includingShadowed: Bool = false) throws -> TimelineBatch? {
-        if try isEmpty() { return nil }
+    func loadBatch(includingShadowed: Bool = false, now: Date = Date()) throws -> TimelineBatch? {
+        // A library holding nothing but the stay you are currently inside is not
+        // empty — that is exactly the first day of a fresh install.
+        let open = try openStay(now: now)
+        if open == nil, try isEmpty() { return nil }
         // Merges are materialised in place_id now, so nothing is resolved here.
         let locations = Self.resolved(try loadPlaceLocations(), merges: try loadPlaceMerges())
+        var visits = try loadVisits(includingShadowed: includingShadowed)
+            .map { Self.relocated($0, locations: locations) }
+        // The stay we are still inside has no row yet — there is no end to write
+        // down until it is over. Read it anyway, running up to now, so a week
+        // working from home is not a week of empty days.
+        if let open {
+            visits.append(Self.relocated(open, locations: locations))
+        }
         return TimelineBatch(
-            visits: try loadVisits(includingShadowed: includingShadowed)
-                .map { Self.relocated($0, locations: locations) },
+            visits: visits,
             activities: try loadActivities(),
             paths: try loadPaths()
+        )
+    }
+
+    /// How long an unclosed stay stays believable. Working from home for a week
+    /// is ordinary; a month means the departure was missed, or the app has not
+    /// run since, and drawing it is asserting something nobody witnessed.
+    static let longestOpenStay: TimeInterval = 7 * 24 * 3_600
+
+    /// The in-progress stay as a visit ending now, or nil when there isn't one.
+    ///
+    /// Refused when the arrival is not a time anybody saw. Core Location reports
+    /// an arrival it missed as `.distantPast` — it knows you are somewhere but
+    /// not since when — and `open_visit` does not carry the flag that says so,
+    /// only the timestamp, so the timestamp is what has to be judged.
+    func openStay(now: Date = Date()) throws -> TimelineVisit? {
+        guard let open = try openStop() else { return nil }
+        guard !open.placeKey.isEmpty else { return nil }
+        let since = now.timeIntervalSince(open.stop.start)
+        guard since >= 0, since <= Self.longestOpenStay else { return nil }
+        return TimelineVisit(
+            id: PlaceClusterer.visitID(placeKey: open.placeKey, start: open.stop.start),
+            start: open.stop.start,
+            end: now,
+            coordinate: open.stop.coordinate,
+            semanticType: nil,
+            placeKey: open.placeKey,
+            // No row behind it, so it cannot be edited or moved — the same
+            // contract a gap-filled stay has.
+            isDerived: true,
+            isOpen: true
         )
     }
 
