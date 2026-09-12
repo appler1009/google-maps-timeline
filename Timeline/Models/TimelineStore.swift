@@ -388,6 +388,9 @@ final class TimelineStore {
             if let purged = try? await database.purgeInvalidVisits(), purged > 0 {
                 TimelineLog.info("invalid stays removed", ["count": "\(purged)"])
             }
+            if let collapsed = try? await database.collapseDuplicateVisits(), collapsed > 0 {
+                TimelineLog.info("duplicate stays collapsed", ["count": "\(collapsed)"])
+            }
             if let batch = try? await database.loadBatch() {
                 if isLoading { return }
                 let name = (try? await database.latestSourceName()) ?? "Library"

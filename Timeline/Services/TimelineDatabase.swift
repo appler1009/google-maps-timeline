@@ -236,6 +236,48 @@ actor TimelineDatabase {
         return ids.count
     }
 
+    /// Collapse a stay that was imported more than once.
+    ///
+    /// A visit id hashes the start *and* the end, so an export taken while a stay
+    /// was still running mints a new row every time the end grows — the same
+    /// evening at home arriving as three overlapping rows with three ids. Keep the
+    /// longest and drop the rest, within one source: deciding between sources is
+    /// reconciliation's job, not this.
+    @discardableResult
+    func collapseDuplicateVisits() throws -> Int {
+        guard let db else { return 0 }
+        var statement: OpaquePointer?
+        defer { sqlite3_finalize(statement) }
+        let sql = """
+            SELECT id FROM visits WHERE id NOT IN (
+                SELECT id FROM visits v WHERE end = (
+                    SELECT MAX(end) FROM visits w
+                    WHERE w.start = v.start AND w.place_key = v.place_key AND w.source = v.source
+                )
+                GROUP BY start, place_key, source
+            )
+            """
+        guard sqlite3_prepare_v2(db, sql, -1, &statement, nil) == SQLITE_OK else { return 0 }
+        var ids: [String] = []
+        while sqlite3_step(statement) == SQLITE_ROW {
+            if let id = text(statement, 0) { ids.append(id) }
+        }
+        guard !ids.isEmpty else { return 0 }
+
+        try exec("BEGIN IMMEDIATE")
+        do {
+            for id in ids {
+                try exec("DELETE FROM visits WHERE id = \(quote(id))")
+                try logChange(.visit, id, .delete)
+            }
+            try exec("COMMIT")
+        } catch {
+            sqlite3_exec(db, "ROLLBACK", nil, nil, nil)
+            throw error
+        }
+        return ids.count
+    }
+
     /// Every place we could snap a new stay onto, with how often it was visited
     /// and whether it already carries a name worth not asking about again.
     func placeAnchors() throws -> [PlaceAnchor] {

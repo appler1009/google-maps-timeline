@@ -9,6 +9,8 @@
 /* Begin PBXBuildFile section */
 		00C50C029E0CE6E3C4516ABA /* TimelineRecordMapper.swift in Sources */ = {isa = PBXBuildFile; fileRef = DF833A290D79E26BC71C097D /* TimelineRecordMapper.swift */; };
 		0BE5BF076CDD93411DC6D9AA /* PlaceRankingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F28B4F667D6FE05CE4975FF /* PlaceRankingTests.swift */; };
+		0C6B33D5773EEBCBC331CA2F /* StayGapFillerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = EB213F964DB381BD3165B823 /* StayGapFillerTests.swift */; };
+		0CE1AF16F353FC1BB2F78CAF /* StayGapFiller.swift in Sources */ = {isa = PBXBuildFile; fileRef = 627173B7336B482B71BD0695 /* StayGapFiller.swift */; };
 		0DF0BD019DFFBC79EDB55041 /* LiquidChrome.swift in Sources */ = {isa = PBXBuildFile; fileRef = 15F9427D76A38D8FFCE30323 /* LiquidChrome.swift */; };
 		10065D0E209B87E15CF64C01 /* TimelineLogTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9E6BAFAEE844C25B64EFCA57 /* TimelineLogTests.swift */; };
 		106DE14DFAE09F84A5FA0DFF /* DeviceLocationSource.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC0D5BCA07B8225C963230A4 /* DeviceLocationSource.swift */; };
@@ -100,6 +102,7 @@
 		A1909CDF7C749AC78BBADA24 /* TimelineLaunch.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8DF68F06E1121E88E519C9BC /* TimelineLaunch.swift */; };
 		A53B974C529FA6F939C78E8C /* DeviceMotionSource.swift in Sources */ = {isa = PBXBuildFile; fileRef = F89F6191AD676D10FB26A5F6 /* DeviceMotionSource.swift */; };
 		A6BA2897597E991E130F6C2C /* PlaceGuess.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4781B5D31C58B47CB454B42F /* PlaceGuess.swift */; };
+		A767BFF38970F94E6FD33D36 /* StayGapFillerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = EB213F964DB381BD3165B823 /* StayGapFillerTests.swift */; };
 		AB040CC697384D49ED0FF8DB /* HealthEnrichment.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20FA85C7156F368DF009D964 /* HealthEnrichment.swift */; };
 		AB29EA130D7513D0A3492EFE /* CaptureModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 23DA5434853946FA3CE2CEE8 /* CaptureModels.swift */; };
 		AB4BA78FE075A27C51398F99 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = F38FDE28A77697434B262F4C /* Assets.xcassets */; };
@@ -135,6 +138,7 @@
 		D3FE925EC69D1014ADE3817B /* Landmark.swift in Sources */ = {isa = PBXBuildFile; fileRef = 89C557260FF448CAE3747FD8 /* Landmark.swift */; };
 		D6A7FF8397BE356AD52900B5 /* RouteSnapper.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD3B7EEBCFA7764518D9E18E /* RouteSnapper.swift */; };
 		D77E48A3EAA0CC94AF859972 /* DeviceHealthSource.swift in Sources */ = {isa = PBXBuildFile; fileRef = 23A862CFA6951F8FB80E7E1D /* DeviceHealthSource.swift */; };
+		DD13C4C6224DE5F5567E9FD4 /* StayGapFiller.swift in Sources */ = {isa = PBXBuildFile; fileRef = 627173B7336B482B71BD0695 /* StayGapFiller.swift */; };
 		E2C517938A94BCFC60717CC9 /* PlaceNameSuggester.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A19F7BC9CF304A702197F76 /* PlaceNameSuggester.swift */; };
 		E42C562EEF12DBE097E9C21B /* VisitNotifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = 65CCC73028B6C647F56ABDDB /* VisitNotifier.swift */; };
 		EC1E9AFE0B8D4CB37D47DEF7 /* TimelineReconciler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 010CFC73A281BD14E50E36E1 /* TimelineReconciler.swift */; };
@@ -213,6 +217,7 @@
 		55715F8BD5815481AB80CCAE /* TimelineStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimelineStore.swift; sourceTree = "<group>"; };
 		5CA4D65EE9994C83850722CB /* Timeline.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Timeline.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		5D2CF03D1D5D400E2DAF6AB3 /* PlaceRanking.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaceRanking.swift; sourceTree = "<group>"; };
+		627173B7336B482B71BD0695 /* StayGapFiller.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StayGapFiller.swift; sourceTree = "<group>"; };
 		65CCC73028B6C647F56ABDDB /* VisitNotifier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VisitNotifier.swift; sourceTree = "<group>"; };
 		668EEBFE37A08864E7B86FB0 /* TrackingSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackingSettings.swift; sourceTree = "<group>"; };
 		6A19F7BC9CF304A702197F76 /* PlaceNameSuggester.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaceNameSuggester.swift; sourceTree = "<group>"; };
@@ -262,6 +267,7 @@
 		E27C0E12EC51D3A3D0B395AC /* SidebarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarView.swift; sourceTree = "<group>"; };
 		E296CA76980924F3017D7F8F /* VisitNamingContextBuilder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VisitNamingContextBuilder.swift; sourceTree = "<group>"; };
 		E62991B0B2E82A1FDD015746 /* PlaceClusterer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaceClusterer.swift; sourceTree = "<group>"; };
+		EB213F964DB381BD3165B823 /* StayGapFillerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StayGapFillerTests.swift; sourceTree = "<group>"; };
 		EC0D5BCA07B8225C963230A4 /* DeviceLocationSource.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceLocationSource.swift; sourceTree = "<group>"; };
 		F38FDE28A77697434B262F4C /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		F3D570FD3C06A7239A56A812 /* GeoTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GeoTests.swift; sourceTree = "<group>"; };
@@ -304,6 +310,7 @@
 				7F28B4F667D6FE05CE4975FF /* PlaceRankingTests.swift */,
 				C3743ECF459145619A53BAFE /* RoutePlannerTests.swift */,
 				71B4F471B4A574BC0ABB38C6 /* RouteSnapperTests.swift */,
+				EB213F964DB381BD3165B823 /* StayGapFillerTests.swift */,
 				DB8F7FB10F4B9C7394C7A61D /* StopRepairTests.swift */,
 				9E6BAFAEE844C25B64EFCA57 /* TimelineLogTests.swift */,
 				E04A92A7BC968DEE2C1E98C7 /* TimelineParserTests.swift */,
@@ -414,6 +421,7 @@
 				E62991B0B2E82A1FDD015746 /* PlaceClusterer.swift */,
 				4781B5D31C58B47CB454B42F /* PlaceGuess.swift */,
 				5D2CF03D1D5D400E2DAF6AB3 /* PlaceRanking.swift */,
+				627173B7336B482B71BD0695 /* StayGapFiller.swift */,
 				E1E0B1C927BDA1F4B664231A /* StopRepair.swift */,
 				010CFC73A281BD14E50E36E1 /* TimelineReconciler.swift */,
 				C3C9897691FC0C05406D4C21 /* TimelineRecorder.swift */,
@@ -729,6 +737,7 @@
 				931622D8BC51D41E309E61BE /* RoutePlanner.swift in Sources */,
 				D6A7FF8397BE356AD52900B5 /* RouteSnapper.swift in Sources */,
 				4EDBBF8CCA6D77BC993A4BCC /* SidebarView.swift in Sources */,
+				DD13C4C6224DE5F5567E9FD4 /* StayGapFiller.swift in Sources */,
 				720EB8925A1E08FD9695D0FC /* StopRepair.swift in Sources */,
 				983E0828BD8950C6868F85C9 /* TimelineApp.swift in Sources */,
 				680588BE2CA48256095862A7 /* TimelineAppScene.swift in Sources */,
@@ -790,6 +799,7 @@
 				F7982D38B7D6F507D5347CEB /* RoutePlanner.swift in Sources */,
 				EE77B27F0E6DF16DDF11864E /* RouteSnapper.swift in Sources */,
 				45AB66324806BAD817122ABC /* SidebarView.swift in Sources */,
+				0CE1AF16F353FC1BB2F78CAF /* StayGapFiller.swift in Sources */,
 				129247D7D7F1F4311CD3BCA6 /* StopRepair.swift in Sources */,
 				61E057B94A0331DDD5FB506B /* TimelineApp.swift in Sources */,
 				F6EB15E5E9A0246EE425675B /* TimelineAppScene.swift in Sources */,
@@ -846,6 +856,7 @@
 				B0F50AEE842775C1BD588A3F /* PlaceRankingTests.swift in Sources */,
 				6480458E08F5E4B3A0C83A58 /* RoutePlannerTests.swift in Sources */,
 				FC0A7F53D600B675C1DD07A5 /* RouteSnapperTests.swift in Sources */,
+				0C6B33D5773EEBCBC331CA2F /* StayGapFillerTests.swift in Sources */,
 				3050C9D536B6A55CDE27CE66 /* StopRepairTests.swift in Sources */,
 				10065D0E209B87E15CF64C01 /* TimelineLogTests.swift in Sources */,
 				886D2DB443AF6A8852FE2B57 /* TimelineParserTests.swift in Sources */,
@@ -864,6 +875,7 @@
 				0BE5BF076CDD93411DC6D9AA /* PlaceRankingTests.swift in Sources */,
 				C36CFB977724E83B2402615A /* RoutePlannerTests.swift in Sources */,
 				18B9EA1106022C3C35237159 /* RouteSnapperTests.swift in Sources */,
+				A767BFF38970F94E6FD33D36 /* StayGapFillerTests.swift in Sources */,
 				1ACE10F721E4F439B3D73E69 /* StopRepairTests.swift in Sources */,
 				F52E8C9EAF1FD47A26F835A0 /* TimelineLogTests.swift in Sources */,
 				63F9B3CE39E7714EC22FC434 /* TimelineParserTests.swift in Sources */,
