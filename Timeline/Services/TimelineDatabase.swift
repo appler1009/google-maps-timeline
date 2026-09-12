@@ -278,7 +278,17 @@ actor TimelineDatabase {
         guard let db else { return 0 }
         var statement: OpaquePointer?
         defer { sqlite3_finalize(statement) }
-        guard sqlite3_prepare_v2(db, "SELECT id FROM visits WHERE end <= start", -1, &statement, nil) == SQLITE_OK else {
+        // A stay still going on is written ending where it starts, and grows on
+        // being read — so zero length is what it correctly looks like until you
+        // leave. Purging it destroyed the row on the very launch that created
+        // it, which made the whole thing invisible while appearing to work.
+        guard sqlite3_prepare_v2(
+            db,
+            "SELECT id FROM visits WHERE end <= start AND is_open = 0",
+            -1,
+            &statement,
+            nil
+        ) == SQLITE_OK else {
             return 0
         }
         var ids: [String] = []

@@ -634,4 +634,49 @@ final class OpenStayTests: XCTestCase {
         XCTAssertFalse(again, "and not twice")
     }
 
+
+    /// A stay still going on is written ending where it starts. The sweep that
+    /// removes stays ending before they began saw that as broken and deleted it
+    /// on the same launch that created it — so the stay never survived long
+    /// enough to reach the other device, while every log line said it had.
+    func testTheStayYouAreInsideSurvivesTheInvalidSweep() async throws {
+        let (db, url) = database()
+        defer { try? FileManager.default.removeItem(at: url) }
+        try await db.setOpenStop(
+            CapturedStop(coordinate: home, horizontalAccuracy: 50, start: Date().addingTimeInterval(-3_600), end: nil),
+            placeKey: "home"
+        )
+
+        let purged = try await db.purgeInvalidVisits()
+        XCTAssertEqual(purged, 0, "a stay still going on is not a broken one")
+
+        let loaded = try await db.loadBatch()
+        XCTAssertNotNil(loaded?.visits.first { $0.isOpen })
+    }
+
+    /// A stay that really did end before it began is still removed.
+    func testAStayThatEndsBeforeItBeganIsStillRemoved() async throws {
+        let (db, url) = database()
+        defer { try? FileManager.default.removeItem(at: url) }
+        let moment = Date(timeIntervalSince1970: 1_800_000_000)
+        try await db.record(
+            batch: TimelineBatch(
+                visits: [
+                    TimelineVisit(
+                        id: "backwards",
+                        start: moment,
+                        end: moment.addingTimeInterval(-600),
+                        coordinate: home,
+                        semanticType: nil,
+                        placeKey: "home"
+                    )
+                ],
+                activities: [],
+                paths: []
+            )
+        )
+        let purged = try await db.purgeInvalidVisits()
+        XCTAssertEqual(purged, 1)
+    }
+
 }
