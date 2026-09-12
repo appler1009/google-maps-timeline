@@ -87,4 +87,43 @@ final class RealLibraryOvernightTests: XCTestCase {
         )
         print("[overnight] \(covering.count) stay(s) cover 02:35, derived: \(covering.map(\.isDerived))")
     }
+
+    /// The reported case: adding a school drop-off must split the morning at
+    /// home, leaving a second stay between getting back and leaving for the
+    /// shops — not delete it.
+    func testTheDropOffSplitsTheMorningAtHome() async throws {
+        try XCTSkipUnless(FileManager.default.fileExists(atPath: path), "no library copy at \(path)")
+        let working = URL(fileURLWithPath: "/tmp/realcopy-splitmorning.sqlite")
+        try? FileManager.default.removeItem(at: working)
+        try FileManager.default.copyItem(at: URL(fileURLWithPath: path), to: working)
+        defer { try? FileManager.default.removeItem(at: working) }
+
+        let db = TimelineDatabase(fileURL: working)
+        _ = try await db.migrateToPlaceEntities()
+        let loaded = try await db.loadBatch()
+        let batch = try XCTUnwrap(loaded)
+
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "America/Vancouver")!
+        func moment(_ hour: Int, _ minute: Int) -> Date {
+            calendar.date(from: DateComponents(year: 2026, month: 9, day: 11, hour: hour, minute: minute))!
+        }
+        // Back from the school run by 08:55, out again to the shops at 10:34.
+        let midMorning = moment(9, 30)
+
+        let parsed = TimelineParser.assemble(batch, sourceName: "real", now: moment(23, 0))
+        let covering = parsed.days
+            .flatMap(\.visits)
+            .filter { $0.start <= midMorning && $0.end >= midMorning }
+
+        XCTAssertFalse(
+            covering.isEmpty,
+            "09:30 is unaccounted for — the morning at home did not resume after the school run"
+        )
+        XCTAssertTrue(
+            covering.contains { $0.semanticType == "Home" },
+            "and what covers it should be home, not somewhere else"
+        )
+    }
+
 }

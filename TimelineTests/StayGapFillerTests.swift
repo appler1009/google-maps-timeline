@@ -110,6 +110,57 @@ final class StayGapFillerTests: XCTestCase {
             "the day should show the inferred stay"
         )
     }
+    /// The reported case: adding a school drop-off must split the morning at
+    /// home, not end it.
+    ///
+    /// Home overnight, out at 08:35, a minute at the school gate at 08:45, back
+    /// by 08:55, then out again at 10:34 to the shops. Before the drop-off was
+    /// added this read as one stay at home until 10:34. Adding it used to delete
+    /// the second half: the morning drive reached past home's last known row, so
+    /// the gap was abandoned rather than resumed on the far side.
+    func testADropOffSplitsTheMorningRatherThanEndingIt() {
+        let visits = [
+            visit("home-overnight", from: -8, to: 0),
+            visit("school", from: 8.75, to: 8.77, place: "byng")
+        ]
+        // One continuous drive out and back, with the school stop inside it.
+        let trips = [trip("school-run", from: 8.58, to: 8.92), trip("to-the-shops", from: 10.58, to: 10.83)]
+        let filled = StayGapFiller.fill(visits: visits, trips: trips, now: at(12)).sorted { $0.start < $1.start }
+
+        XCTAssertEqual(filled.count, 2, "the morning at home, in two halves")
+        XCTAssertEqual(filled[0].placeKey, "home")
+        XCTAssertEqual(filled[0].start, at(0))
+        XCTAssertEqual(filled[0].end, at(8.58), "the first half ends when the school run begins")
+        XCTAssertEqual(filled[1].placeKey, "home")
+        XCTAssertEqual(filled[1].start, at(8.92), "the second half picks up when it gets back")
+        XCTAssertEqual(filled[1].end, at(10.58), "and ends leaving for the shops")
+    }
+
+    /// The same journey with no stop recorded inside it is not accounted for.
+    /// Somewhere unrecorded is not home, so the stay still ends there.
+    func testAJourneyWithNothingInsideItStillEndsTheStay() {
+        let visits = [visit("home-overnight", from: -8, to: 0)]
+        let trips = [trip("out", from: 8.58, to: 8.92), trip("out-again", from: 10.58, to: 10.83)]
+        let filled = StayGapFiller.fill(visits: visits, trips: trips, now: at(12))
+        XCTAssertEqual(filled.count, 1)
+        XCTAssertEqual(filled.first?.end, at(8.58))
+    }
+
+    /// And a journey that ended somewhere real does not resume the old stay,
+    /// even though it carried a stop along the way.
+    func testArrivingSomewhereEndsTheStayDespiteAWaypoint() {
+        let visits = [
+            visit("home", from: -8, to: 0),
+            visit("school", from: 8.75, to: 8.77, place: "byng"),
+            visit("work", from: 9.2, to: 17, place: "work")
+        ]
+        let trips = [trip("commute", from: 8.58, to: 9.1)]
+        let filled = StayGapFiller.fill(visits: visits, trips: trips, now: at(20))
+        XCTAssertTrue(
+            filled.allSatisfy { $0.placeKey != "home" || $0.end <= self.at(8.58) },
+            "home does not resume once the journey arrived at work"
+        )
+    }
 }
 
 /// A stay exported while it was still running arrives again each time its end
@@ -217,6 +268,7 @@ final class PotteringTests: XCTestCase {
     private let origin = Date(timeIntervalSince1970: 1_800_000_000)
 
     private func at(_ hours: Double) -> Date { origin.addingTimeInterval(hours * 3_600) }
+
 
     private func visit(_ id: String, from: Double, to: Double) -> TimelineVisit {
         TimelineVisit(
