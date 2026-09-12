@@ -177,9 +177,10 @@ struct MacCloudSyncSettingsView: View {
         NavigationStack {
             Form {
                 CloudSyncSettingsView()
+                MCPSettingsView()
             }
             .formStyle(.grouped)
-            .navigationTitle("iCloud Sync")
+            .navigationTitle("Sync & Agents")
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") { dismiss() }

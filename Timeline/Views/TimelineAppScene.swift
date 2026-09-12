@@ -2,6 +2,9 @@ import SwiftUI
 
 struct TimelineAppScene: View {
     @State private var store = TimelineLaunch.isUITesting ? TimelineStore.uiTesting() : TimelineStore()
+    #if os(macOS)
+    @State private var mcp = MCPController.shared
+    #endif
     @State private var importerPresented = false
     @State private var luxSettingsPresented = false
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
@@ -56,7 +59,20 @@ struct TimelineAppScene: View {
             #if os(macOS)
             .sheet(isPresented: $cloudSettingsPresented) {
                 MacCloudSyncSettingsView()
-                    .frame(width: 460, height: 320)
+                    .frame(width: 460, height: 520)
+            }
+            // An agent asking to be let in interrupts whatever is on screen,
+            // because the code is only useful while it is being asked for.
+            .sheet(isPresented: Binding(
+                get: { mcp.pendingCode != nil },
+                set: { if !$0 { mcp.dismissPairing() } }
+            )) {
+                if let code = mcp.pendingCode {
+                    MCPPairingSheet(
+                        clientName: mcp.pendingClientName ?? "An agent",
+                        code: code
+                    ) { mcp.dismissPairing() }
+                }
             }
             .onReceive(NotificationCenter.default.publisher(for: .timelineLibraryChanged)) { _ in
                 store.refreshFromLibrary()
@@ -84,6 +100,9 @@ struct TimelineAppScene: View {
                 if !TimelineLaunch.isUITesting {
                     LuxPhotoLink.shared.start()
                     CloudSyncController.shared.startIfEnabled()
+                    #if os(macOS)
+                    MCPController.shared.startIfEnabled()
+                    #endif
                     #if os(iOS)
                     VisitNotifier.shared.start()
                     TimelineRecorder.shared.start()

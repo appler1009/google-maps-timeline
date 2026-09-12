@@ -12,6 +12,11 @@
 	<true/>
 	<key>com.apple.security.network.client</key>
 	<true/>
+	<!-- Listens on the loopback interface so agents can browse and repair the
+	     library through the app that owns it, rather than editing the file
+	     underneath it. -->
+	<key>com.apple.security.network.server</key>
+	<true/>
 	<key>com.apple.security.temporary-exception.shared-preference.read-only</key>
 	<array>
 		<string>com.logdock.app</string>
