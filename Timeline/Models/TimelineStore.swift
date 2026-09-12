@@ -217,8 +217,11 @@ final class TimelineStore {
     }
 
     /// Rename and/or unmerge overflow for a place.
+    /// Every place can at least be given its real location, so every place has
+    /// a menu. Home and Work cannot be renamed, which used to hide the menu from
+    /// them entirely.
     func showsPlaceActions(_ place: PlaceRecord) -> Bool {
-        canRename(place) || !sourcesMerged(into: place.id).isEmpty
+        true
     }
 
     func renamePlace(id: String, to name: String) {
@@ -236,6 +239,55 @@ final class TimelineStore {
             TimelineLog.info("place renamed", ["placeKey": id, "name": trimmed])
             await pushPlaceIdentityToCloud()
         }
+    }
+
+    /// Put a place where it really is.
+    ///
+    /// Google ships one coordinate per Place ID and it is sometimes the wrong end
+    /// of the block; a recorded stay sits wherever the fix landed. Neither is
+    /// something the user can argue with today, so this overrides both.
+    func setPlaceLocation(_ placeID: String, to coordinate: CLLocationCoordinate2D) {
+        isLoading = true
+        Task {
+            do {
+                try await database.setPlaceLocation(placeKey: placeID, coordinate: coordinate)
+                TimelineLog.info(
+                    "place location corrected",
+                    ["placeKey": placeID, "lat": String(format: "%.5f", coordinate.latitude)]
+                )
+            } catch {
+                loadError = error.localizedDescription
+                TimelineLog.error("place location failed", ["error": error.localizedDescription])
+            }
+            isLoading = false
+            refreshFromLibrary()
+        }
+    }
+
+    /// Put it back where the data said it was.
+    func clearPlaceLocation(_ placeID: String) {
+        isLoading = true
+        Task {
+            do {
+                try await database.clearPlaceLocation(placeKey: placeID)
+            } catch {
+                loadError = error.localizedDescription
+                TimelineLog.error("place location reset failed", ["error": error.localizedDescription])
+            }
+            isLoading = false
+            refreshFromLibrary()
+        }
+    }
+
+    /// True when this place has been moved by hand, so the menu can offer to undo it.
+    func hasCorrectedLocation(_ placeID: String) -> Bool {
+        correctedLocations.contains(placeID)
+    }
+
+    private var correctedLocations: Set<String> = []
+
+    func refreshCorrectedLocations() async {
+        correctedLocations = Set((try? await database.loadPlaceLocations().keys).map(Array.init) ?? [])
     }
 
     /// Fold `sourceID` into `targetID` so Places shows a single entry.
@@ -694,6 +746,7 @@ final class TimelineStore {
     private func refreshPlaceIdentity() async {
         placeNames = (try? await database.loadPlaceNames()) ?? placeNames
         placeMerges = (try? await database.loadPlaceMerges()) ?? placeMerges
+        await refreshCorrectedLocations()
     }
 
     private func refreshPlaceNames() async {

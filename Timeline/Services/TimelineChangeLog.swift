@@ -8,6 +8,7 @@ enum ChangeKind: String, CaseIterable, Sendable {
     case path
     case placeName
     case placeMerge
+    case placeLocation
 }
 
 enum ChangeOperation: String, Sendable {
@@ -48,6 +49,7 @@ struct ChangeBatch: Sendable {
     /// Where each visit came from, keyed by row id. Travels with the row so the
     /// receiving device does not have to assume.
     var visitSources: [String: RecordSource] = [:]
+    var locations: [String: PlaceLocation] = [:]
 
     var isEmpty: Bool { changes.isEmpty }
     var count: Int { changes.count }

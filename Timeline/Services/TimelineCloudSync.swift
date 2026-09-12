@@ -212,6 +212,10 @@ extension TimelineCloudSync: CKSyncEngineDelegate {
             let key = name(.placeMerge, placeKey)
             records[key] = TimelineRecordMapper.record(forPlaceKey: placeKey, merge: value, in: zoneID, base: bases[key])
         }
+        for (placeKey, value) in batch.locations {
+            let key = name(.placeLocation, placeKey)
+            records[key] = TimelineRecordMapper.record(forPlaceKey: placeKey, location: value, in: zoneID, base: bases[key])
+        }
         return records
     }
 
@@ -236,6 +240,13 @@ extension TimelineCloudSync: CKSyncEngineDelegate {
                 placeKey: key,
                 name: name.name,
                 updatedAt: name.updatedAt
+            )
+        }
+        for (key, location) in parsed.locations {
+            _ = try? await database.applyPlaceLocationIfNewer(
+                placeKey: key,
+                coordinate: location.coordinate,
+                updatedAt: location.updatedAt
             )
         }
         for (key, merge) in parsed.merges {
