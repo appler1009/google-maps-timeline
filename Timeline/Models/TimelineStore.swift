@@ -583,6 +583,36 @@ final class TimelineStore {
         }
     }
 
+    /// Move one stay to a different place, leaving every other stay where it is.
+    func moveVisit(
+        _ visitID: String,
+        toPlaceNamed name: String,
+        coordinate: CLLocationCoordinate2D?,
+        existingPlaceID: String?
+    ) {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let placeKey: String
+        if let existingPlaceID {
+            placeKey = existingPlaceID
+        } else if let coordinate {
+            placeKey = Geo.placeKey(id: nil, coordinate: coordinate)
+        } else {
+            return
+        }
+        isLoading = true
+        Task {
+            try? await database.moveVisit(id: visitID, toPlaceKey: placeKey)
+            if existingPlaceID == nil, !trimmed.isEmpty {
+                try? await database.setPlaceName(placeKey: placeKey, name: trimmed)
+                await pushPlaceIdentityToCloud()
+            }
+            await refreshPlaceIdentity()
+            TimelineLog.info("stay moved", ["visit": visitID, "placeKey": placeKey])
+            isLoading = false
+            refreshFromLibrary()
+        }
+    }
+
     /// Apply a name the user picked straight from a visit notification. The key
     /// may be a place the app has not assembled yet, so this writes through to the
     /// library and reloads rather than going via `placesByID`.

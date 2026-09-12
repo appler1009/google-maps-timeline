@@ -663,6 +663,8 @@ struct SelectionCard: View {
     @State private var renamingPlaceID: String?
     /// The day whose "Add a stay" was tapped.
     @State private var addingStayOn: Date?
+    /// The stay whose "Move to another place" was chosen.
+    @State private var movingVisit: TimelineVisit?
     @Bindable private var lux = LuxPhotoLink.shared
     #if os(iOS)
     /// Full map canvas height — used to stretch the open sheet under the top chrome.
@@ -752,6 +754,7 @@ struct SelectionCard: View {
         .onDisappear { store.hoveredVisitID = nil }
         .placeRenameSheet(placeID: $renamingPlaceID, store: store)
         .addVisitSheet(day: $addingStayOn, store: store)
+        .moveVisitSheet(visit: $movingVisit, store: store)
         .onAppear { lux.refreshPhotos(for: store.activeDay) }
         .onChange(of: store.selectedDayID) { _, _ in
             lux.refreshPhotos(for: store.activeDay)
@@ -1000,6 +1003,17 @@ struct SelectionCard: View {
             .help("Show this place")
             .accessibilityIdentifier("legend-visit-\(visit.id)")
             .accessibilityHint("Opens the place for this stay")
+            .contextMenu {
+                if visit.isDerived {
+                    // Nothing to move: this one was inferred from the absence of
+                    // travel and has no row behind it.
+                    Text("Filled in from the gap")
+                } else {
+                    Button("Move to another place…") {
+                        movingVisit = visit
+                    }
+                }
+            }
         }
         #if os(iOS)
         ScrollView {

@@ -65,7 +65,8 @@ enum StayGapFiller {
                     end: until,
                     coordinate: visit.coordinate,
                     semanticType: visit.semanticType,
-                    placeKey: visit.placeKey
+                    placeKey: visit.placeKey,
+                    isDerived: true
                 )
             )
         }

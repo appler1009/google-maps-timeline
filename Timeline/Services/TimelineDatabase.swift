@@ -278,6 +278,26 @@ actor TimelineDatabase {
         return ids.count
     }
 
+    /// Re-attach one stay to a different place.
+    ///
+    /// Deliberately not a rename and not a merge: renaming would relabel every
+    /// other stay at that place, and merging would fold the two places together
+    /// for good. This is for the stay that simply landed on the wrong neighbour.
+    func moveVisit(id: String, toPlaceKey placeKey: String) throws {
+        guard let db, !id.isEmpty, !placeKey.isEmpty else { return }
+        var statement: OpaquePointer?
+        defer { sqlite3_finalize(statement) }
+        guard sqlite3_prepare_v2(db, "UPDATE visits SET place_key = ? WHERE id = ?", -1, &statement, nil) == SQLITE_OK else {
+            throw TimelineDatabaseError.execute(errmsg())
+        }
+        sqlite3_bind_text(statement, 1, placeKey, -1, Self.transient)
+        sqlite3_bind_text(statement, 2, id, -1, Self.transient)
+        guard sqlite3_step(statement) == SQLITE_DONE else {
+            throw TimelineDatabaseError.execute(errmsg())
+        }
+        try logChange(.visit, id)
+    }
+
     /// Every place we could snap a new stay onto, with how often it was visited
     /// and whether it already carries a name worth not asking about again.
     func placeAnchors() throws -> [PlaceAnchor] {
