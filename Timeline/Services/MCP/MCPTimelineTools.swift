@@ -131,6 +131,103 @@ struct MCPTimelineTools: MCPToolProviding {
                 ])
             ),
             MCPTool(
+                name: "add_stay",
+                description: "Record a stay that happened but was never captured. Give it a place by id, or a name and a point. Leave the times out and they are guessed from where the day's movement passed closest — which is usually right to within a few minutes.",
+                schema: .object([
+                    "type": "object",
+                    "properties": .object([
+                        "place_id": .object(["type": "string", "description": "an existing place; use this when it is somewhere already known"]),
+                        "name": .object(["type": "string", "description": "a name, when the place is new"]),
+                        "latitude": .object(["type": "number"]),
+                        "longitude": .object(["type": "number"]),
+                        "date": .object(["type": "string", "description": "yyyy-MM-dd; the day to guess within, if start and end are left out"]),
+                        "start": .object(["type": "string", "description": "ISO-8601 or seconds since 1970"]),
+                        "end": .object(["type": "string"])
+                    ])
+                ])
+            ),
+            MCPTool(
+                name: "set_stay_times",
+                description: "Correct when a stay began and ended.",
+                schema: .object([
+                    "type": "object",
+                    "properties": .object([
+                        "stay_id": .object(["type": "string"]),
+                        "start": .object(["type": "string"]),
+                        "end": .object(["type": "string"])
+                    ]),
+                    "required": .array(["stay_id", "start", "end"])
+                ])
+            ),
+            MCPTool(
+                name: "split_stay",
+                description: "Cut one stay in two at a moment inside it. The first half keeps its id; the second becomes a new stay at the same place. For a long stretch that turns out to have had something in the middle of it.",
+                schema: .object([
+                    "type": "object",
+                    "properties": .object([
+                        "stay_id": .object(["type": "string"]),
+                        "at": .object(["type": "string", "description": "a moment strictly inside the stay"])
+                    ]),
+                    "required": .array(["stay_id", "at"])
+                ])
+            ),
+            MCPTool(
+                name: "delete_stay",
+                description: "Take a stay out of the timeline. It is not destroyed: it goes to the bin, in the order removed, and can be listed or put back.",
+                schema: .object([
+                    "type": "object",
+                    "properties": .object([
+                        "stay_id": .object(["type": "string"]),
+                        "reason": .object(["type": "string", "description": "why, for whoever reads the bin later"])
+                    ]),
+                    "required": .array(["stay_id"])
+                ])
+            ),
+            MCPTool(
+                name: "list_deleted_stays",
+                description: "What is in the bin, most recently removed first, with when and why.",
+                schema: .object([
+                    "type": "object",
+                    "properties": .object(["limit": .object(["type": "number", "description": "default 50"])])
+                ])
+            ),
+            MCPTool(
+                name: "restore_stay",
+                description: "Put a stay from the bin back into the timeline.",
+                schema: .object([
+                    "type": "object",
+                    "properties": .object(["stay_id": .object(["type": "string"])]),
+                    "required": .array(["stay_id"])
+                ])
+            ),
+            MCPTool(
+                name: "find_place_on_map",
+                description: "Ask the map where a named place is. Use this before set_place_location or add_stay rather than guessing a coordinate.",
+                schema: .object([
+                    "type": "object",
+                    "properties": .object([
+                        "query": .object(["type": "string"]),
+                        "near_place_id": .object(["type": "string", "description": "bias the search around a place already known"]),
+                        "latitude": .object(["type": "number"]),
+                        "longitude": .object(["type": "number"])
+                    ]),
+                    "required": .array(["query"])
+                ])
+            ),
+            MCPTool(
+                name: "stays_at_place",
+                description: "Every stay at one place in a window, with how often and how long — for answering how much time somewhere takes up.",
+                schema: .object([
+                    "type": "object",
+                    "properties": .object([
+                        "place_id": .object(["type": "string"]),
+                        "from": .object(["type": "string", "description": "yyyy-MM-dd; default the beginning of the library"]),
+                        "to": .object(["type": "string", "description": "yyyy-MM-dd; default the end of the library"])
+                    ]),
+                    "required": .array(["place_id"])
+                ])
+            ),
+            MCPTool(
                 name: "unmerge_place",
                 description: "Undo a fold: the stays go back to the place they were clustered under. The name is not recoverable, so the place comes back unnamed.",
                 schema: .object([
@@ -156,6 +253,14 @@ struct MCPTimelineTools: MCPToolProviding {
         case "set_place_location": return try await setPlaceLocation(arguments)
         case "merge_places": return try await mergePlaces(arguments)
         case "unmerge_place": return try await unmergePlace(arguments)
+        case "add_stay": return try await addStay(arguments)
+        case "set_stay_times": return try await setStayTimes(arguments)
+        case "split_stay": return try await splitStay(arguments)
+        case "delete_stay": return try await deleteStay(arguments)
+        case "list_deleted_stays": return try await listDeletedStays(arguments)
+        case "restore_stay": return try await restoreStay(arguments)
+        case "find_place_on_map": return try await findPlaceOnMap(arguments)
+        case "stays_at_place": return try await staysAtPlace(arguments)
         default: throw MCPToolFailure(message: "no tool called \(name)")
         }
     }
@@ -455,6 +560,256 @@ struct MCPTimelineTools: MCPToolProviding {
             "stays_back": .number(Double(counts[id] ?? 0)),
             "note": "the name was cleared by the merge and cannot be recovered — rename_place if it needs one"
         ])
+    }
+
+    // MARK: - Editing the day
+
+    private func addStay(_ arguments: MCPValue) async throws -> MCPValue {
+        let places = try await database.loadPlaces()
+        let name = arguments["name"]?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        // Either somewhere already known, or a point with a name on it.
+        var placeKey: String
+        var coordinate: CLLocationCoordinate2D
+        if let existing = arguments["place_id"]?.stringValue, !existing.isEmpty {
+            guard let place = places[existing] else {
+                throw MCPToolFailure(message: "no place with id \(existing)")
+            }
+            guard let known = place.coordinate else {
+                throw MCPToolFailure(message: "\(place.name ?? existing) has no location — set_place_location first")
+            }
+            placeKey = existing
+            coordinate = known
+        } else if let latitude = arguments["latitude"]?.doubleValue,
+                  let longitude = arguments["longitude"]?.doubleValue {
+            coordinate = CLLocationCoordinate2D(latitude: latitude, longitude: longitude)
+            guard CLLocationCoordinate2DIsValid(coordinate) else {
+                throw MCPToolFailure(message: "that is not a point on earth")
+            }
+            placeKey = Geo.placeKey(id: nil, coordinate: coordinate)
+        } else {
+            throw MCPToolFailure(message: "give either place_id, or latitude and longitude — find_place_on_map can supply the second")
+        }
+
+        // Times, or the day's movement asked where it passed closest.
+        let start: Date
+        let end: Date
+        var basis = "given"
+        if let from = arguments["start"]?.dateValue, let to = arguments["end"]?.dateValue, to > from {
+            start = from
+            end = to
+        } else {
+            guard let dayText = arguments["date"]?.stringValue, let day = Self.day.date(from: dayText) else {
+                throw MCPToolFailure(message: "give start and end, or a date to guess the times within")
+            }
+            let guess = try await guessTiming(at: coordinate, on: day)
+            start = guess.start
+            end = guess.end
+            basis = Self.describe(guess.basis)
+        }
+
+        let visit = TimelineVisit(
+            id: Geo.segmentID("mv", Geo.millis(start), placeKey),
+            start: start,
+            end: max(end, start.addingTimeInterval(60)),
+            coordinate: coordinate,
+            semanticType: nil,
+            placeKey: placeKey
+        )
+        try await database.record(
+            batch: TimelineBatch(visits: [visit], activities: [], paths: []),
+            source: .manual
+        )
+        if let name, !name.isEmpty, arguments["place_id"]?.stringValue == nil {
+            try await database.setPlaceName(placeKey: placeKey, name: name)
+        }
+        onChanged()
+        return .object([
+            "stay_id": .string(visit.id),
+            "place_id": .string(placeKey),
+            "from": .string(Self.stamp.string(from: visit.start)),
+            "to": .string(Self.stamp.string(from: visit.end)),
+            "minutes": .number((visit.duration / 60).rounded()),
+            "times": .string(basis)
+        ])
+    }
+
+    private func setStayTimes(_ arguments: MCPValue) async throws -> MCPValue {
+        guard let id = arguments["stay_id"]?.stringValue, !id.isEmpty else {
+            throw MCPToolFailure(message: "stay_id is required")
+        }
+        guard let start = arguments["start"]?.dateValue, let end = arguments["end"]?.dateValue else {
+            throw MCPToolFailure(message: "start and end are required")
+        }
+        guard end > start else { throw MCPToolFailure(message: "a stay has to end after it begins") }
+        guard try await database.setVisitTimes(id: id, start: start, end: end) else {
+            throw MCPToolFailure(message: "no stay with id \(id)")
+        }
+        onChanged()
+        return .object([
+            "stay_id": .string(id),
+            "from": .string(Self.stamp.string(from: start)),
+            "to": .string(Self.stamp.string(from: end))
+        ])
+    }
+
+    private func splitStay(_ arguments: MCPValue) async throws -> MCPValue {
+        guard let id = arguments["stay_id"]?.stringValue, !id.isEmpty else {
+            throw MCPToolFailure(message: "stay_id is required")
+        }
+        guard let moment = arguments["at"]?.dateValue else {
+            throw MCPToolFailure(message: "at is required")
+        }
+        guard let tail = try await database.splitVisit(id: id, at: moment) else {
+            throw MCPToolFailure(message: "no stay with id \(id), or that moment is not inside it")
+        }
+        onChanged()
+        return .object([
+            "first_half": .string(id),
+            "second_half": .string(tail.id),
+            "split_at": .string(Self.stamp.string(from: moment))
+        ])
+    }
+
+    private func deleteStay(_ arguments: MCPValue) async throws -> MCPValue {
+        guard let id = arguments["stay_id"]?.stringValue, !id.isEmpty else {
+            throw MCPToolFailure(message: "stay_id is required")
+        }
+        let reason = arguments["reason"]?.stringValue
+        guard try await database.deleteVisit(id: id, reason: reason) else {
+            throw MCPToolFailure(message: "no stay with id \(id)")
+        }
+        onChanged()
+        return .object([
+            "deleted": .string(id),
+            "note": "kept in the bin — list_deleted_stays to see it, restore_stay to put it back"
+        ])
+    }
+
+    private func listDeletedStays(_ arguments: MCPValue) async throws -> MCPValue {
+        let limit = arguments["limit"]?.intValue ?? 50
+        let removed = try await database.deletedVisits(limit: limit)
+        let names = try await placeNames()
+        let described = removed.map { entry in
+            MCPValue.of([
+                "stay_id": .string(entry.visit.id),
+                "from": .string(Self.stamp.string(from: entry.visit.start)),
+                "to": .string(Self.stamp.string(from: entry.visit.end)),
+                "place": .string(names[entry.visit.placeKey] ?? entry.visit.placeKey),
+                "deleted_at": .string(Self.stamp.string(from: entry.deletedAt)),
+                "reason": entry.reason.map { MCPValue.string($0) }
+            ])
+        }
+        return .object(["deleted": .array(described)])
+    }
+
+    private func restoreStay(_ arguments: MCPValue) async throws -> MCPValue {
+        guard let id = arguments["stay_id"]?.stringValue, !id.isEmpty else {
+            throw MCPToolFailure(message: "stay_id is required")
+        }
+        guard let restored = try await database.restoreDeletedVisit(id: id) else {
+            throw MCPToolFailure(message: "nothing in the bin with id \(id)")
+        }
+        onChanged()
+        return .object([
+            "restored": .string(restored.id),
+            "from": .string(Self.stamp.string(from: restored.start)),
+            "to": .string(Self.stamp.string(from: restored.end))
+        ])
+    }
+
+    // MARK: - Asking the map
+
+    private func findPlaceOnMap(_ arguments: MCPValue) async throws -> MCPValue {
+        guard let query = arguments["query"]?.stringValue, !query.isEmpty else {
+            throw MCPToolFailure(message: "query is required")
+        }
+        var centre: CLLocationCoordinate2D?
+        if let id = arguments["near_place_id"]?.stringValue {
+            centre = try await database.loadPlaces()[id]?.coordinate
+        }
+        if let latitude = arguments["latitude"]?.doubleValue,
+           let longitude = arguments["longitude"]?.doubleValue {
+            centre = CLLocationCoordinate2D(latitude: latitude, longitude: longitude)
+        }
+        // Failing that, search around the place visited most, which is very
+        // likely the part of the world this library is about.
+        if centre == nil {
+            let counts = try await database.stayCountsByPlace()
+            if let busiest = counts.max(by: { $0.value < $1.value })?.key {
+                centre = try await database.loadPlaces()[busiest]?.coordinate
+            }
+        }
+        let found = await MCPMapLookup.search(query: query, near: centre)
+        guard !found.isEmpty else { throw MCPToolFailure(message: "the map found nothing for \(query)") }
+        return .object(["results": .array(found.map { result in
+            .of([
+                "name": .string(result.name),
+                "address": result.address.map { MCPValue.string($0) },
+                "latitude": .number(result.coordinate.latitude),
+                "longitude": .number(result.coordinate.longitude)
+            ])
+        })])
+    }
+
+    // MARK: - Counting
+
+    private func staysAtPlace(_ arguments: MCPValue) async throws -> MCPValue {
+        let id = try placeID(arguments, "place_id")
+        let places = try await database.loadPlaces()
+        guard let place = places[id] else { throw MCPToolFailure(message: "no place with id \(id)") }
+        // Both ends open by default. Asking how often you go somewhere and
+        // silently being given only part of the answer is worse than being
+        // given all of it.
+        let from = arguments["from"]?.stringValue.flatMap { Self.day.date(from: $0) } ?? .distantPast
+        let to = arguments["to"]?.stringValue
+            .flatMap { Self.day.date(from: $0) }
+            .map { $0.addingTimeInterval(24 * 3_600) } ?? .distantFuture
+        let stays = try await database.visits(placeKey: id, from: from, to: to)
+        let minutes = stays.reduce(0.0) { $0 + $1.duration / 60 }
+        let listed = stays.suffix(50).map { visit in
+            MCPValue.object([
+                "stay_id": .string(visit.id),
+                "from": .string(Self.stamp.string(from: visit.start)),
+                "minutes": .number((visit.duration / 60).rounded())
+            ])
+        }
+        return .object([
+            "place": .string(place.name ?? id),
+            "stays": .number(Double(stays.count)),
+            "total_hours": .number((minutes / 60).rounded()),
+            "first": stays.first.map { .string(Self.stamp.string(from: $0.start)) } ?? .null,
+            "last": stays.last.map { .string(Self.stamp.string(from: $0.start)) } ?? .null,
+            "recent": .array(listed)
+        ])
+    }
+
+    private func guessTiming(at coordinate: CLLocationCoordinate2D, on day: Date) async throws -> VisitTimingGuesser.Guess {
+        let calendar = Calendar.current
+        let dayStart = calendar.startOfDay(for: day)
+        let dayEnd = dayStart.addingTimeInterval(24 * 3_600)
+        let fixes = (try? await database.fixes(from: dayStart, to: dayEnd)) ?? []
+        let parsed = try await assembled()
+        let record = parsed.days.first { calendar.isDate($0.day, inSameDayAs: day) }
+        let midpoint = VisitTimingGuesser.largestGapMidpoint(
+            between: record?.visits ?? [],
+            on: dayStart,
+            calendar: calendar
+        )
+        return VisitTimingGuesser.guess(
+            placeCoordinate: coordinate,
+            fixes: fixes,
+            paths: record?.paths ?? [],
+            fallbackMidpoint: midpoint
+        )
+    }
+
+    private static func describe(_ basis: VisitTimingGuesser.Guess.Basis) -> String {
+        switch basis {
+        case .stopped: return "guessed — the day's fixes show stopping there"
+        case .droveBy: return "guessed — the day's movement passed close by"
+        case .unknown: return "a placeholder — nothing that day went near it"
+        }
     }
 
     // MARK: - Bits

@@ -28,6 +28,7 @@
 		18E2A4AA27EBF3384CC2D4CB /* PlaceClusterer.swift in Sources */ = {isa = PBXBuildFile; fileRef = E62991B0B2E82A1FDD015746 /* PlaceClusterer.swift */; };
 		192A91265123FFACBAE52284 /* MCPTimelineToolsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B047398999757AF8FEF209EF /* MCPTimelineToolsTests.swift */; };
 		1ACE10F721E4F439B3D73E69 /* StopRepairTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB8F7FB10F4B9C7394C7A61D /* StopRepairTests.swift */; };
+		1D208523AE317032693F9545 /* MCPMapLookup.swift in Sources */ = {isa = PBXBuildFile; fileRef = E86F17483CBD93F47E5F1321 /* MCPMapLookup.swift */; };
 		1D8314A3B0A26F26DE99CCFE /* LuxPhotoLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F42083B6EA50D85B014CFA4 /* LuxPhotoLink.swift */; };
 		1EF12CF0AC955A2127C038B6 /* TimelineLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 42F77A3F26A639DA1D9B8472 /* TimelineLog.swift */; };
 		1F23CB5DC494DCD3AA2BA9F7 /* PlaceMergeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B5D5FCA5DDE8A0A4A770F452 /* PlaceMergeTests.swift */; };
@@ -65,6 +66,7 @@
 		4F681B1F035A7011344261D2 /* SuggestionCoordinateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C85B263BE63A6FD3CBF6FAFB /* SuggestionCoordinateTests.swift */; };
 		4FD3FDCDF9FF9D477C311B5F /* MapCanvasView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C84392A4A35D3A0FF607D83 /* MapCanvasView.swift */; };
 		502BB8783D08C4196730E7F3 /* MCPHTTP.swift in Sources */ = {isa = PBXBuildFile; fileRef = 71C9CBD25E4BF30BE73E4C0B /* MCPHTTP.swift */; };
+		510AF0CA36A11F8A05E48DDB /* MCPMapLookup.swift in Sources */ = {isa = PBXBuildFile; fileRef = E86F17483CBD93F47E5F1321 /* MCPMapLookup.swift */; };
 		5125FBF0E986E360FEE62716 /* MCPPairing.swift in Sources */ = {isa = PBXBuildFile; fileRef = A713A7FA7C1D5563167793EF /* MCPPairing.swift */; };
 		52D8575746F1251850C3848C /* VisitNamingContextBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = E296CA76980924F3017D7F8F /* VisitNamingContextBuilder.swift */; };
 		53527DCD3CC12C525EAB1BCB /* eiffel-tower-day.json in Resources */ = {isa = PBXBuildFile; fileRef = 6DA6D178D95EAD82BA6BC956 /* eiffel-tower-day.json */; };
@@ -337,6 +339,7 @@
 		E287FB63343C613714A43C04 /* PlaceLocationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaceLocationTests.swift; sourceTree = "<group>"; };
 		E296CA76980924F3017D7F8F /* VisitNamingContextBuilder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VisitNamingContextBuilder.swift; sourceTree = "<group>"; };
 		E62991B0B2E82A1FDD015746 /* PlaceClusterer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaceClusterer.swift; sourceTree = "<group>"; };
+		E86F17483CBD93F47E5F1321 /* MCPMapLookup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MCPMapLookup.swift; sourceTree = "<group>"; };
 		EB213F964DB381BD3165B823 /* StayGapFillerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StayGapFillerTests.swift; sourceTree = "<group>"; };
 		EC0D5BCA07B8225C963230A4 /* DeviceLocationSource.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceLocationSource.swift; sourceTree = "<group>"; };
 		F38FDE28A77697434B262F4C /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
@@ -586,6 +589,7 @@
 				D5ABFA357ADE4F8BCE62F2C2 /* MCPClientStore.swift */,
 				3431B9F3ECF999FDA8FF8B47 /* MCPController.swift */,
 				71C9CBD25E4BF30BE73E4C0B /* MCPHTTP.swift */,
+				E86F17483CBD93F47E5F1321 /* MCPMapLookup.swift */,
 				A713A7FA7C1D5563167793EF /* MCPPairing.swift */,
 				DB8D0B998D39745433A300F5 /* MCPServer.swift */,
 				5A23761AFD697B0BB9D1253B /* MCPService.swift */,
@@ -828,6 +832,7 @@
 				3A47FFDF919A650A6EC002A4 /* MCPClientStore.swift in Sources */,
 				CD9A625A2501D6822887DA69 /* MCPController.swift in Sources */,
 				075C1D69CF895128AC094B66 /* MCPHTTP.swift in Sources */,
+				1D208523AE317032693F9545 /* MCPMapLookup.swift in Sources */,
 				5125FBF0E986E360FEE62716 /* MCPPairing.swift in Sources */,
 				4BCD1E7FFEEC2204FBEA44A2 /* MCPServer.swift in Sources */,
 				773FBE1749F5A7C4C1F7FB1C /* MCPService.swift in Sources */,
@@ -902,6 +907,7 @@
 				F6C7D53F4DF39DEEAB6BDDEF /* MCPClientStore.swift in Sources */,
 				D4614579500BD9C668877790 /* MCPController.swift in Sources */,
 				502BB8783D08C4196730E7F3 /* MCPHTTP.swift in Sources */,
+				510AF0CA36A11F8A05E48DDB /* MCPMapLookup.swift in Sources */,
 				A71D62CF225A072AF5AFB3FA /* MCPPairing.swift in Sources */,
 				3BF4DD6E30ABDE9405C68354 /* MCPServer.swift in Sources */,
 				612EC1C85C8EDFF55240B7B0 /* MCPService.swift in Sources */,

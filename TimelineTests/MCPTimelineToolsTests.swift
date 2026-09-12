@@ -226,4 +226,146 @@ final class MCPTimelineToolsTests: XCTestCase {
         )
     }
 
+
+    // MARK: - Editing a day
+
+    /// The thing that was needed all day and had no tool: a stop that happened
+    /// and was never captured.
+    func testAStayCanBeAddedWithTimesGiven() async throws {
+        let (tools, db, url) = library()
+        defer { try? FileManager.default.removeItem(at: url) }
+        try await seed(db)
+
+        let from = start.addingTimeInterval(30 * 3_600)
+        let added = try await tools.call("add_stay", arguments: .object([
+            "place_id": "shop",
+            "start": .number(from.timeIntervalSince1970),
+            "end": .number(from.addingTimeInterval(600).timeIntervalSince1970)
+        ]))
+        XCTAssertEqual(added["minutes"]?.intValue, 10)
+
+        let stayID = try XCTUnwrap(added["stay_id"]?.stringValue)
+        let all = try await db.loadBatch()?.visits ?? []
+        XCTAssertTrue(all.contains { $0.id == stayID && $0.placeKey == "shop" })
+    }
+
+    /// Leaving the times out asks the day's movement where it passed closest,
+    /// the same as the Add Visit sheet does.
+    func testAddingAStayWithoutTimesGuessesThem() async throws {
+        let (tools, db, url) = library()
+        defer { try? FileManager.default.removeItem(at: url) }
+        try await seed(db)
+
+        let day = MCPValue.dayFormatter.string(from: start.addingTimeInterval(3_600))
+        let added = try await tools.call("add_stay", arguments: .object([
+            "name": "Somewhere New",
+            "latitude": .number(here.latitude),
+            "longitude": .number(here.longitude),
+            "date": .string(day)
+        ]))
+        XCTAssertNotNil(added["stay_id"]?.stringValue)
+        let basis = try XCTUnwrap(added["times"]?.stringValue)
+        XCTAssertTrue(basis.contains("guessed") || basis.contains("placeholder"))
+    }
+
+    func testTimesCanBeCorrectedAndAStaySplitInTwo() async throws {
+        let (tools, db, url) = library()
+        defer { try? FileManager.default.removeItem(at: url) }
+        try await seed(db)
+
+        let from = start.addingTimeInterval(3_600)
+        let to = from.addingTimeInterval(4 * 3_600)
+        _ = try await tools.call("set_stay_times", arguments: .object([
+            "stay_id": "s1",
+            "start": .number(from.timeIntervalSince1970),
+            "end": .number(to.timeIntervalSince1970)
+        ]))
+
+        let middle = from.addingTimeInterval(2 * 3_600)
+        let split = try await tools.call("split_stay", arguments: .object([
+            "stay_id": "s1",
+            "at": .number(middle.timeIntervalSince1970)
+        ]))
+        let second = try XCTUnwrap(split["second_half"]?.stringValue)
+
+        let all = try await db.loadBatch()?.visits ?? []
+        let first = try XCTUnwrap(all.first { $0.id == "s1" })
+        let tail = try XCTUnwrap(all.first { $0.id == second })
+        XCTAssertEqual(first.end, middle)
+        XCTAssertEqual(tail.start, middle)
+        XCTAssertEqual(tail.end, to)
+        XCTAssertEqual(tail.placeKey, first.placeKey, "both halves are the same place")
+    }
+
+    /// Splitting somewhere outside the stay would invent a stay that never was.
+    func testSplittingOutsideTheStayIsRefused() async throws {
+        let (tools, db, url) = library()
+        defer { try? FileManager.default.removeItem(at: url) }
+        try await seed(db)
+        do {
+            _ = try await tools.call("split_stay", arguments: .object([
+                "stay_id": "s1",
+                "at": .number(start.addingTimeInterval(90 * 3_600).timeIntervalSince1970)
+            ]))
+            XCTFail("should have refused")
+        } catch let failure as MCPToolFailure {
+            XCTAssertTrue(failure.message.contains("not inside it"))
+        }
+    }
+
+    // MARK: - The bin
+
+    /// Deleting takes a stay out of the timeline. It does not destroy it: a
+    /// wrong reading of where you were is still evidence of something.
+    func testADeletedStayWaitsInTheBinAndComesBack() async throws {
+        let (tools, db, url) = library()
+        defer { try? FileManager.default.removeItem(at: url) }
+        try await seed(db)
+
+        _ = try await tools.call("delete_stay", arguments: .object([
+            "stay_id": "s1", "reason": "was never there"
+        ]))
+
+        let gone = try await db.loadBatch()?.visits ?? []
+        XCTAssertFalse(gone.contains { $0.id == "s1" }, "out of the timeline")
+
+        let binned = try await tools.call("list_deleted_stays", arguments: .object([:]))
+        let entry = try XCTUnwrap(binned["deleted"]?.arrayValue?.first)
+        XCTAssertEqual(entry["stay_id"]?.stringValue, "s1")
+        XCTAssertEqual(entry["reason"]?.stringValue, "was never there")
+        XCTAssertEqual(entry["place"]?.stringValue, "Save-On-Foods", "still known for what it was")
+
+        _ = try await tools.call("restore_stay", arguments: .object(["stay_id": "s1"]))
+        let back = try await db.loadBatch()?.visits ?? []
+        XCTAssertTrue(back.contains { $0.id == "s1" })
+
+        let afterwards = try await tools.call("list_deleted_stays", arguments: .object([:]))
+        XCTAssertEqual(afterwards["deleted"]?.arrayValue?.count, 0, "and out of the bin")
+    }
+
+    /// The bin keeps its order, so what was removed when is answerable later.
+    func testTheBinKeepsItsOrder() async throws {
+        let (tools, db, url) = library()
+        defer { try? FileManager.default.removeItem(at: url) }
+        try await seed(db)
+
+        _ = try await tools.call("delete_stay", arguments: .object(["stay_id": "s1"]))
+        _ = try await tools.call("delete_stay", arguments: .object(["stay_id": "s3"]))
+
+        let binned = try await tools.call("list_deleted_stays", arguments: .object([:]))
+        let ids = try XCTUnwrap(binned["deleted"]?.arrayValue).compactMap { $0["stay_id"]?.stringValue }
+        XCTAssertEqual(ids, ["s3", "s1"], "most recently removed first")
+    }
+
+    func testCountingTimeSpentSomewhere() async throws {
+        let (tools, db, url) = library()
+        defer { try? FileManager.default.removeItem(at: url) }
+        try await seed(db)
+
+        let counted = try await tools.call("stays_at_place", arguments: .object(["place_id": "shop"]))
+        XCTAssertEqual(counted["place"]?.stringValue, "Save-On-Foods")
+        XCTAssertEqual(counted["stays"]?.intValue, 2)
+        XCTAssertNotNil(counted["first"]?.stringValue)
+    }
+
 }
