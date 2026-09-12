@@ -372,6 +372,15 @@ actor TimelineDatabase {
                 result.placesCreated += 1
             }
             result.visitsLinked = linked
+            // The legacy key still holds where each stay was before its merges
+            // were folded into place ids, which is exactly the provenance
+            // unmerging needs.
+            try exec(
+                """
+                UPDATE visits SET origin_place_id = place_key
+                WHERE origin_place_id IS NULL AND place_id IS NOT NULL AND place_id != place_key
+                """
+            )
             try exec("COMMIT")
         } catch {
             sqlite3_exec(db, "ROLLBACK", nil, nil, nil)
@@ -1534,12 +1543,66 @@ actor TimelineDatabase {
                 WHERE to_key = \(quote(fromKey))
                 """
             )
+            // Move the stays themselves. Reads resolve through place_id now, so
+            // this is what the merge actually means; the alias above is kept only
+            // until the sync format catches up.
+            try repointStays(from: fromKey, to: toKey)
             try setPlaceName(placeKey: fromKey, name: "", updatedAt: stamp)
             try exec("COMMIT")
         } catch {
             sqlite3_exec(db, "ROLLBACK", nil, nil, nil)
             throw error
         }
+    }
+
+    /// Move every stay at one place to another, remembering where it came from so
+    /// the merge can be undone.
+    private func repointStays(from fromKey: String, to toKey: String) throws {
+        guard let db else { throw TimelineDatabaseError.open }
+        var moved: [String] = []
+        var select: OpaquePointer?
+        defer { sqlite3_finalize(select) }
+        if sqlite3_prepare_v2(db, "SELECT id FROM visits WHERE place_id = ?", -1, &select, nil) == SQLITE_OK {
+            sqlite3_bind_text(select, 1, fromKey, -1, Self.transient)
+            while sqlite3_step(select) == SQLITE_ROW {
+                if let id = text(select, 0) { moved.append(id) }
+            }
+        }
+        guard !moved.isEmpty else { return }
+
+        // COALESCE keeps the *first* origin through a chain of merges, so
+        // unmerging steps back one place at a time rather than losing the trail.
+        try exec(
+            """
+            UPDATE visits
+            SET place_id = \(quote(toKey)),
+                origin_place_id = COALESCE(origin_place_id, \(quote(fromKey)))
+            WHERE place_id = \(quote(fromKey))
+            """
+        )
+        for id in moved {
+            try logChange(.visit, id)
+        }
+    }
+
+    /// The places folded into this one, for the Unmerge menu.
+    func mergedOrigins(into placeID: String) throws -> [String] {
+        guard let db, !placeID.isEmpty else { return [] }
+        var statement: OpaquePointer?
+        defer { sqlite3_finalize(statement) }
+        guard sqlite3_prepare_v2(
+            db,
+            "SELECT DISTINCT origin_place_id FROM visits WHERE place_id = ? AND origin_place_id IS NOT NULL",
+            -1,
+            &statement,
+            nil
+        ) == SQLITE_OK else { return [] }
+        sqlite3_bind_text(statement, 1, placeID, -1, Self.transient)
+        var origins: [String] = []
+        while sqlite3_step(statement) == SQLITE_ROW {
+            if let origin = text(statement, 0), origin != placeID { origins.append(origin) }
+        }
+        return origins
     }
 
     /// Undo a merge: tombstone the alias and restore any hard-remapped visits whose
@@ -1578,6 +1641,8 @@ actor TimelineDatabase {
                 throw TimelineDatabaseError.execute(errmsg())
             }
             try logChange(.placeMerge, fromKey)
+            // Send the stays home.
+            try restoreStays(originallyAt: fromKey)
             try exec("COMMIT")
         } catch {
             sqlite3_exec(db, "ROLLBACK", nil, nil, nil)
@@ -1662,6 +1727,32 @@ actor TimelineDatabase {
             placeKey: visit.placeKey,
             isDerived: visit.isDerived
         )
+    }
+
+    /// Put back every stay a merge moved away from this place.
+    private func restoreStays(originallyAt originKey: String) throws {
+        guard let db else { throw TimelineDatabaseError.open }
+        var moved: [String] = []
+        var select: OpaquePointer?
+        defer { sqlite3_finalize(select) }
+        if sqlite3_prepare_v2(db, "SELECT id FROM visits WHERE origin_place_id = ?", -1, &select, nil) == SQLITE_OK {
+            sqlite3_bind_text(select, 1, originKey, -1, Self.transient)
+            while sqlite3_step(select) == SQLITE_ROW {
+                if let id = text(select, 0) { moved.append(id) }
+            }
+        }
+        guard !moved.isEmpty else { return }
+
+        try exec(
+            """
+            UPDATE visits
+            SET place_id = origin_place_id, origin_place_id = NULL
+            WHERE origin_place_id = \(quote(originKey))
+            """
+        )
+        for id in moved {
+            try logChange(.visit, id)
+        }
     }
 
     private static func remapped(_ visit: TimelineVisit, merges: [String: String]) -> TimelineVisit {
@@ -1804,6 +1895,9 @@ actor TimelineDatabase {
         try addColumn(db, table: "visits", column: "shadowed INTEGER NOT NULL DEFAULT 0")
         // A stay points at a place rather than carrying one inside its identity.
         try addColumn(db, table: "visits", column: "place_id TEXT")
+        // Where the stay was before a merge moved it, so unmerging can put it
+        // back. Repointing without this would be a one-way door.
+        try addColumn(db, table: "visits", column: "origin_place_id TEXT")
         try exec(db, "CREATE INDEX IF NOT EXISTS visits_place_id ON visits(place_id)")
         try addColumn(db, table: "sync_state", column: "blob_value BLOB")
     }
