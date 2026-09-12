@@ -219,6 +219,11 @@ struct MCPTimelineTools: MCPToolProviding {
                 ])
             ),
             MCPTool(
+                name: "current_stay",
+                description: "Where you are right now, if a stay is still going on: the place, when it began, and how long so far. Answers nothing when the last thing recorded was a journey, or when the device doing the recording has not synced.",
+                schema: .object(["type": "object", "properties": .object([:])])
+            ),
+            MCPTool(
                 name: "stays_at_place",
                 description: "Every stay at one place in a window, with how often and how long — for answering how much time somewhere takes up.",
                 schema: .object([
@@ -265,6 +270,7 @@ struct MCPTimelineTools: MCPToolProviding {
         case "restore_stay": return try await restoreStay(arguments)
         case "find_place_on_map": return try await findPlaceOnMap(arguments)
         case "stays_at_place": return try await staysAtPlace(arguments)
+        case "current_stay": return try await currentStay()
         default: throw MCPToolFailure(message: "no tool called \(name)")
         }
     }
@@ -373,10 +379,11 @@ struct MCPTimelineTools: MCPToolProviding {
         var described = Self.describe(place, stays: counts[id] ?? 0).objectValue ?? [:]
         described["folded_in"] = .array(merges.filter { $0.value == id }.keys.sorted().map { .string($0) })
         described["recent_stays"] = .array(recent.sorted { $0.start > $1.start }.map { visit in
-            .object([
+            .of([
                 "stay_id": .string(visit.id),
                 "start": .string(Self.stamp.string(from: visit.start)),
-                "minutes": .number((visit.duration / 60).rounded())
+                "minutes": .number((visit.duration / 60).rounded()),
+                "in_progress": visit.isOpen ? MCPValue.bool(true) : nil
             ])
         })
         return .object(described)
@@ -760,6 +767,36 @@ struct MCPTimelineTools: MCPToolProviding {
         })])
     }
 
+    // MARK: - Now
+
+    private func currentStay() async throws -> MCPValue {
+        let now = Date()
+        guard let batch = try await database.loadBatch(now: now) else {
+            throw MCPToolFailure(message: "the library is empty")
+        }
+        // The most recent one, in case an older stay was left open by a
+        // departure nobody saw.
+        let open = batch.visits.filter(\.isOpen).max { $0.start < $1.start }
+        guard let open else {
+            return .object([
+                "in_progress": .bool(false),
+                "note": "nothing is open — either you are on the move, or the device recording it has not synced yet"
+            ])
+        }
+        let names = try await placeNames()
+        let minutes = (now.timeIntervalSince(open.start) / 60).rounded()
+        return .of([
+            "in_progress": .bool(true),
+            "stay_id": .string(open.id),
+            "place_id": .string(open.placeKey),
+            "place": .string(names[open.placeKey] ?? open.semanticType ?? "unnamed"),
+            "since": .string(Self.stamp.string(from: open.start)),
+            "minutes_so_far": .number(minutes),
+            "latitude": open.coordinate.map { MCPValue.number($0.latitude) },
+            "longitude": open.coordinate.map { MCPValue.number($0.longitude) }
+        ])
+    }
+
     // MARK: - Counting
 
     private func staysAtPlace(_ arguments: MCPValue) async throws -> MCPValue {
@@ -776,10 +813,13 @@ struct MCPTimelineTools: MCPToolProviding {
         let stays = try await database.visits(placeKey: id, from: from, to: to)
         let minutes = stays.reduce(0.0) { $0 + $1.duration / 60 }
         let listed = stays.suffix(50).map { visit in
-            MCPValue.object([
+            MCPValue.of([
                 "stay_id": .string(visit.id),
                 "from": .string(Self.stamp.string(from: visit.start)),
-                "minutes": .number((visit.duration / 60).rounded())
+                "minutes": .number((visit.duration / 60).rounded()),
+                // Still going on, so the length is how long so far rather than
+                // how long it was.
+                "in_progress": visit.isOpen ? MCPValue.bool(true) : nil
             ])
         }
         return .object([

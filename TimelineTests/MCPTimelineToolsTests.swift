@@ -419,4 +419,53 @@ final class MCPTimelineToolsTests: XCTestCase {
         XCTAssertNotNil(counted["first"]?.stringValue)
     }
 
+
+    // MARK: - Right now
+
+    /// The Mac has no recorder, so the only way it can answer "where am I" is
+    /// for the stay to have reached it as a row.
+    func testCurrentStayAnswersWhileAStayIsStillGoing() async throws {
+        let (tools, db, url) = library()
+        defer { try? FileManager.default.removeItem(at: url) }
+        try await seed(db)
+
+        let arrived = Date().addingTimeInterval(-2 * 3_600)
+        try await db.setOpenStop(
+            CapturedStop(coordinate: here, horizontalAccuracy: 50, start: arrived, end: nil),
+            placeKey: "shop"
+        )
+
+        let now = try await tools.call("current_stay", arguments: .object([:]))
+        XCTAssertEqual(now["in_progress"]?.boolValue, true)
+        XCTAssertEqual(now["place"]?.stringValue, "Save-On-Foods")
+        XCTAssertEqual(try XCTUnwrap(now["minutes_so_far"]?.doubleValue), 120, accuracy: 2)
+    }
+
+    /// And says so plainly when there is nothing to report, rather than
+    /// implying the last stay of the day is where you are.
+    func testCurrentStaySaysWhenNothingIsOpen() async throws {
+        let (tools, db, url) = library()
+        defer { try? FileManager.default.removeItem(at: url) }
+        try await seed(db)
+
+        let now = try await tools.call("current_stay", arguments: .object([:]))
+        XCTAssertEqual(now["in_progress"]?.boolValue, false)
+        XCTAssertNil(now["place"])
+    }
+
+    /// A stay that is still going has run for that long so far, not lasted it.
+    func testAnInProgressStayIsFlaggedWhereStaysAreListed() async throws {
+        let (tools, db, url) = library()
+        defer { try? FileManager.default.removeItem(at: url) }
+        try await seed(db)
+        try await db.setOpenStop(
+            CapturedStop(coordinate: here, horizontalAccuracy: 50, start: Date().addingTimeInterval(-600), end: nil),
+            placeKey: "shop"
+        )
+
+        let counted = try await tools.call("stays_at_place", arguments: .object(["place_id": "shop"]))
+        let recent = try XCTUnwrap(counted["recent"]?.arrayValue)
+        XCTAssertTrue(recent.contains { $0["in_progress"]?.boolValue == true })
+    }
+
 }
