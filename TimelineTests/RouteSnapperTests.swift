@@ -155,6 +155,53 @@ final class RouteSnapperTests: XCTestCase {
     private func temporaryDatabase() -> URL {
         FileManager.default.temporaryDirectory.appendingPathComponent("snap-\(UUID().uuidString).sqlite")
     }
+    // MARK: - Routes follow a corrected place
+
+    /// Correcting a place must re-route everything that touched it.
+    ///
+    /// A hop is identified by the two stays it joins, and a stay keeps its id
+    /// when its place moves — so the id alone cannot say whether the line is
+    /// still right. Lord Byng sat 2.4 km from the real school; when it was put
+    /// back, the drive to it kept its cached geometry and still ran to the old
+    /// spot. The cached route is now tied to the points it was drawn between,
+    /// which makes the guarantee structural: nothing at the correction site has
+    /// to remember to clear anything.
+    func testMovingAPlaceInvalidatesTheRouteThatRanToIt() async throws {
+        let database = TimelineDatabase(fileURL: temporaryDatabase())
+        var requested = 0
+        let client = ScriptedMapDirectionsClient { start, end, _ in
+            requested += 1
+            return [start, CLLocationCoordinate2D(latitude: 48.863, longitude: 2.30), end]
+        }
+        let snapper = RouteSnapper(database: database, directions: client)
+        let hopID = "hop:home:school"
+
+        _ = await snapper.snap(
+            id: hopID,
+            points: [Landmark.eiffelTower, Landmark.louvrePyramid],
+            kind: .automobile
+        )
+        XCTAssertEqual(requested, 1)
+
+        // Same hop, same stays, unchanged destination: the cache answers.
+        let unchanged = await snapper.cached(
+            id: hopID,
+            kind: .automobile,
+            points: [Landmark.eiffelTower, Landmark.louvrePyramid]
+        )
+        XCTAssertNotNil(unchanged)
+        XCTAssertEqual(requested, 1)
+
+        // The place is corrected. The old line ran somewhere else, so it is gone.
+        let moved = CLLocationCoordinate2D(latitude: 48.873, longitude: 2.295)
+        let afterMove = await snapper.cached(
+            id: hopID,
+            kind: .automobile,
+            points: [Landmark.eiffelTower, moved]
+        )
+        XCTAssertNil(afterMove, "a corrected place must not reuse the route to where it used to be")
+    }
+
 }
 
 private struct ThrottledMapDirectionsClient: MapDirectionsClient {
@@ -195,4 +242,5 @@ final class CoordBlobTests: XCTestCase {
         XCTAssertEqual(unpacked![0].latitude, Landmark.eiffelTower.latitude, accuracy: 0.0000001)
         XCTAssertEqual(unpacked![1].longitude, Landmark.louvrePyramid.longitude, accuracy: 0.0000001)
     }
+
 }

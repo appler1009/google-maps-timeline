@@ -27,18 +27,46 @@ enum RoutePlanner {
     }
 
     /// Consecutive same-place (or <50m) stays collapse so hops run place-to-place.
+    ///
+    /// A collapsed spot spans the whole run, because the hops either side of it
+    /// are timed from its edges: you arrived when the run began and left when it
+    /// ended. Taking both from the last stay in the run made the journey *into*
+    /// a place look as long as the stay itself — an eight-minute drive home,
+    /// followed by five hours indoors and a walk round the block, was timed as a
+    /// five-hour crawl, and read as a walk.
     static func collapsedSpots(_ visits: [TimelineVisit]) -> [(TimelineVisit, CLLocationCoordinate2D)] {
         var spots: [(TimelineVisit, CLLocationCoordinate2D)] = []
         for run in PlaceVisitRun.coalesced(from: visits) {
             guard let visit = run.visits.last(where: { $0.coordinate != nil }),
                   let coordinate = visit.coordinate else { continue }
+            let spanned = spanning(visit, over: run.visits)
             if let last = spots.last, meters(last.1, coordinate) < 50 {
-                spots[spots.count - 1] = (visit, coordinate)
+                spots[spots.count - 1] = (spanning(spanned, over: [last.0, spanned]), coordinate)
                 continue
             }
-            spots.append((visit, coordinate))
+            spots.append((spanned, coordinate))
         }
         return spots
+    }
+
+    /// The representative stay stretched across everything it stands for. Keeps
+    /// its own id, which hop ids are built from.
+    private static func spanning(
+        _ representative: TimelineVisit,
+        over visits: [TimelineVisit]
+    ) -> TimelineVisit {
+        let start = visits.map(\.start).min() ?? representative.start
+        let end = visits.map(\.end).max() ?? representative.end
+        guard start != representative.start || end != representative.end else { return representative }
+        return TimelineVisit(
+            id: representative.id,
+            start: start,
+            end: end,
+            coordinate: representative.coordinate,
+            semanticType: representative.semanticType,
+            placeKey: representative.placeKey,
+            isDerived: representative.isDerived
+        )
     }
 
     static func hopsAcross(
@@ -108,29 +136,43 @@ enum RoutePlanner {
     static func kind(from: TimelineVisit, to: TimelineVisit, activities: [ActivityLine]) -> TravelKind {
         let gapStart = from.end
         let gapEnd = to.start > gapStart ? to.start : gapStart.addingTimeInterval(1)
+        let gap = gapEnd.timeIntervalSince(gapStart)
         let overlapping = activities.filter { $0.at < gapEnd && $0.until > gapStart }
-        let inferred = inferredKind(from: from, to: to)
-        if let match = overlapping.max(by: { lhs, rhs in
+        guard let match = overlapping.max(by: { lhs, rhs in
             overlap(lhs, gapStart: gapStart, gapEnd: gapEnd) < overlap(rhs, gapStart: gapStart, gapEnd: gapEnd)
-        }) {
-            if match.kind == .automobile, inferred == .walking {
-                return .walking
-            }
-            return match.kind
+        }) else {
+            return inferredKind(from: from, to: to, seconds: gap)
         }
-        return inferred
+        // Speed over the time actually spent moving, not the whole gap. Leaving
+        // the shops at 11 and reaching home at 16 is a five-hour gap around an
+        // eight-minute drive; measured against the gap every such drive looks
+        // like a stroll, and the override below would then discard Core Motion
+        // saying plainly that it was a car.
+        let moving = overlapping.reduce(0.0) { total, line in
+            total + max(0, overlap(line, gapStart: gapStart, gapEnd: gapEnd))
+        }
+        let inferred = inferredKind(from: from, to: to, seconds: moving > 0 ? moving : gap)
+        // Core Motion reports the car you were sitting in, which bleeds into the
+        // walk at either end of the journey. A genuinely slow hop is that walk.
+        if match.kind == .automobile, inferred == .walking {
+            return .walking
+        }
+        return match.kind
     }
 
     private static func overlap(_ activity: ActivityLine, gapStart: Date, gapEnd: Date) -> TimeInterval {
         min(activity.until, gapEnd).timeIntervalSince(max(activity.at, gapStart))
     }
 
-    private static func inferredKind(from: TimelineVisit, to: TimelineVisit) -> TravelKind {
+    private static func inferredKind(
+        from: TimelineVisit,
+        to: TimelineVisit,
+        seconds: TimeInterval
+    ) -> TravelKind {
         guard let start = from.coordinate, let end = to.coordinate else { return .automobile }
         let meters = CLLocation(latitude: start.latitude, longitude: start.longitude)
             .distance(from: CLLocation(latitude: end.latitude, longitude: end.longitude))
-        let seconds = max(to.start.timeIntervalSince(from.end), 1)
-        if meters / seconds < 2.6 { return .walking }
+        if meters / max(seconds, 1) < 2.6 { return .walking }
         return .automobile
     }
 }

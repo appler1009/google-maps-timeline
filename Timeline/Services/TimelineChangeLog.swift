@@ -6,6 +6,11 @@ enum ChangeKind: String, CaseIterable, Sendable {
     case visit
     case activity
     case path
+    /// A whole place: its name, where it is, what it was folded into.
+    case place
+    /// The three kinds a place used to sync as. Still read, so records already
+    /// in the cloud and devices on older builds keep working, but no longer
+    /// written — see `PlaceEntity`.
     case placeName
     case placeMerge
     case placeLocation
@@ -50,6 +55,7 @@ struct ChangeBatch: Sendable {
     /// receiving device does not have to assume.
     var visitSources: [String: RecordSource] = [:]
     var locations: [String: PlaceLocation] = [:]
+    var places: [String: PlaceEntity] = [:]
 
     var isEmpty: Bool { changes.isEmpty }
     var count: Int { changes.count }

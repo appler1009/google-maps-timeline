@@ -68,6 +68,14 @@ struct TimelineVisit: Identifiable {
     /// Inferred at assembly from the absence of travel, not stored. There is no
     /// row behind it, so it cannot be edited or moved.
     var isDerived = false
+    /// A stay still going on. Core Location reports a visit twice — once on
+    /// arrival, once on departure — and only the second one can be written down,
+    /// because until then there is no end to write. So a week working from home
+    /// showed nothing at all: the arrival was witnessed, and the library stayed
+    /// silent about it until the day you finally went out. This is that stay,
+    /// ending at the present moment rather than at a departure that has not
+    /// happened.
+    var isOpen = false
 
     var duration: TimeInterval { end.timeIntervalSince(start) }
 
@@ -80,7 +88,10 @@ struct TimelineVisit: Identifiable {
             coordinate: coordinate,
             semanticType: semanticType ?? self.semanticType,
             placeKey: placeKey,
-            isDerived: isDerived
+            isDerived: isDerived,
+            // Only the slice running up to the present is still open; earlier
+            // days of the same stay are settled.
+            isOpen: isOpen && end >= min(self.end, dayEnd)
         )
     }
 }

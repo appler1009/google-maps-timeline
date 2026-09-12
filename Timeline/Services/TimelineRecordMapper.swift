@@ -32,6 +32,8 @@ enum TimelineRecordMapper {
         static let name = "name"
         static let toKey = "toKey"
         static let updatedAt = "updatedAt"
+        static let mergedInto = "mergedInto"
+        static let isOpen = "isOpen"
     }
 
     /// Record types are the change kinds, capitalised — CloudKit convention, and
@@ -41,6 +43,7 @@ enum TimelineRecordMapper {
         case .visit: return "Visit"
         case .activity: return "Activity"
         case .path: return "Path"
+        case .place: return "Place"
         case .placeName: return "PlaceName"
         case .placeMerge: return "PlaceMerge"
         case .placeLocation: return "PlaceLocation"
@@ -70,6 +73,7 @@ enum TimelineRecordMapper {
     private static func namePrefix(for kind: ChangeKind) -> String? {
         switch kind {
         case .visit, .activity, .path: return nil
+        case .place: return "place:"
         case .placeName: return "name:"
         case .placeMerge: return "merge:"
         case .placeLocation: return "loc:"
@@ -138,6 +142,9 @@ enum TimelineRecordMapper {
         if let type = visit.semanticType {
             record[Field.semanticType] = type as NSString
         }
+        // A stay still going on, whose end is only where it had got to when
+        // this was sent. The other device grows it against its own clock.
+        record[Field.isOpen] = visit.isOpen ? 1 as NSNumber : nil
         return record
     }
 
@@ -184,6 +191,30 @@ enum TimelineRecordMapper {
         )
         record[Field.name] = name.name as NSString
         record[Field.updatedAt] = name.updatedAt as NSNumber
+        return record
+    }
+
+    /// One record for the whole place, rather than a name, a location and a
+    /// merge arriving separately and in any order.
+    static func record(
+        for place: PlaceEntity,
+        in zoneID: CKRecordZone.ID,
+        base: CKRecord? = nil
+    ) -> CKRecord {
+        let record = canvas(
+            base: base,
+            type: recordType(for: .place),
+            recordName: recordName(for: .place, rowID: place.id),
+            in: zoneID
+        )
+        // Cleared fields are set to nil rather than left alone: a place that
+        // loses its name must lose it on the other device too.
+        record[Field.name] = place.name.map { $0 as NSString }
+        record[Field.semanticType] = place.semanticType.map { $0 as NSString }
+        record[Field.mergedInto] = place.mergedInto.map { $0 as NSString }
+        record[Field.latitude] = place.coordinate.map { $0.latitude as NSNumber }
+        record[Field.longitude] = place.coordinate.map { $0.longitude as NSNumber }
+        record[Field.updatedAt] = place.updatedAt as NSNumber
         return record
     }
 
@@ -240,7 +271,8 @@ enum TimelineRecordMapper {
             end: end,
             coordinate: coordinate(record, Field.latitude, Field.longitude),
             semanticType: record[Field.semanticType] as? String,
-            placeKey: placeKey
+            placeKey: placeKey,
+            isOpen: (record[Field.isOpen] as? Int ?? 0) == 1
         )
     }
 
@@ -290,6 +322,20 @@ enum TimelineRecordMapper {
         return (key, PlaceIdentityMerge(toKey: toKey, updatedAt: updatedAt))
     }
 
+    static func place(from record: CKRecord) -> PlaceEntity? {
+        guard record.recordType == recordType(for: .place) else { return nil }
+        let id = rowID(fromRecordName: record.recordID.recordName, kind: .place)
+        guard !id.isEmpty else { return nil }
+        return PlaceEntity(
+            id: id,
+            name: record[Field.name] as? String,
+            coordinate: coordinate(record, Field.latitude, Field.longitude),
+            semanticType: record[Field.semanticType] as? String,
+            mergedInto: record[Field.mergedInto] as? String,
+            updatedAt: record[Field.updatedAt] as? Double ?? 0
+        )
+    }
+
     static func placeLocation(from record: CKRecord) -> (key: String, location: PlaceLocation)? {
         guard record.recordType == recordType(for: .placeLocation),
               let updatedAt = record[Field.updatedAt] as? Double,
@@ -304,12 +350,14 @@ enum TimelineRecordMapper {
         names: [String: PlaceIdentityName],
         merges: [String: PlaceIdentityMerge],
         locations: [String: PlaceLocation],
+        places: [String: PlaceEntity],
         visitSources: [String: RecordSource]
     ) {
         var rows = TimelineBatch(visits: [], activities: [], paths: [])
         var names: [String: PlaceIdentityName] = [:]
         var merges: [String: PlaceIdentityMerge] = [:]
         var locations: [String: PlaceLocation] = [:]
+        var places: [String: PlaceEntity] = [:]
         var visitSources: [String: RecordSource] = [:]
         for record in records {
             switch kind(forRecordType: record.recordType) {
@@ -322,6 +370,8 @@ enum TimelineRecordMapper {
                 if let activity = activity(from: record) { rows.activities.append(activity) }
             case .path:
                 if let path = path(from: record) { rows.paths.append(path) }
+            case .place:
+                if let parsed = place(from: record) { places[parsed.id] = parsed }
             case .placeName:
                 if let parsed = placeName(from: record) { names[parsed.key] = parsed.name }
             case .placeMerge:
@@ -332,7 +382,7 @@ enum TimelineRecordMapper {
                 continue
             }
         }
-        return (rows, names, merges, locations, visitSources)
+        return (rows, names, merges, locations, places, visitSources)
     }
 
     private static func coordinate(_ record: CKRecord, _ latField: String, _ lonField: String) -> CLLocationCoordinate2D? {

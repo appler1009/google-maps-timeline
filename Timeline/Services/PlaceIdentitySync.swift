@@ -6,6 +6,37 @@ struct PlaceIdentityName: Hashable, Sendable {
     var updatedAt: TimeInterval
 }
 
+/// A place as a thing in its own right: an identity, a name, somewhere it is.
+/// Stays point at one rather than carrying a copy of it.
+///
+/// It is also what syncs. A place used to cross the wire as three unrelated
+/// records — a name, a location, a merge — which could arrive in any order and
+/// in any combination, so the receiving device saw a place rename itself before
+/// it existed, or move before it was named. One record carries the whole place,
+/// and `updatedAt` settles which side wins.
+struct PlaceEntity: Hashable, Sendable {
+    var id: String
+    var name: String?
+    var coordinate: CLLocationCoordinate2D?
+    var semanticType: String?
+    /// The place this one was folded into, if it was.
+    var mergedInto: String?
+    /// When any of the above last changed, for last-write-wins.
+    var updatedAt: TimeInterval = 0
+
+    static func == (lhs: PlaceEntity, rhs: PlaceEntity) -> Bool {
+        lhs.id == rhs.id && lhs.name == rhs.name && lhs.semanticType == rhs.semanticType
+            && lhs.mergedInto == rhs.mergedInto && lhs.updatedAt == rhs.updatedAt
+            && lhs.coordinate?.latitude == rhs.coordinate?.latitude
+            && lhs.coordinate?.longitude == rhs.coordinate?.longitude
+    }
+
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(id)
+        hasher.combine(name)
+    }
+}
+
 struct PlaceLocation: Hashable, Sendable {
     var coordinate: CLLocationCoordinate2D
     var updatedAt: TimeInterval

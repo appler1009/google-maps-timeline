@@ -71,8 +71,11 @@ actor TimelineCloudSync {
         engine?.state.add(pendingDatabaseChanges: [.saveZone(CKRecordZone(zoneID: zoneID))])
         TimelineLog.info("cloud sync started")
 
-        // Anything queued before sync was turned on still needs sending.
+        // Anything queued before sync was turned on still needs sending, and
+        // anything the other device wrote while this one was closed needs
+        // fetching. Starting used to do only the first.
         await enqueuePendingChanges()
+        try? await fetchNow()
     }
 
     func stop() {
@@ -95,8 +98,20 @@ actor TimelineCloudSync {
         try await engine?.sendChanges()
     }
 
+    /// Ask for anything the other device has written.
+    ///
+    /// The engine fetches on its own when a CloudKit push arrives, but a push is
+    /// a best effort: it can be delayed, coalesced or dropped, and a device that
+    /// only ever listens for one can sit for hours showing yesterday's library
+    /// while happily sending its own changes up. Opening the app is the moment
+    /// someone expects to see the other device's work, so ask then.
     func fetchNow() async throws {
-        try await engine?.fetchChanges()
+        guard let engine else { return }
+        // Logged either side: a fetch that finds nothing reports nothing, which
+        // makes "never asked" and "asked, nothing there" look identical.
+        TimelineLog.info("cloud sync fetch requested")
+        try await engine.fetchChanges()
+        TimelineLog.info("cloud sync fetch finished")
     }
 
     /// Tell the engine which records have local edits waiting. The change log is
@@ -216,6 +231,10 @@ extension TimelineCloudSync: CKSyncEngineDelegate {
             let key = name(.placeLocation, placeKey)
             records[key] = TimelineRecordMapper.record(forPlaceKey: placeKey, location: value, in: zoneID, base: bases[key])
         }
+        for (placeID, place) in batch.places {
+            let key = name(.place, placeID)
+            records[key] = TimelineRecordMapper.record(for: place, in: zoneID, base: bases[key])
+        }
         return records
     }
 
@@ -235,6 +254,11 @@ extension TimelineCloudSync: CKSyncEngineDelegate {
             )
         }
         try? await database.applyRemote(parsed.rows, visitSources: parsed.visitSources)
+        // Whole places first: the three legacy kinds below are older news about
+        // the same thing, and each is guarded by its own timestamp anyway.
+        for (_, place) in parsed.places {
+            _ = try? await database.applyPlaceIfNewer(place)
+        }
         for (key, name) in parsed.names {
             _ = try? await database.applyPlaceNameIfNewer(
                 placeKey: key,

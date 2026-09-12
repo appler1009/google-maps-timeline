@@ -141,7 +141,7 @@ enum PlaceGuessRanker {
         places.compactMap { place -> (PlaceNameSuggestion, Double)? in
             guard place.id != placeID else { return nil }
             let distance = RoutePlanner.meters(coordinate, place.coordinate)
-            guard distance <= meters else { return nil }
+            guard distance <= reach(visitCount: place.visitCount, base: meters) else { return nil }
             let title = place.title.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !title.isEmpty, title != "Unnamed place", title != "Place" else { return nil }
             let plural = place.visitCount == 1 ? "" : "s"
@@ -165,6 +165,31 @@ enum PlaceGuessRanker {
             return $0.1 < $1.1
         }
         .map(\.0)
+    }
+
+    /// Would folding one place into another throw away the greater history?
+    ///
+    /// A merge names the survivor and discards the other place's identity. Doing
+    /// that to the place holding most of the visits is almost always a mis-tap:
+    /// seventy-nine stays at a supermarket went into an insurance office twelve
+    /// doors down because the two sat side by side in a suggestion list, and
+    /// until the unmerge was repaired there was no way back. Small places folding
+    /// into big ones is the ordinary case and stays silent.
+    static func foldsAwayTheLargerHistory(source: Int, target: Int) -> Bool {
+        source >= 10 && source >= target * 3
+    }
+
+    /// How far away a place can be and still be worth offering.
+    ///
+    /// A flat radius throws away the strongest evidence there is. Adding a stay
+    /// is centred on the middle of the day's movement, which on a day with any
+    /// driving in it is a point you were never at — so a music school visited
+    /// four hundred times fell outside the circle and was not offered at all,
+    /// while one-off places beside that meaningless midpoint were. Familiarity
+    /// earns reach: somewhere you went once has to be right here, somewhere you
+    /// go every week is worth offering across town.
+    static func reach(visitCount: Int, base: CLLocationDistance) -> CLLocationDistance {
+        base * min(8, (Double(max(visitCount, 1))).squareRoot())
     }
 
     static func distanceLabel(_ meters: Double) -> String {

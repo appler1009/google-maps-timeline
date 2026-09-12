@@ -283,7 +283,8 @@ final class PlaceGuessRankerTests: XCTestCase {
             places: [
                 (id: "a", title: "Continental Coffee", visitCount: 9, coordinate: offset(home, metersNorth: 30)),
                 (id: "b", title: "JJ Bean", visitCount: 2, coordinate: offset(home, metersNorth: 10)),
-                (id: "c", title: "Too Far", visitCount: 40, coordinate: offset(home, metersNorth: 4_000)),
+                // Unfamiliar and far: reach is earned by visits, and one buys none.
+                (id: "c", title: "Too Far", visitCount: 1, coordinate: offset(home, metersNorth: 4_000)),
             ],
             excluding: "self"
         )
@@ -353,6 +354,65 @@ final class ScriptedMotionSource: MotionSource {
     func emit(_ kind: MotionKind) {
         liveHandler?(MotionSample(start: Date(), kind: kind, confidence: 2))
     }
+
+    /// A place you go to constantly must be offered even when the guessed centre
+    /// is nowhere near it.
+    ///
+    /// Adding a stay centres on the middle of the day's movement, which on any
+    /// day with driving in it is a point you were never at. Under a flat radius
+    /// a music school visited four hundred times fell outside the circle and was
+    /// not offered at all, while one-off places beside that meaningless midpoint
+    /// were.
+    func testAFamiliarPlaceIsOfferedFromFurtherAway() {
+        let centre = CLLocationCoordinate2D(latitude: 49.2645, longitude: -123.2460)
+        // Roughly 8 km east — well outside the 1.5 km default.
+        let academy = CLLocationCoordinate2D(latitude: 49.2749, longitude: -123.1444)
+        let rows = PlaceGuessRanker.visitedRows(
+            near: centre,
+            places: [
+                ("academy", "Vancouver Academy of Music", 413, academy),
+                ("once", "Somewhere Once", 1, CLLocationCoordinate2D(latitude: 49.2650, longitude: -123.2450))
+            ],
+            excluding: ""
+        )
+        XCTAssertEqual(rows.first?.title, "Vancouver Academy of Music")
+        XCTAssertEqual(rows.count, 2, "the nearby one-off is still offered")
+    }
+
+    /// Reach is earned, not given: somewhere visited once still has to be close.
+    func testAPlaceVisitedOnceStaysLocal() {
+        let centre = CLLocationCoordinate2D(latitude: 49.2645, longitude: -123.2460)
+        let rows = PlaceGuessRanker.visitedRows(
+            near: centre,
+            places: [("once", "Somewhere Once", 1, CLLocationCoordinate2D(latitude: 49.2749, longitude: -123.1444))],
+            excluding: ""
+        )
+        XCTAssertTrue(rows.isEmpty)
+    }
+
+
+    /// Merging discards the other place. Ask first when the one being discarded
+    /// is the one holding the history — seventy-nine stays at a supermarket went
+    /// into an insurance office twelve doors down because the two sat side by
+    /// side in a suggestion list.
+    func testFoldingAwayTheLargerHistoryIsFlagged() {
+        XCTAssertTrue(PlaceGuessRanker.foldsAwayTheLargerHistory(source: 79, target: 12))
+    }
+
+    /// The ordinary direction — a place you have been to once turning out to be
+    /// somewhere you go weekly — stays silent.
+    func testFoldingASmallPlaceIntoABigOneIsSilent() {
+        XCTAssertFalse(PlaceGuessRanker.foldsAwayTheLargerHistory(source: 1, target: 413))
+        XCTAssertFalse(PlaceGuessRanker.foldsAwayTheLargerHistory(source: 12, target: 79))
+    }
+
+    /// Two places you have barely visited are not worth interrupting over, and
+    /// merging places of comparable weight is a judgement call either way.
+    func testSmallOrComparableMergesAreSilent() {
+        XCTAssertFalse(PlaceGuessRanker.foldsAwayTheLargerHistory(source: 4, target: 1))
+        XCTAssertFalse(PlaceGuessRanker.foldsAwayTheLargerHistory(source: 30, target: 20))
+    }
+
 }
 
 final class CaptureDatabaseTests: XCTestCase {
@@ -518,8 +578,10 @@ final class TimelineRecorderTests: XCTestCase {
         await recorder.handle(stop: stop(start: start, minutes: nil))
         let open = try await database.openStop()
         XCTAssertNotNil(open)
+        // Readable from the moment it opens, rather than only once it ends.
         let beforeDeparture = try await database.loadBatch()?.visits.first
-        XCTAssertNil(beforeDeparture)
+        XCTAssertEqual(beforeDeparture?.start, start)
+        XCTAssertEqual(beforeDeparture?.isOpen, true)
 
         // The departure arrives from a slightly different coordinate, as CLVisit
         // departures do — it must still close the same place, not open a second.
@@ -876,13 +938,14 @@ final class ChangeLogTests: XCTestCase {
         XCTAssertEqual(count, 2)
     }
 
-    func testRenamingAPlaceQueuesTheName() async throws {
+    /// A place syncs as one record, so editing any part of it queues the place.
+    func testRenamingAPlaceQueuesThePlace() async throws {
         let (db, url) = database()
         defer { try? FileManager.default.removeItem(at: url) }
 
         try await db.setPlaceName(placeKey: "cafe", name: "Continental Coffee")
         let pending = try await db.pendingChanges()
-        XCTAssertEqual(pending.map(\.kind), [.placeName])
+        XCTAssertEqual(pending.map(\.kind), [.place])
         XCTAssertEqual(pending[0].rowID, "cafe")
     }
 
@@ -916,7 +979,7 @@ final class ChangeLogTests: XCTestCase {
 
         try await db.mergePlace(from: "annex", into: "cafe", targetSemantic: nil)
         let kinds = Set(try await db.pendingChanges().map(\.kind))
-        XCTAssertTrue(kinds.contains(.placeMerge))
+        XCTAssertTrue(kinds.contains(.place))
     }
 
     func testAcknowledgingClearsTheQueue() async throws {
@@ -1004,7 +1067,7 @@ final class ChangeLogTests: XCTestCase {
         XCTAssertEqual(batch.visits.map(\.id), ["v1"])
         XCTAssertEqual(batch.activities.map(\.id), ["a1"])
         XCTAssertEqual(batch.paths.map(\.id), ["p1"])
-        XCTAssertEqual(batch.names["cafe"]?.name, "Continental Coffee")
+        XCTAssertEqual(batch.places["cafe"]?.name, "Continental Coffee")
     }
 
     func testBatchesDrainOldestFirst() async throws {
@@ -1051,16 +1114,14 @@ final class ChangeLogTests: XCTestCase {
         let (db, url) = database()
         defer { try? FileManager.default.removeItem(at: url) }
 
-        // Fixes, capture marks and the open stay are all device-local scaffolding;
-        // syncing them would be pure noise.
+        // Fixes and capture marks are device-local scaffolding; syncing them
+        // would be pure noise. The stay you are currently inside is not
+        // scaffolding — it is the only way the other device can know where you
+        // are — so it is deliberately not in this list.
         try await db.appendFixes([
             CapturedFix(coordinate: home, timestamp: Date(), horizontalAccuracy: 10, speed: 3)
         ])
         try await db.setCaptureMark(CaptureMark.motion, through: Date())
-        try await db.setOpenStop(
-            CapturedStop(coordinate: home, horizontalAccuracy: 50, start: Date(), end: nil),
-            placeKey: "cafe"
-        )
         let count = try await db.pendingChangeCount()
         XCTAssertEqual(count, 0)
     }
@@ -1233,6 +1294,74 @@ final class TimelineRecordMapperTests: XCTestCase {
         XCTAssertEqual(sorted.names["k"]?.name, "Home")
         XCTAssertTrue(sorted.merges.isEmpty)
     }
+
+    /// A place crosses the wire whole.
+    ///
+    /// It used to go as three unrelated records — a name, a location, a merge —
+    /// which could arrive in any order and in any combination, so the receiving
+    /// device could see a place rename itself before it existed, or move before
+    /// it was named. One record carries all of it.
+    func testPlaceRoundTrips() throws {
+        let place = PlaceEntity(
+            id: "ChIJ_school",
+            name: "Lord Byng Secondary School",
+            coordinate: home,
+            semanticType: "Searched Address",
+            mergedInto: nil,
+            updatedAt: origin.timeIntervalSince1970
+        )
+        let record = TimelineRecordMapper.record(for: place, in: zoneID)
+        XCTAssertEqual(record.recordType, "Place")
+        XCTAssertEqual(record.recordID.recordName, "place:ChIJ_school")
+
+        let parsed = try XCTUnwrap(TimelineRecordMapper.place(from: record))
+        XCTAssertEqual(parsed, place)
+    }
+
+    /// A merge is something the folded place knows about itself, so it travels
+    /// with it rather than as a record of its own.
+    func testAFoldedPlaceCarriesWhatItWasFoldedInto() throws {
+        let place = PlaceEntity(
+            id: "49.2641,-123.2250",
+            name: nil,
+            coordinate: nil,
+            semanticType: nil,
+            mergedInto: "ChIJ_school",
+            updatedAt: origin.timeIntervalSince1970
+        )
+        let parsed = try XCTUnwrap(
+            TimelineRecordMapper.place(from: TimelineRecordMapper.record(for: place, in: zoneID))
+        )
+        XCTAssertEqual(parsed.mergedInto, "ChIJ_school")
+        XCTAssertNil(parsed.name)
+        XCTAssertNil(parsed.coordinate)
+    }
+
+    /// Losing a name has to travel too, or the other device keeps showing one
+    /// that was deliberately cleared.
+    func testAClearedNameTravelsAsACleardField() throws {
+        var place = PlaceEntity(id: "cafe", name: "Continental Coffee", updatedAt: 1)
+        let record = TimelineRecordMapper.record(for: place, in: zoneID)
+        place.name = nil
+        place.updatedAt = 2
+        let cleared = TimelineRecordMapper.record(for: place, in: zoneID, base: record)
+        XCTAssertNil(cleared[TimelineRecordMapper.Field.name])
+        XCTAssertNil(try XCTUnwrap(TimelineRecordMapper.place(from: cleared)).name)
+    }
+
+    /// Records already in the cloud were written by the old build. They keep
+    /// being read, so nothing is stranded by the change.
+    func testLegacyPlaceRecordsAreStillUnderstood() throws {
+        let name = TimelineRecordMapper.record(
+            forPlaceKey: "cafe",
+            name: PlaceIdentityName(name: "Continental Coffee", updatedAt: 1),
+            in: zoneID
+        )
+        let parsed = TimelineRecordMapper.batch(from: [name])
+        XCTAssertEqual(parsed.names["cafe"]?.name, "Continental Coffee")
+        XCTAssertTrue(parsed.places.isEmpty)
+    }
+
 }
 
 final class RemoteApplyTests: XCTestCase {

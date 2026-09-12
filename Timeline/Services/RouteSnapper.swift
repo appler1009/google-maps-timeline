@@ -19,7 +19,8 @@ actor RouteSnapper {
 
     func cached(id: String, kind: TravelKind, points: [CLLocationCoordinate2D] = []) async -> [CLLocationCoordinate2D]? {
         let routeID = "\(id)|nt|\(kind.stored)"
-        if let saved = try? await database.pathRoute(id: routeID), saved.count >= 2 {
+        let anchor = Self.anchor(for: points)
+        if let saved = try? await database.pathRoute(id: routeID, anchor: anchor), saved.count >= 2 {
             return saved
         }
         guard points.count >= 2 else { return nil }
@@ -55,27 +56,28 @@ actor RouteSnapper {
             }
         }
         guard route.count >= 2 else { return nil }
-        try? await database.savePathRoute(id: routeID, points: route)
+        try? await database.savePathRoute(id: routeID, anchor: anchor, points: route)
         return route
     }
 
     func snap(id: String, points: [CLLocationCoordinate2D], kind: TravelKind, fresh: Bool = false) async -> RouteSnapOutcome {
         guard points.count >= 2 else { return RouteSnapOutcome(points: points, throttled: false) }
         let routeID = "\(id)|nt|\(kind.stored)"
-        let previous = try? await database.pathRoute(id: routeID)
+        let anchor = Self.anchor(for: points)
+        let previous = try? await database.pathRoute(id: routeID, anchor: anchor)
         if !fresh, let previous, previous.count >= 2 {
             return RouteSnapOutcome(points: previous, throttled: false)
         }
         guard let transport = kind.directionsType else {
             return RouteSnapOutcome(
-                points: await keepRicher(id: routeID, previous: previous, candidate: points),
+                points: await keepRicher(id: routeID, anchor: anchor, previous: previous, candidate: points),
                 throttled: false
             )
         }
         let waypoints = Self.sample(points, maxCount: 8, minMeters: 120)
         guard waypoints.count >= 2 else {
             return RouteSnapOutcome(
-                points: await keepRicher(id: routeID, previous: previous, candidate: points),
+                points: await keepRicher(id: routeID, anchor: anchor, previous: previous, candidate: points),
                 throttled: false
             )
         }
@@ -104,7 +106,7 @@ actor RouteSnapper {
         }
         let result = route.count >= 2 ? route : points
         return RouteSnapOutcome(
-            points: await keepRicher(id: routeID, previous: previous, candidate: result),
+            points: await keepRicher(id: routeID, anchor: anchor, previous: previous, candidate: result),
             throttled: throttled
         )
     }
@@ -158,14 +160,24 @@ actor RouteSnapper {
     /// Rate-limited MapKit responses are typically a 2-point straight line; those must not replace a real route.
     private func keepRicher(
         id: String,
+        anchor: String,
         previous: [CLLocationCoordinate2D]?,
         candidate: [CLLocationCoordinate2D]
     ) async -> [CLLocationCoordinate2D] {
         if let previous, previous.count >= 2, candidate.count <= previous.count {
             return previous
         }
-        try? await database.savePathRoute(id: id, points: candidate)
+        try? await database.savePathRoute(id: id, anchor: anchor, points: candidate)
         return candidate
+    }
+
+    /// What a route runs between. Rounded, so a metre of jitter is not a miss.
+    static func anchor(for points: [CLLocationCoordinate2D]) -> String {
+        guard let first = points.first, let last = points.last else { return "-" }
+        return String(
+            format: "%.4f,%.4f-%.4f,%.4f",
+            first.latitude, first.longitude, last.latitude, last.longitude
+        )
     }
 
     static func cacheKey(from start: CLLocationCoordinate2D, to end: CLLocationCoordinate2D, transport: MKDirectionsTransportType) -> String {

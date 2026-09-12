@@ -220,12 +220,18 @@ final class TimelineStoreTests: XCTestCase {
         while store.routesForDisplay.isEmpty, Date() < deadline {
             try await Task.sleep(nanoseconds: 20_000_000)
         }
+        // Unwrap rather than subscript: routing is asynchronous, so on a slow
+        // machine this is the one assertion that can legitimately fail — and
+        // subscripting an empty array turns that failure into a crash report.
         XCTAssertEqual(store.routesForDisplay.count, 1)
-        let points = store.routesForDisplay[0].points
+        let route = try XCTUnwrap(store.routesForDisplay.first, "routing did not finish within the deadline")
+        let points = route.points
         XCTAssertEqual(points.count, Landmark.eiffelToLouvreRoad.count)
-        XCTAssertEqual(points.first!.latitude, Landmark.eiffelTower.latitude, accuracy: 0.000001)
-        XCTAssertEqual(points.last!.longitude, Landmark.louvrePyramid.longitude, accuracy: 0.000001)
-        XCTAssertEqual(store.routesForDisplay[0].kind, .automobile)
+        let first = try XCTUnwrap(points.first)
+        let last = try XCTUnwrap(points.last)
+        XCTAssertEqual(first.latitude, Landmark.eiffelTower.latitude, accuracy: 0.000001)
+        XCTAssertEqual(last.longitude, Landmark.louvrePyramid.longitude, accuracy: 0.000001)
+        XCTAssertEqual(route.kind, .automobile)
         XCTAssertEqual(store.focusRegion.center.latitude, day.region.center.latitude, accuracy: 0.0001)
     }
 }

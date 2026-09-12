@@ -987,7 +987,11 @@ struct SelectionCard: View {
                 legendRow(
                     time: visit.start.formatted(date: .omitted, time: .shortened),
                     title: placeTitle(visit),
-                    duration: Self.duration(group.totalDuration),
+                    // A stay still going on has no end to report, so say how
+                    // long it has been rather than implying it is over.
+                    duration: group.visits.contains(where: \.isOpen)
+                        ? "\(Self.duration(group.totalDuration)) · now"
+                        : Self.duration(group.totalDuration),
                     highlighted: group.visits.contains {
                         $0.id == store.hoveredVisitID || $0.id == store.selectedVisitID
                     },
@@ -1010,7 +1014,14 @@ struct SelectionCard: View {
             .accessibilityIdentifier("legend-visit-\(visit.id)")
             .accessibilityHint("Opens the place for this stay")
             .contextMenu {
-                if visit.isDerived {
+                if group.visits.contains(where: \.isOpen) {
+                    // Still happening, and a real row, so it can be put right
+                    // without waiting for it to end.
+                    Text("Still here — ends when you leave")
+                    Button("Move to another place…") {
+                        movingVisit = visit
+                    }
+                } else if visit.isDerived {
                     // Nothing to move: this one was inferred from the absence of
                     // travel and has no row behind it.
                     Text("Filled in from the gap")
