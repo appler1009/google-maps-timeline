@@ -290,7 +290,15 @@ actor TimelineDatabase {
         guard let db, !id.isEmpty, !placeKey.isEmpty else { return }
         var statement: OpaquePointer?
         defer { sqlite3_finalize(statement) }
-        guard sqlite3_prepare_v2(db, "UPDATE visits SET place_key = ? WHERE id = ?", -1, &statement, nil) == SQLITE_OK else {
+        // place_id is what reads resolve through; place_key is kept in step only
+        // so an older build reading the same file still sees the move.
+        guard sqlite3_prepare_v2(
+            db,
+            "UPDATE visits SET place_id = ?1, place_key = ?1 WHERE id = ?2",
+            -1,
+            &statement,
+            nil
+        ) == SQLITE_OK else {
             throw TimelineDatabaseError.execute(errmsg())
         }
         sqlite3_bind_text(statement, 1, placeKey, -1, Self.transient)
@@ -1607,7 +1615,7 @@ actor TimelineDatabase {
         defer { sqlite3_finalize(update) }
         guard sqlite3_prepare_v2(
             db,
-            "UPDATE visits SET place_key = ? WHERE id = ?",
+            "UPDATE visits SET place_id = ?1, place_key = ?1 WHERE id = ?2",
             -1,
             &update,
             nil
@@ -1819,8 +1827,8 @@ actor TimelineDatabase {
         var statement: OpaquePointer?
         defer { sqlite3_finalize(statement) }
         let sql = """
-            INSERT INTO visits (id, start, end, lat, lon, place_key, semantic_type, source)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO visits (id, start, end, lat, lon, place_key, semantic_type, source, place_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
                 start = excluded.start,
                 end = excluded.end,
@@ -1863,11 +1871,58 @@ actor TimelineDatabase {
                 sqlite3_bind_null(statement, 7)
             }
             sqlite3_bind_text(statement, 8, source.rawValue, -1, Self.transient)
+            // Every stay points at a place from the moment it is written. Leaving
+            // that to the migration meant a stay recorded in the background had
+            // no place until the app was next opened.
+            sqlite3_bind_text(statement, 9, visit.placeKey, -1, Self.transient)
             guard sqlite3_step(statement) == SQLITE_DONE else {
                 throw TimelineDatabaseError.execute(errmsg())
             }
+            try ensurePlaceRow(
+                id: visit.placeKey,
+                coordinate: visit.coordinate,
+                semanticType: visit.semanticType,
+                db: db
+            )
             try logChange(.visit, visit.id)
         }
+    }
+
+    /// Create the place a stay points at, if this is the first time we have seen
+    /// it. Never overwrites what is already known about it — a recorded fix is
+    /// weaker evidence than a name or a correction the user has given.
+    private func ensurePlaceRow(
+        id: String,
+        coordinate: CLLocationCoordinate2D?,
+        semanticType: String?,
+        db: OpaquePointer
+    ) throws {
+        guard !id.isEmpty else { return }
+        var statement: OpaquePointer?
+        defer { sqlite3_finalize(statement) }
+        guard sqlite3_prepare_v2(
+            db,
+            """
+            INSERT INTO places (id, name, lat, lon, semantic_type, updated_at)
+            VALUES (?, NULL, ?, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+                lat = COALESCE(places.lat, excluded.lat),
+                lon = COALESCE(places.lon, excluded.lon),
+                semantic_type = COALESCE(places.semantic_type, excluded.semantic_type)
+            """,
+            -1,
+            &statement,
+            nil
+        ) == SQLITE_OK else { return }
+        sqlite3_bind_text(statement, 1, id, -1, Self.transient)
+        bindCoord(statement, index: 2, coordinate: coordinate)
+        if let semanticType, !semanticType.isEmpty, !["Unknown", "unknown"].contains(semanticType) {
+            sqlite3_bind_text(statement, 4, semanticType, -1, Self.transient)
+        } else {
+            sqlite3_bind_null(statement, 4)
+        }
+        sqlite3_bind_double(statement, 5, Date().timeIntervalSince1970)
+        sqlite3_step(statement)
     }
 
     private func upsertActivities(_ activities: [TimelineActivity], db: OpaquePointer, source: RecordSource) throws {

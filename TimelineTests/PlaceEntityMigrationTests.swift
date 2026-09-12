@@ -156,14 +156,17 @@ final class PlaceEntityMigrationTests: XCTestCase {
         try await db.setPlaceName(placeKey: "ChIJhome", name: "Home")
         try await db.mergePlace(from: "annex", into: "ChIJhome", targetSemantic: "Home")
 
-        let result = try await db.migrateToPlaceEntities()
-        XCTAssertEqual(result.visitsLinked, 3, "every stay should point at a place")
-        XCTAssertEqual(result.placesCreated, 1, "the annex folded into home")
+        // Stays written by this build already point at a place, so the migration
+        // has nothing left to link — which is the point of it being idempotent.
+        let unlinked = try await db.unlinkedVisitCount()
+        XCTAssertEqual(unlinked, 0, "every stay should point at a place")
 
-        // Running again must do nothing, so it can sit on the launch path.
-        let second = try await db.migrateToPlaceEntities()
-        XCTAssertEqual(second.visitsLinked, 0)
-        XCTAssertEqual(second.placesCreated, 0)
+        let result = try await db.migrateToPlaceEntities()
+        XCTAssertEqual(result.visitsLinked, 0, "nothing left over for it to do")
+
+        // And the merge still resolves: the annex reads as home.
+        let visits = try await db.loadBatch()?.visits ?? []
+        XCTAssertEqual(Set(visits.map(\.placeKey)), ["ChIJhome"], "the annex folded into home")
     }
 }
 
@@ -257,5 +260,81 @@ final class DuplicateStayCollapseTests: XCTestCase {
 
         let queued = try await db.pendingChanges()
         XCTAssertEqual(queued.map(\.operation), [.delete])
+    }
+}
+
+/// A stay written now must point at a place immediately. Leaving that to the
+/// migration meant a stay recorded in the background had no place until the app
+/// was next opened — and the recorder runs precisely when the app is not.
+final class NewStayLinkingTests: XCTestCase {
+    private let cafe = CLLocationCoordinate2D(latitude: 49.2765, longitude: -123.0680)
+    private let start = Date(timeIntervalSince1970: 1_800_000_000)
+
+    private func database() -> (TimelineDatabase, URL) {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("newlink-\(UUID().uuidString).sqlite")
+        return (TimelineDatabase(fileURL: url), url)
+    }
+
+    private func stay(_ id: String, key: String, semantic: String? = nil) -> TimelineVisit {
+        TimelineVisit(
+            id: id,
+            start: start,
+            end: start.addingTimeInterval(1_800),
+            coordinate: cafe,
+            semanticType: semantic,
+            placeKey: key
+        )
+    }
+
+    func testARecordedStayPointsAtAPlaceStraightAway() async throws {
+        let (db, url) = database()
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        try await db.record(batch: TimelineBatch(visits: [stay("v1", key: "cafe")], activities: [], paths: []))
+
+        let unlinked = try await db.unlinkedVisitCount()
+        XCTAssertEqual(unlinked, 0, "no waiting for the next launch")
+
+        let places = try await db.loadPlaces()
+        XCTAssertNotNil(places["cafe"], "and the place it points at exists")
+        XCTAssertEqual(places["cafe"]?.coordinate?.latitude ?? 0, cafe.latitude, accuracy: 0.000_001)
+    }
+
+    func testAnImportedStayLinksToo() async throws {
+        let (db, url) = database()
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        try await db.upsert(
+            batch: TimelineBatch(visits: [stay("g1", key: "ChIJhome", semantic: "Home")], activities: [], paths: []),
+            sourceName: "Timeline.json"
+        )
+        let unlinked = try await db.unlinkedVisitCount()
+        XCTAssertEqual(unlinked, 0)
+        let places = try await db.loadPlaces()
+        XCTAssertEqual(places["ChIJhome"]?.semanticType, "Home")
+    }
+
+    func testWritingAStayNeverOverwritesWhatIsKnownAboutThePlace() async throws {
+        let (db, url) = database()
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        try await db.record(batch: TimelineBatch(visits: [stay("v1", key: "cafe")], activities: [], paths: []))
+        try await db.setPlaceName(placeKey: "cafe", name: "Continental Coffee")
+        let corrected = CLLocationCoordinate2D(latitude: 49.2700, longitude: -123.0700)
+        try await db.setPlaceLocation(placeKey: "cafe", coordinate: corrected)
+
+        // A later stay at the same place arrives with a raw fix. It must not undo
+        // the name or the correction.
+        try await db.record(batch: TimelineBatch(visits: [stay("v2", key: "cafe")], activities: [], paths: []))
+
+        let places = try await db.loadPlaces()
+        XCTAssertEqual(places["cafe"]?.name, "Continental Coffee")
+        XCTAssertEqual(
+            places["cafe"]?.coordinate?.latitude ?? 0,
+            corrected.latitude,
+            accuracy: 0.000_001,
+            "a raw fix is weaker evidence than a correction"
+        )
     }
 }
