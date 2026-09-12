@@ -173,3 +173,90 @@ final class PlaceLocationTests: XCTestCase {
         _ = zoneID
     }
 }
+
+/// Review follow-ups: a correction must survive the place being merged away, and
+/// every place must be able to receive one.
+final class PlaceLocationMergeTests: XCTestCase {
+    private let assumed = CLLocationCoordinate2D(latitude: 49.26636, longitude: -123.24252)
+    private let actual = CLLocationCoordinate2D(latitude: 49.26490, longitude: -123.23900)
+    private let origin = Date(timeIntervalSince1970: 1_800_000_000)
+
+    private func database() -> (TimelineDatabase, URL) {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("locmerge-\(UUID().uuidString).sqlite")
+        return (TimelineDatabase(fileURL: url), url)
+    }
+
+    private func visit(_ id: String, place: String) -> TimelineVisit {
+        TimelineVisit(
+            id: id,
+            start: origin,
+            end: origin.addingTimeInterval(1_800),
+            coordinate: assumed,
+            semanticType: nil,
+            placeKey: place
+        )
+    }
+
+    func testACorrectionFollowsThePlaceIntoAMerge() async throws {
+        let (db, url) = database()
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        try await db.upsert(
+            batch: TimelineBatch(visits: [visit("v1", place: "annex")], activities: [], paths: []),
+            sourceName: "Timeline.json"
+        )
+        // Correct the place, then fold it into another one.
+        try await db.setPlaceLocation(placeKey: "annex", coordinate: actual)
+        try await db.mergePlace(from: "annex", into: "main", targetSemantic: nil)
+
+        let visits = try await db.loadBatch()?.visits ?? []
+        XCTAssertEqual(visits.first?.placeKey, "main")
+        XCTAssertEqual(
+            visits.first?.coordinate?.latitude ?? 0,
+            actual.latitude,
+            accuracy: 0.000_001,
+            "the correction must not be stranded on a key nothing resolves to"
+        )
+    }
+
+    func testACorrectionOnTheSurvivingPlaceWins() {
+        let older = PlaceLocation(coordinate: assumed, updatedAt: 100)
+        let newer = PlaceLocation(coordinate: actual, updatedAt: 200)
+        let resolved = TimelineDatabase.resolved(
+            ["annex": older, "main": newer],
+            merges: ["annex": "main"]
+        )
+        XCTAssertEqual(
+            resolved["main"]?.coordinate.latitude ?? 0,
+            actual.latitude,
+            accuracy: 0.000_001,
+            "a correction made directly on the surviving place outranks an inherited one"
+        )
+    }
+
+    func testAnInheritedCorrectionFillsAnEmptyTarget() {
+        let carried = PlaceLocation(coordinate: actual, updatedAt: 100)
+        let resolved = TimelineDatabase.resolved(["annex": carried], merges: ["annex": "main"])
+        XCTAssertEqual(resolved["main"]?.coordinate.latitude ?? 0, actual.latitude, accuracy: 0.000_001)
+        XCTAssertNotNil(resolved["annex"], "the original key keeps its own correction too")
+    }
+
+    @MainActor
+    func testEveryPlaceOffersItsMenu() {
+        // Home and Work cannot be renamed, which used to hide the menu — and with
+        // it the only way to correct their location.
+        let store = TimelineStore.uiTesting()
+        let home = PlaceRecord(
+            id: "home",
+            coordinate: assumed,
+            semanticType: "Home",
+            visitCount: 9,
+            firstVisit: origin,
+            lastVisit: origin,
+            recentVisits: []
+        )
+        XCTAssertFalse(store.canRename(home), "precondition: Home is not renameable")
+        XCTAssertTrue(store.showsPlaceActions(home), "but it still needs a menu to be relocatable")
+    }
+}
