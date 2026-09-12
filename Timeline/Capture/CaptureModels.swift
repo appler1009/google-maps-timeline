@@ -6,6 +6,10 @@ import CoreLocation
 enum RecordSource: String {
     case google
     case device
+    /// Added by hand. Never shadowed by reconciliation and never overwritten by a
+    /// recording: if someone took the trouble to say they were somewhere, that
+    /// beats anything inferred.
+    case manual
 }
 
 /// How much the recorder is allowed to spend. Stored as a raw string so the
@@ -60,8 +64,13 @@ enum TrackingMode: String, CaseIterable, Identifiable {
 struct CapturedStop: Equatable {
     let coordinate: CLLocationCoordinate2D
     let horizontalAccuracy: CLLocationAccuracy
-    let start: Date
+    var start: Date
     var end: Date?
+    /// False when CoreLocation reported the arrival as `.distantPast` — you were
+    /// already there before monitoring began, so it knows you left but not when
+    /// you got there. `start` is then only a placeholder for the repair to
+    /// replace, never a time to write down.
+    var arrivalIsKnown = true
 
     var duration: TimeInterval {
         guard let end else { return 0 }

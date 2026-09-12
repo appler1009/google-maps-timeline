@@ -87,14 +87,14 @@ actor TimelineDatabase {
 
     /// What the phone recorded. No `imports` row: this is not an import, and the
     /// sidebar's source name should keep naming the last export the user opened.
-    func record(batch: TimelineBatch) throws {
+    func record(batch: TimelineBatch, source: RecordSource = .device) throws {
         guard let db else { throw TimelineDatabaseError.open }
         guard !batch.visits.isEmpty || !batch.activities.isEmpty || !batch.paths.isEmpty else { return }
         try exec("BEGIN IMMEDIATE")
         do {
-            try upsertVisits(batch.visits, db: db, source: .device)
-            try upsertActivities(batch.activities, db: db, source: .device)
-            try upsertPaths(batch.paths, db: db, source: .device)
+            try upsertVisits(batch.visits, db: db, source: source)
+            try upsertActivities(batch.activities, db: db, source: source)
+            try upsertPaths(batch.paths, db: db, source: source)
             try exec("COMMIT")
         } catch {
             sqlite3_exec(db, "ROLLBACK", nil, nil, nil)
@@ -178,8 +178,124 @@ actor TimelineDatabase {
         return try scalar("SELECT COUNT(*) FROM fixes WHERE t >= \(date.timeIntervalSince1970)")
     }
 
+    /// Which source each visit came from, for the rows about to be sent. The
+    /// source is a property of the row, not of the device sending it — a stay
+    /// added by hand stays manual wherever it lands.
+    func visitSources(ids: [String]) throws -> [String: RecordSource] {
+        guard let db, !ids.isEmpty else { return [:] }
+        var statement: OpaquePointer?
+        defer { sqlite3_finalize(statement) }
+        guard sqlite3_prepare_v2(db, "SELECT id, source FROM visits", -1, &statement, nil) == SQLITE_OK else {
+            return [:]
+        }
+        let wanted = Set(ids)
+        var found: [String: RecordSource] = [:]
+        while sqlite3_step(statement) == SQLITE_ROW {
+            guard let id = text(statement, 0), wanted.contains(id) else { continue }
+            found[id] = RecordSource(rawValue: text(statement, 1) ?? "") ?? .device
+        }
+        return found
+    }
+
     func shadowedVisitCount() throws -> Int {
         try scalar("SELECT COUNT(*) FROM visits WHERE shadowed = 1")
+    }
+
+    /// Remove stays that end before they start. Such a row is never legitimate —
+    /// it came from an arrival that was guessed rather than observed — and it
+    /// sorts into the wrong part of the day, making everything around it read as
+    /// nonsense.
+    ///
+    /// The deletion is logged so it reaches the other devices too. Deleting only
+    /// locally would leave the bad row on the server to be fetched straight back.
+    @discardableResult
+    func purgeInvalidVisits() throws -> Int {
+        guard let db else { return 0 }
+        var statement: OpaquePointer?
+        defer { sqlite3_finalize(statement) }
+        guard sqlite3_prepare_v2(db, "SELECT id FROM visits WHERE end <= start", -1, &statement, nil) == SQLITE_OK else {
+            return 0
+        }
+        var ids: [String] = []
+        while sqlite3_step(statement) == SQLITE_ROW {
+            if let id = text(statement, 0) { ids.append(id) }
+        }
+        guard !ids.isEmpty else { return 0 }
+
+        try exec("BEGIN IMMEDIATE")
+        do {
+            for id in ids {
+                try exec("DELETE FROM visits WHERE id = \(quote(id))")
+                try logChange(.visit, id, .delete)
+            }
+            try exec("COMMIT")
+        } catch {
+            sqlite3_exec(db, "ROLLBACK", nil, nil, nil)
+            throw error
+        }
+        return ids.count
+    }
+
+    /// Collapse a stay that was imported more than once.
+    ///
+    /// A visit id hashes the start *and* the end, so an export taken while a stay
+    /// was still running mints a new row every time the end grows — the same
+    /// evening at home arriving as three overlapping rows with three ids. Keep the
+    /// longest and drop the rest, within one source: deciding between sources is
+    /// reconciliation's job, not this.
+    @discardableResult
+    func collapseDuplicateVisits() throws -> Int {
+        guard let db else { return 0 }
+        var statement: OpaquePointer?
+        defer { sqlite3_finalize(statement) }
+        let sql = """
+            SELECT id FROM visits WHERE id NOT IN (
+                SELECT id FROM visits v WHERE end = (
+                    SELECT MAX(end) FROM visits w
+                    WHERE w.start = v.start AND w.place_key = v.place_key AND w.source = v.source
+                )
+                GROUP BY start, place_key, source
+            )
+            """
+        guard sqlite3_prepare_v2(db, sql, -1, &statement, nil) == SQLITE_OK else { return 0 }
+        var ids: [String] = []
+        while sqlite3_step(statement) == SQLITE_ROW {
+            if let id = text(statement, 0) { ids.append(id) }
+        }
+        guard !ids.isEmpty else { return 0 }
+
+        try exec("BEGIN IMMEDIATE")
+        do {
+            for id in ids {
+                try exec("DELETE FROM visits WHERE id = \(quote(id))")
+                try logChange(.visit, id, .delete)
+            }
+            try exec("COMMIT")
+        } catch {
+            sqlite3_exec(db, "ROLLBACK", nil, nil, nil)
+            throw error
+        }
+        return ids.count
+    }
+
+    /// Re-attach one stay to a different place.
+    ///
+    /// Deliberately not a rename and not a merge: renaming would relabel every
+    /// other stay at that place, and merging would fold the two places together
+    /// for good. This is for the stay that simply landed on the wrong neighbour.
+    func moveVisit(id: String, toPlaceKey placeKey: String) throws {
+        guard let db, !id.isEmpty, !placeKey.isEmpty else { return }
+        var statement: OpaquePointer?
+        defer { sqlite3_finalize(statement) }
+        guard sqlite3_prepare_v2(db, "UPDATE visits SET place_key = ? WHERE id = ?", -1, &statement, nil) == SQLITE_OK else {
+            throw TimelineDatabaseError.execute(errmsg())
+        }
+        sqlite3_bind_text(statement, 1, placeKey, -1, Self.transient)
+        sqlite3_bind_text(statement, 2, id, -1, Self.transient)
+        guard sqlite3_step(statement) == SQLITE_DONE else {
+            throw TimelineDatabaseError.execute(errmsg())
+        }
+        try logChange(.visit, id)
     }
 
     /// Every place we could snap a new stay onto, with how often it was visited
@@ -351,6 +467,7 @@ actor TimelineDatabase {
         let visitIDs = ids(.visit)
         if !visitIDs.isEmpty {
             batch.visits = try loadVisits().filter { visitIDs.contains($0.id) }
+            batch.visitSources = try visitSources(ids: Array(visitIDs))
         }
         let activityIDs = ids(.activity)
         if !activityIDs.isEmpty {
@@ -528,14 +645,19 @@ actor TimelineDatabase {
 
     /// Rows that arrived from another device. Written exactly like local rows but
     /// without queueing themselves to be sent straight back.
-    func applyRemote(_ batch: TimelineBatch) throws {
+    func applyRemote(_ batch: TimelineBatch, visitSources: [String: RecordSource] = [:]) throws {
         guard let db else { throw TimelineDatabaseError.open }
         guard !batch.visits.isEmpty || !batch.activities.isEmpty || !batch.paths.isEmpty else { return }
         try exec("BEGIN IMMEDIATE")
         do {
             try applyingRemotely {
-                // Remote rows keep whatever source the sending device recorded.
-                try upsertVisits(batch.visits, db: db, source: .device)
+                // A row keeps the source it was written with. Forcing `.device`
+                // here stripped a hand-added stay of the protection that stops
+                // reconciliation shadowing it.
+                let grouped = Dictionary(grouping: batch.visits) { visitSources[$0.id] ?? .device }
+                for (source, visits) in grouped {
+                    try upsertVisits(visits, db: db, source: source)
+                }
                 try upsertActivities(batch.activities, db: db, source: .device)
                 try upsertPaths(batch.paths, db: db, source: .device)
             }
@@ -1207,6 +1329,12 @@ actor TimelineDatabase {
                          AND excluded.semantic_type NOT IN ('', 'Unknown', 'unknown')
                     THEN excluded.semantic_type
                     ELSE visits.semantic_type
+                END,
+                -- Hand-added wins from either side: a later recording must not
+                -- quietly demote a stay someone entered themselves.
+                source = CASE
+                    WHEN excluded.source = 'manual' OR visits.source = 'manual' THEN 'manual'
+                    ELSE excluded.source
                 END
             """
         guard sqlite3_prepare_v2(db, sql, -1, &statement, nil) == SQLITE_OK else {

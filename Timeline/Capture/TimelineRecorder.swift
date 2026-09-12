@@ -185,14 +185,44 @@ final class TimelineRecorder {
             return
         }
 
-        guard let visit = PlaceClusterer.visit(for: stop, placeKey: placeKey) else { return }
+        // CoreLocation can report a stay it only half saw. Repair it from what we
+        // know before writing anything, and refuse it if it still cannot be placed.
+        let departure = stop.end ?? now()
+        let dayStart = Calendar.current.startOfDay(for: departure)
+        let fixes = (try? await database.fixes(from: dayStart, to: departure)) ?? []
+        // A stay begins where the journey to it ended, and Core Motion knows that
+        // even when location was not permitted yet.
+        let recentTrips = (try? await database.activities(
+            from: departure.addingTimeInterval(-StopRepair.longestInferredStay),
+            to: departure
+        )) ?? []
+        let previousTripEnd = recentTrips.map(\.end).filter { $0 <= departure }.max()
+        guard let usable = StopRepair.repaired(
+            stop,
+            openStart: known?.stop.start,
+            fixes: fixes,
+            previousTripEnd: previousTripEnd
+        ) else {
+            TimelineLog.info(
+                "stay discarded",
+                ["placeKey": placeKey, "reason": "no usable arrival time"]
+            )
+            try? await database.clearOpenStop()
+            return
+        }
+        guard let visit = PlaceClusterer.visit(for: usable, placeKey: placeKey) else { return }
         do {
             try await database.record(batch: TimelineBatch(visits: [visit], activities: [], paths: []))
             try? await database.clearOpenStop()
             recordedVisitCount += 1
             TimelineLog.info(
                 "stay recorded",
-                ["placeKey": placeKey, "minutes": "\(Int(stop.duration / 60))", "new": "\(match.isNew)"]
+                [
+                    "placeKey": placeKey,
+                    "minutes": "\(Int(usable.duration / 60))",
+                    "new": "\(match.isNew)",
+                    "arrivalInferred": "\(!stop.arrivalIsKnown)",
+                ]
             )
         } catch {
             TimelineLog.error("stay write failed", ["error": error.localizedDescription])
@@ -200,7 +230,7 @@ final class TimelineRecorder {
         }
         NotificationCenter.default.post(name: .timelineLibraryChanged, object: nil)
 
-        await considerNotifying(stop: stop, match: match, anchors: anchors)
+        await considerNotifying(stop: usable, match: match, anchors: anchors)
     }
 
     private func considerNotifying(

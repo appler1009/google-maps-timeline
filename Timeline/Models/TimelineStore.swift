@@ -383,6 +383,14 @@ final class TimelineStore {
             if isLoading { return }
             await refreshPlaceNames()
             await pullPlaceIdentityFromCloud()
+            // A stay that ends before it starts is never legitimate, and one
+            // already written would otherwise keep coming back from the server.
+            if let purged = try? await database.purgeInvalidVisits(), purged > 0 {
+                TimelineLog.info("invalid stays removed", ["count": "\(purged)"])
+            }
+            if let collapsed = try? await database.collapseDuplicateVisits(), collapsed > 0 {
+                TimelineLog.info("duplicate stays collapsed", ["count": "\(collapsed)"])
+            }
             if let batch = try? await database.loadBatch() {
                 if isLoading { return }
                 let name = (try? await database.latestSourceName()) ?? "Library"
@@ -508,6 +516,100 @@ final class TimelineStore {
             if let keptPlace, placesByID[keptPlace] != nil {
                 selectedPlaceID = keptPlace
             }
+        }
+    }
+
+    /// Suggest when a stay at `coordinate` happened, from the movement recorded
+    /// on `day`. The school run is the case: a two-minute stop CLVisit will never
+    /// report, inside a drive that was recorded.
+    func suggestedTiming(
+        for coordinate: CLLocationCoordinate2D,
+        on day: Date
+    ) async -> VisitTimingGuesser.Guess {
+        let calendar = Calendar.current
+        let dayStart = calendar.startOfDay(for: day)
+        let dayEnd = calendar.date(byAdding: .day, value: 1, to: dayStart) ?? dayStart.addingTimeInterval(86_400)
+        let fixes = (try? await database.fixes(from: dayStart, to: dayEnd)) ?? []
+        let midpoint = VisitTimingGuesser.largestGapMidpoint(
+            between: daysByID[dayStart]?.visits ?? [],
+            on: dayStart,
+            calendar: calendar
+        )
+        return VisitTimingGuesser.guess(
+            placeCoordinate: coordinate,
+            fixes: fixes,
+            fallbackMidpoint: midpoint
+        )
+    }
+
+    /// Record a stay the user added by hand.
+    ///
+    /// Written as `manual`, which reconciliation never shadows: a stay someone
+    /// took the trouble to enter outranks anything inferred or imported.
+    func addVisit(
+        name: String,
+        coordinate: CLLocationCoordinate2D,
+        start: Date,
+        end: Date,
+        mergingInto targetPlaceID: String? = nil
+    ) {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let placeKey = targetPlaceID ?? Geo.placeKey(id: nil, coordinate: coordinate)
+        let visit = TimelineVisit(
+            id: Geo.segmentID("mv", Geo.millis(start), placeKey),
+            start: start,
+            end: max(end, start.addingTimeInterval(60)),
+            coordinate: coordinate,
+            semanticType: nil,
+            placeKey: placeKey
+        )
+        isLoading = true
+        Task {
+            try? await database.record(
+                batch: TimelineBatch(visits: [visit], activities: [], paths: []),
+                source: .manual
+            )
+            if !trimmed.isEmpty, targetPlaceID == nil {
+                try? await database.setPlaceName(placeKey: placeKey, name: trimmed)
+                await pushPlaceIdentityToCloud()
+            }
+            await refreshPlaceIdentity()
+            TimelineLog.info(
+                "visit added by hand",
+                ["placeKey": placeKey, "minutes": "\(Int(visit.duration / 60))"]
+            )
+            isLoading = false
+            refreshFromLibrary()
+        }
+    }
+
+    /// Move one stay to a different place, leaving every other stay where it is.
+    func moveVisit(
+        _ visitID: String,
+        toPlaceNamed name: String,
+        coordinate: CLLocationCoordinate2D?,
+        existingPlaceID: String?
+    ) {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let placeKey: String
+        if let existingPlaceID {
+            placeKey = existingPlaceID
+        } else if let coordinate {
+            placeKey = Geo.placeKey(id: nil, coordinate: coordinate)
+        } else {
+            return
+        }
+        isLoading = true
+        Task {
+            try? await database.moveVisit(id: visitID, toPlaceKey: placeKey)
+            if existingPlaceID == nil, !trimmed.isEmpty {
+                try? await database.setPlaceName(placeKey: placeKey, name: trimmed)
+                await pushPlaceIdentityToCloud()
+            }
+            await refreshPlaceIdentity()
+            TimelineLog.info("stay moved", ["visit": visitID, "placeKey": placeKey])
+            isLoading = false
+            refreshFromLibrary()
         }
     }
 

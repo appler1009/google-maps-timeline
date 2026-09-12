@@ -65,6 +65,9 @@ struct TimelineVisit: Identifiable {
     let coordinate: CLLocationCoordinate2D?
     let semanticType: String?
     let placeKey: String
+    /// Inferred at assembly from the absence of travel, not stored. There is no
+    /// row behind it, so it cannot be edited or moved.
+    var isDerived = false
 
     var duration: TimeInterval { end.timeIntervalSince(start) }
 
@@ -76,7 +79,8 @@ struct TimelineVisit: Identifiable {
             end: min(end, dayEnd),
             coordinate: coordinate,
             semanticType: semanticType ?? self.semanticType,
-            placeKey: placeKey
+            placeKey: placeKey,
+            isDerived: isDerived
         )
     }
 }

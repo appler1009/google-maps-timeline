@@ -42,9 +42,22 @@ enum TimelineParser {
         return batch
     }
 
-    static func assemble(_ batch: TimelineBatch, sourceName: String) -> ParsedTimeline {
+    static func assemble(_ batch: TimelineBatch, sourceName: String, now: Date = Date()) -> ParsedTimeline {
         let calendar = Calendar.current
         var daysMap: [Date: DayBucket] = [:]
+
+        // Derived, not stored: if the last thing known is that you were at home
+        // and nothing recorded you travelling since, you were still at home. A
+        // later import covering the gap simply makes it disappear.
+        let batch = TimelineBatch(
+            visits: batch.visits + StayGapFiller.fill(
+                visits: batch.visits,
+                trips: batch.activities,
+                now: now
+            ),
+            activities: batch.activities,
+            paths: batch.paths
+        )
 
         func dayKey(_ date: Date) -> Date {
             calendar.startOfDay(for: date)

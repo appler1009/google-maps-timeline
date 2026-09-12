@@ -101,9 +101,12 @@ final class DeviceLocationSource: NSObject, StopSource, CLLocationManagerDelegat
 
     func locationManager(_ manager: CLLocationManager, didVisit visit: CLVisit) {
         guard CLLocationCoordinate2DIsValid(visit.coordinate) else { return }
-        // A departure in the distant past means "still here"; CoreLocation uses
-        // .distantFuture / .distantPast as open ends.
-        let arrival = visit.arrivalDate == .distantPast ? Date() : visit.arrivalDate
+        // CoreLocation uses .distantPast / .distantFuture for the ends it does not
+        // know. A .distantPast arrival means the stay began before monitoring did
+        // — common right after Always is granted. Substituting "now" for it wrote
+        // stays that ended before they started.
+        let arrivalIsKnown = visit.arrivalDate != .distantPast
+        let arrival = arrivalIsKnown ? visit.arrivalDate : (visit.departureDate == .distantFuture ? Date() : visit.departureDate)
         let departure = visit.departureDate == .distantFuture ? nil : visit.departureDate
         // Arriving somewhere ends the trip: stop burning the radio even if Core
         // Motion has not admitted we are stationary yet.
@@ -113,7 +116,8 @@ final class DeviceLocationSource: NSObject, StopSource, CLLocationManagerDelegat
                 coordinate: visit.coordinate,
                 horizontalAccuracy: visit.horizontalAccuracy,
                 start: arrival,
-                end: departure
+                end: departure,
+                arrivalIsKnown: arrivalIsKnown
             )
         )
     }

@@ -47,7 +47,9 @@ struct PlaceGuessService: PlaceGuessing {
                     visitCount: 0,
                     distanceMeters: distance,
                     targetPlaceID: nil,
-                    category: category
+                    category: category,
+                    latitude: itemCoordinate.latitude,
+                    longitude: itemCoordinate.longitude
                 )
             }
             .sorted { $0.distanceMeters < $1.distanceMeters }
@@ -82,7 +84,9 @@ struct PlaceGuessService: PlaceGuessing {
                 source: .address,
                 visitCount: 0,
                 distanceMeters: 0,
-                targetPlaceID: nil
+                targetPlaceID: nil,
+                latitude: mark.location?.coordinate.latitude ?? coordinate.latitude,
+                longitude: mark.location?.coordinate.longitude ?? coordinate.longitude
             )
         } catch {
             return nil
@@ -149,7 +153,9 @@ enum PlaceGuessRanker {
                     source: .visited,
                     visitCount: place.visitCount,
                     distanceMeters: distance,
-                    targetPlaceID: place.id
+                    targetPlaceID: place.id,
+                    latitude: place.coordinate.latitude,
+                    longitude: place.coordinate.longitude
                 ),
                 distance
             )

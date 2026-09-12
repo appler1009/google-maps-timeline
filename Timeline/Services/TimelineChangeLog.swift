@@ -45,6 +45,9 @@ struct ChangeBatch: Sendable {
     var paths: [TimelinePath] = []
     var names: [String: PlaceIdentityName] = [:]
     var merges: [String: PlaceIdentityMerge] = [:]
+    /// Where each visit came from, keyed by row id. Travels with the row so the
+    /// receiving device does not have to assume.
+    var visitSources: [String: RecordSource] = [:]
 
     var isEmpty: Bool { changes.isEmpty }
     var count: Int { changes.count }
