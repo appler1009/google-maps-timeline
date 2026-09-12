@@ -173,4 +173,63 @@ final class MergeRepointingTests: XCTestCase {
         XCTAssertEqual(restored.first { $0.placeKey == "main" }?.visitCount, 1)
     }
 
+
+    /// Where a stay belongs has to cross between devices.
+    ///
+    /// Reads resolve through place_id, but an arriving stay only ever updated
+    /// place_key — so a merge, an unmerge or a move changed the library on one
+    /// device, sent a record carrying the new place, and the other device filed
+    /// it under the old column and went on showing what it had. A supermarket
+    /// repaired on the Mac still read as an insurance office on the phone.
+    func testMovingAStayCrossesToTheOtherDevice() async throws {
+        let (here, hereURL) = database()
+        defer { try? FileManager.default.removeItem(at: hereURL) }
+        let (there, thereURL) = database()
+        defer { try? FileManager.default.removeItem(at: thereURL) }
+
+        try await seed(here)
+        try await seed(there)
+
+        // Move one stay on this device only.
+        try await here.moveVisit(id: "annex-1", toPlaceKey: "main")
+
+        let outgoing = try await here.changeBatch()
+        let moved = try XCTUnwrap(outgoing.visits.first { $0.id == "annex-1" })
+        XCTAssertEqual(moved.placeKey, "main", "the record carries where it belongs now")
+
+        try await there.applyRemote(
+            TimelineBatch(visits: [moved], activities: [], paths: []),
+            visitSources: [:]
+        )
+
+        let landed = try await there.loadBatch()?.visits.first { $0.id == "annex-1" }
+        XCTAssertEqual(landed?.placeKey, "main", "and the other device agrees")
+    }
+
+    /// Undoing a merge has to cross too. A place that was never merged carries
+    /// no target; one that was unmerged carries an empty one, which is a
+    /// statement rather than an absence.
+    func testUnmergingCrossesToTheOtherDevice() async throws {
+        let (here, hereURL) = database()
+        defer { try? FileManager.default.removeItem(at: hereURL) }
+        let (there, thereURL) = database()
+        defer { try? FileManager.default.removeItem(at: thereURL) }
+
+        try await seed(here)
+        try await seed(there)
+        try await here.mergePlace(from: "annex", into: "main", targetSemantic: nil)
+        try await there.mergePlace(from: "annex", into: "main", targetSemantic: nil)
+
+        try await here.unmergePlace(from: "annex")
+        let places = try await here.loadPlaces()
+        let annex = try XCTUnwrap(places["annex"])
+        XCTAssertEqual(annex.mergedInto, "", "an unmerged place says so rather than saying nothing")
+
+        _ = try await there.applyPlaceIfNewer(annex)
+
+        let counts = try await there.stayCountsByPlace()
+        XCTAssertEqual(counts["annex"], 2, "the stays come back on the other device too")
+        XCTAssertEqual(counts["main"], 1)
+    }
+
 }

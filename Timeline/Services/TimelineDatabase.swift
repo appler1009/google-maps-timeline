@@ -1453,13 +1453,21 @@ actor TimelineDatabase {
                 try setPlaceLocation(placeKey: place.id, coordinate: coordinate, updatedAt: place.updatedAt)
             }
             try setPlaceSemantic(placeKey: place.id, semanticType: place.semanticType)
-            if let into = place.mergedInto, !into.isEmpty, into != place.id {
-                try mergePlace(
-                    from: place.id,
-                    into: into,
-                    targetSemantic: place.semanticType,
-                    updatedAt: place.updatedAt
-                )
+            // A place that was never merged carries no target; one that was
+            // unmerged carries an empty one, which is a statement in its own
+            // right and has to be acted on. Without that the other device kept
+            // the fold forever.
+            if let into = place.mergedInto {
+                if into.isEmpty {
+                    try unmergePlace(from: place.id, updatedAt: place.updatedAt)
+                } else if into != place.id {
+                    try mergePlace(
+                        from: place.id,
+                        into: into,
+                        targetSemantic: place.semanticType,
+                        updatedAt: place.updatedAt
+                    )
+                }
             }
         }
         return true
@@ -1863,11 +1871,33 @@ actor TimelineDatabase {
             // name and the reading path goes through `places`, so without a row
             // the restored stays come back to nowhere and show as unnamed.
             try reinstatePlaceRow(fromKey, db: db)
+            // Mark the place as changed now. A place syncs as one record settled
+            // by last-write-wins, and an unmerge that left the timestamp alone
+            // arrived looking older than what the other device already had, so
+            // it was discarded and the fold stayed folded over there forever.
+            try touchPlace(fromKey, at: stamp)
             try exec("COMMIT")
         } catch {
             sqlite3_exec(db, "ROLLBACK", nil, nil, nil)
             throw error
         }
+    }
+
+    /// Record that a place changed, so the other device takes this version.
+    private func touchPlace(_ placeKey: String, at stamp: TimeInterval) throws {
+        guard let db, !placeKey.isEmpty else { return }
+        var statement: OpaquePointer?
+        defer { sqlite3_finalize(statement) }
+        guard sqlite3_prepare_v2(
+            db,
+            "UPDATE places SET updated_at = ?1 WHERE id = ?2 AND updated_at < ?1",
+            -1,
+            &statement,
+            nil
+        ) == SQLITE_OK else { return }
+        sqlite3_bind_double(statement, 1, stamp)
+        sqlite3_bind_text(statement, 2, placeKey, -1, Self.transient)
+        sqlite3_step(statement)
     }
 
     /// Put a place row back for a key whose stays have just been restored,
@@ -2202,6 +2232,13 @@ actor TimelineDatabase {
                 lat = COALESCE(excluded.lat, visits.lat),
                 lon = COALESCE(excluded.lon, visits.lon),
                 place_key = excluded.place_key,
+                -- And the place it points at. Reads resolve through place_id, so
+                -- leaving it alone here meant nothing about where a stay belongs
+                -- ever crossed between devices: a merge, an unmerge or a move
+                -- updated place_id locally, sent a record carrying the new place,
+                -- and the other device filed it under place_key and went on
+                -- showing the old one.
+                place_id = excluded.place_id,
                 semantic_type = CASE
                     WHEN excluded.semantic_type IS NOT NULL
                          AND excluded.semantic_type NOT IN ('', 'Unknown', 'unknown')
