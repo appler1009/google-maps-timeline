@@ -443,6 +443,15 @@ final class TimelineStore {
             if let collapsed = try? await database.collapseDuplicateVisits(), collapsed > 0 {
                 TimelineLog.info("duplicate stays collapsed", ["count": "\(collapsed)"])
             }
+            if let migrated = try? await database.migrateToPlaceEntities(), migrated.visitsLinked > 0 {
+                TimelineLog.info(
+                    "places migrated",
+                    ["places": "\(migrated.placesCreated)", "stays": "\(migrated.visitsLinked)"]
+                )
+            }
+            if let merged = try? await database.collapseDuplicateStays(), merged > 0 {
+                TimelineLog.info("same stay under two places collapsed", ["count": "\(merged)"])
+            }
             if let batch = try? await database.loadBatch() {
                 if isLoading { return }
                 let name = (try? await database.latestSourceName()) ?? "Library"
