@@ -1600,6 +1600,62 @@ actor TimelineDatabase {
         }
     }
 
+    /// The named places visited in a window, for a maintenance pass. Takes epochs
+    /// rather than a date string: SQLite's `localtime` depends on the process
+    /// timezone, which is not the user's in a test runner.
+    func namedPlaces(from: Date, to: Date) throws -> [PlaceEntity] {
+        guard let db else { return [] }
+        var statement: OpaquePointer?
+        defer { sqlite3_finalize(statement) }
+        guard sqlite3_prepare_v2(
+            db,
+            """
+            SELECT DISTINCT p.id, p.name, p.lat, p.lon, p.semantic_type
+            FROM visits v JOIN places p ON p.id = v.place_id
+            WHERE v.start >= ? AND v.start < ?
+              AND p.name IS NOT NULL AND p.name != ''
+            """,
+            -1,
+            &statement,
+            nil
+        ) == SQLITE_OK else { return [] }
+        sqlite3_bind_double(statement, 1, from.timeIntervalSince1970)
+        sqlite3_bind_double(statement, 2, to.timeIntervalSince1970)
+        var found: [PlaceEntity] = []
+        while sqlite3_step(statement) == SQLITE_ROW {
+            guard let id = text(statement, 0) else { continue }
+            found.append(
+                PlaceEntity(
+                    id: id,
+                    name: text(statement, 1),
+                    coordinate: coordinate(statement, lat: 2, lon: 3),
+                    semanticType: text(statement, 4)
+                )
+            )
+        }
+        return found
+    }
+
+    /// How many stays each place holds. Which of two duplicates is the stray.
+    func stayCountsByPlace() throws -> [String: Int] {
+        guard let db else { return [:] }
+        var statement: OpaquePointer?
+        defer { sqlite3_finalize(statement) }
+        guard sqlite3_prepare_v2(
+            db,
+            "SELECT place_id, COUNT(*) FROM visits WHERE place_id IS NOT NULL GROUP BY place_id",
+            -1,
+            &statement,
+            nil
+        ) == SQLITE_OK else { return [:] }
+        var counts: [String: Int] = [:]
+        while sqlite3_step(statement) == SQLITE_ROW {
+            guard let id = text(statement, 0) else { continue }
+            counts[id] = Int(sqlite3_column_int64(statement, 1))
+        }
+        return counts
+    }
+
     /// Every place's folded-in origins in one read, for the menus.
     func mergedOriginsByPlace() throws -> [String: [String]] {
         guard let db else { return [:] }
