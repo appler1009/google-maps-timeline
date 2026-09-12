@@ -87,6 +87,105 @@ final class RoutePlannerTests: XCTestCase {
         XCTAssertTrue(RoutePlanner.hopsAcross(from: (from, Landmark.eiffelTower), to: (to, Landmark.louvrePyramid), activities: []).isEmpty)
     }
 
+
+    /// A drive does not become a walk because the day around it was quiet.
+    ///
+    /// Speed used to be measured across the whole gap between two stays, which
+    /// includes every minute spent standing still. Leaving the shops at 11:00
+    /// and reaching home at 16:00 made an eight-minute drive read as 0.1 m/s,
+    /// and that fake slowness then overrode Core Motion saying plainly it was a
+    /// car. Correcting a place's location made it worse, since a longer distance
+    /// over the same idle gap still looks slow.
+    func testLongIdleGapDoesNotTurnADriveIntoAWalk() {
+        let start = Date(timeIntervalSince1970: 1_718_445_600)
+        let shops = visit("shops", start: start, end: start.addingTimeInterval(600), at: Landmark.eiffelTower)
+        // Home, two kilometres and five hours later.
+        let home = visit(
+            "home",
+            start: start.addingTimeInterval(18_600),
+            end: start.addingTimeInterval(22_000),
+            at: Landmark.louvrePyramid
+        )
+        // The drive itself: eight minutes, an hour after leaving the shops.
+        let drive = ActivityLine(
+            id: "drive",
+            at: shops.end.addingTimeInterval(3_600),
+            until: shops.end.addingTimeInterval(4_080),
+            start: Landmark.eiffelTower,
+            end: Landmark.louvrePyramid,
+            kind: .automobile
+        )
+        XCTAssertEqual(RoutePlanner.kind(from: shops, to: home, activities: [drive]), .automobile)
+    }
+
+    /// The override it relies on still has to work: Core Motion reports the car
+    /// you were sitting in, and that bleeds into the walk at either end of the
+    /// journey. A hop that is slow over the time actually spent moving is that
+    /// walk, whatever the accelerometer thought.
+    func testSlowHopOverItsOwnTravelTimeIsStillAWalk() {
+        let start = Date(timeIntervalSince1970: 1_718_445_600)
+        let first = visit("a", start: start, end: start.addingTimeInterval(600), at: Landmark.eiffelTower)
+        let nearby = CLLocationCoordinate2D(
+            latitude: Landmark.eiffelTower.latitude + 0.0012,
+            longitude: Landmark.eiffelTower.longitude
+        )
+        // 130 m over a ten-minute stroll.
+        let second = visit(
+            "b",
+            start: start.addingTimeInterval(1_200),
+            end: start.addingTimeInterval(1_800),
+            at: nearby
+        )
+        let bleed = ActivityLine(
+            id: "bleed",
+            at: first.end,
+            until: second.start,
+            start: Landmark.eiffelTower,
+            end: nearby,
+            kind: .automobile
+        )
+        XCTAssertEqual(RoutePlanner.kind(from: first, to: second, activities: [bleed]), .walking)
+    }
+
+
+    /// Arriving somewhere is timed from when the run began, not when its last
+    /// stay did. Home split into an afternoon and an evening stay; the drive
+    /// home was being timed against the evening stay's start, five hours later,
+    /// which made it read as a walk.
+    func testCollapsedSpotSpansItsWholeRun() {
+        let start = Date(timeIntervalSince1970: 1_718_445_600)
+        let shops = visit("shops", start: start, end: start.addingTimeInterval(600), at: Landmark.eiffelTower)
+        let homeAfternoon = visit(
+            "home-1",
+            placeKey: "home",
+            start: start.addingTimeInterval(1_080),
+            end: start.addingTimeInterval(18_000),
+            at: Landmark.louvrePyramid
+        )
+        let homeEvening = visit(
+            "home-2",
+            placeKey: "home",
+            start: start.addingTimeInterval(18_600),
+            end: start.addingTimeInterval(22_000),
+            at: Landmark.louvrePyramid
+        )
+        let spots = RoutePlanner.collapsedSpots([shops, homeAfternoon, homeEvening])
+        XCTAssertEqual(spots.count, 2)
+        XCTAssertEqual(spots[1].0.start, homeAfternoon.start, "arrival is when the run began")
+        XCTAssertEqual(spots[1].0.end, homeEvening.end, "departure is when the run ended")
+
+        // An eight-minute drive, not a five-hour crawl.
+        let drive = ActivityLine(
+            id: "drive",
+            at: shops.end,
+            until: homeAfternoon.start,
+            start: Landmark.eiffelTower,
+            end: Landmark.louvrePyramid,
+            kind: .automobile
+        )
+        XCTAssertEqual(RoutePlanner.kind(from: spots[0].0, to: spots[1].0, activities: [drive]), .automobile)
+    }
+
     private func visit(
         _ id: String,
         placeKey: String? = nil,
