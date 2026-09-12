@@ -580,6 +580,64 @@ actor TimelineDatabase {
         return doomed.count
     }
 
+    /// Everything a place knows about itself. One read, so the name and the
+    /// location can never disagree about which place they describe.
+    func loadPlaces() throws -> [String: PlaceEntity] {
+        guard let db else { return [:] }
+        var statement: OpaquePointer?
+        defer { sqlite3_finalize(statement) }
+        guard sqlite3_prepare_v2(
+            db,
+            "SELECT id, name, lat, lon, semantic_type FROM places",
+            -1,
+            &statement,
+            nil
+        ) == SQLITE_OK else { return [:] }
+        var found: [String: PlaceEntity] = [:]
+        while sqlite3_step(statement) == SQLITE_ROW {
+            guard let id = text(statement, 0) else { continue }
+            found[id] = PlaceEntity(
+                id: id,
+                name: text(statement, 1),
+                coordinate: coordinate(statement, lat: 2, lon: 3),
+                semanticType: text(statement, 4)
+            )
+        }
+        return found
+    }
+
+    /// Keep the place row in step with a name or location edit, so reads that go
+    /// through `places` see it immediately.
+    private func syncPlaceRow(id: String, name: String? = nil, coordinate: CLLocationCoordinate2D? = nil) throws {
+        guard let db, !id.isEmpty else { return }
+        var statement: OpaquePointer?
+        defer { sqlite3_finalize(statement) }
+        guard sqlite3_prepare_v2(
+            db,
+            """
+            INSERT INTO places (id, name, lat, lon, updated_at)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+                name = COALESCE(excluded.name, places.name),
+                lat = COALESCE(excluded.lat, places.lat),
+                lon = COALESCE(excluded.lon, places.lon),
+                updated_at = excluded.updated_at
+            """,
+            -1,
+            &statement,
+            nil
+        ) == SQLITE_OK else { return }
+        sqlite3_bind_text(statement, 1, id, -1, Self.transient)
+        if let name, !name.isEmpty {
+            sqlite3_bind_text(statement, 2, name, -1, Self.transient)
+        } else {
+            sqlite3_bind_null(statement, 2)
+        }
+        bindCoord(statement, index: 3, coordinate: coordinate)
+        sqlite3_bind_double(statement, 5, Date().timeIntervalSince1970)
+        sqlite3_step(statement)
+    }
+
     /// Stays still carrying only an old-style key. Zero once migrated.
     func unlinkedVisitCount() throws -> Int {
         try scalar("SELECT COUNT(*) FROM visits WHERE place_id IS NULL")
@@ -1260,6 +1318,7 @@ actor TimelineDatabase {
             throw TimelineDatabaseError.execute(errmsg())
         }
         try logChange(.placeName, placeKey)
+        try syncPlaceRow(id: placeKey, name: trimmed)
     }
 
     /// Apply a remote name when it is strictly newer than the local row.
@@ -1335,6 +1394,7 @@ actor TimelineDatabase {
             throw TimelineDatabaseError.execute(errmsg())
         }
         try logChange(.placeLocation, placeKey)
+        try syncPlaceRow(id: placeKey, coordinate: coordinate)
     }
 
     /// Put a place back where the data said it was.
@@ -1883,7 +1943,7 @@ actor TimelineDatabase {
         defer { sqlite3_finalize(statement) }
         guard sqlite3_prepare_v2(
             db,
-            "SELECT id, start, end, lat, lon, place_key, semantic_type FROM visits" + filter,
+            "SELECT id, start, end, lat, lon, COALESCE(place_id, place_key), semantic_type FROM visits" + filter,
             -1,
             &statement,
             nil

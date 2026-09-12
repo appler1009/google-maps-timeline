@@ -209,3 +209,17 @@ final class DuplicateVisitCollapseTests: XCTestCase {
         XCTAssertEqual(collapsed, 0, "choosing between sources is reconciliation's job")
     }
 }
+
+/// The night at home leaves no row when the last thing recorded that evening is a
+/// short walk rather than a stay: a gap only opens at the end of a stay.
+///
+/// Opening one at the end of every journey is the obvious fix and the wrong one —
+/// it asserts you returned to where you set off, which is false for any journey
+/// that took you somewhere. The honest rule needs the stays either side of the
+/// gap to agree, which needs the continuous timeline this is heading towards.
+/// Written down here so the gap is not mistaken for an oversight.
+final class GapAfterATripTests: XCTestCase {
+    func testAGapOpeningAtTheEndOfAJourneyIsNotYetFilled() throws {
+        throw XCTSkip("needs the continuous timeline: see the note above")
+    }
+}

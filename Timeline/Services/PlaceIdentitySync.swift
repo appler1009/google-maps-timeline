@@ -6,6 +6,26 @@ struct PlaceIdentityName: Hashable, Sendable {
     var updatedAt: TimeInterval
 }
 
+/// A place as a thing in its own right: an identity, a name, somewhere it is.
+/// Stays point at one rather than carrying a copy of it.
+struct PlaceEntity: Hashable, Sendable {
+    var id: String
+    var name: String?
+    var coordinate: CLLocationCoordinate2D?
+    var semanticType: String?
+
+    static func == (lhs: PlaceEntity, rhs: PlaceEntity) -> Bool {
+        lhs.id == rhs.id && lhs.name == rhs.name && lhs.semanticType == rhs.semanticType
+            && lhs.coordinate?.latitude == rhs.coordinate?.latitude
+            && lhs.coordinate?.longitude == rhs.coordinate?.longitude
+    }
+
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(id)
+        hasher.combine(name)
+    }
+}
+
 struct PlaceLocation: Hashable, Sendable {
     var coordinate: CLLocationCoordinate2D
     var updatedAt: TimeInterval
