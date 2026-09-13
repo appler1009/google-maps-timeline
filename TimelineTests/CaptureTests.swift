@@ -657,6 +657,37 @@ final class TimelineRecorderTests: XCTestCase {
         let activities = try await database.loadBatch()?.activities ?? []
         XCTAssertTrue(activities.isEmpty)
     }
+
+    /// A stay keeps where it was, not where the departure was reported from.
+    ///
+    /// Core Location fixes a departure as you leave, often once you are already
+    /// moving. A music school came back two hundred and forty metres west of
+    /// itself that way — further than clustering would ever have accepted as the
+    /// same place, and it only kept the right name because a stay already open
+    /// keeps its key. The arrival is the fix taken while you were actually
+    /// there.
+    func testAStayKeepsTheArrivalCoordinateNotTheDeparture() async throws {
+        let (recorder, _, _, database, url) = makeRecorder()
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let start = Date(timeIntervalSince1970: 1_700_000_000)
+        await recorder.handle(stop: stop(start: start, minutes: nil))
+
+        // The departure is reported from 240 m away, as departures are.
+        let drifted = offset(home, metersNorth: 240)
+        await recorder.handle(stop: stop(at: drifted, start: start, minutes: 30))
+
+        let visits = try await database.loadBatch()?.visits ?? []
+        let recorded = try XCTUnwrap(visits.first { !$0.isOpen })
+        let placed = try XCTUnwrap(recorded.coordinate)
+        XCTAssertEqual(
+            RoutePlanner.meters(placed, home),
+            0,
+            accuracy: 5,
+            "the stay sits where it was, not where the departure was seen"
+        )
+    }
+
 }
 
 // MARK: - Reconciliation with imported exports
