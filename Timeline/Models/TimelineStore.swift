@@ -590,29 +590,83 @@ final class TimelineStore {
     /// background must not yank the map out from under them.
     func refreshFromLibrary() {
         guard !isLoading else { return }
-        Task {
-            guard let batch = try? await database.loadBatch(includingShadowed: showsShadowedImports) else { return }
-            await refreshPlaceIdentity()
-            let name = (try? await database.latestSourceName()) ?? sourceName ?? "This device"
-            let keptDay = selectedDayID
-            let keptPlace = selectedPlaceID
-            let keptTab = tab
-            let keptYear = filterYear
-            let keptMonth = filterMonth
-            let keptSearch = search
-            apply(TimelineParser.assemble(batch, sourceName: name))
-            tab = keptTab
-            search = keptSearch
-            filterYear = keptYear
-            filterMonth = keptMonth
-            clampDateFilters()
-            if let keptDay, daysByID[keptDay] != nil {
-                selectedDayID = keptDay
-            }
-            if let keptPlace, placesByID[keptPlace] != nil {
-                selectedPlaceID = keptPlace
-            }
+        Task { await reloadFromLibrary() }
+    }
+
+    /// The body of `refreshFromLibrary`, awaitable so a test can see it land.
+    ///
+    /// The map stays where it is. `apply` frames the newest day on the Mac,
+    /// which is right for opening a library and wrong for every reload after
+    /// it: the selection came back but the map did not, and the day's routes
+    /// were dropped for a day nobody was looking at.
+    func reloadFromLibrary(now: Date = Date()) async {
+        guard let batch = try? await database.loadBatch(includingShadowed: showsShadowedImports, now: now) else { return }
+        await refreshPlaceIdentity()
+        let name = (try? await database.latestSourceName()) ?? sourceName ?? "This device"
+        let keptDay = selectedDayID
+        let keptPlace = selectedPlaceID
+        let keptTab = tab
+        let keptYear = filterYear
+        let keptMonth = filterMonth
+        let keptSearch = search
+        let isFirstLoad = parsed == nil
+        apply(TimelineParser.assemble(batch, sourceName: name, now: now), reframing: isFirstLoad)
+        laidOutAt = now
+        tab = keptTab
+        search = keptSearch
+        filterYear = keptYear
+        filterMonth = keptMonth
+        clampDateFilters()
+        if let keptDay, daysByID[keptDay] != nil {
+            selectedDayID = keptDay
+        } else if !isFirstLoad, keptDay != nil {
+            // The day went away — its last stay was deleted or moved.
+            #if os(macOS)
+            if let newest = parsed?.days.first { select(day: newest) }
+            #else
+            selectedDayID = nil
+            #endif
         }
+        if let keptPlace, placesByID[keptPlace] != nil {
+            selectedPlaceID = keptPlace
+        }
+        if !isFirstLoad, let day = selectedDay {
+            requestRoutes(for: day)
+        }
+    }
+
+    /// When the days on screen were laid out. A stay still in progress is drawn
+    /// up to this moment and no further, so the picture ages while the app sits
+    /// open — and across midnight it loses the whole of today.
+    private(set) var laidOutAt: Date?
+
+    /// Whether what is on screen has fallen behind the clock.
+    ///
+    /// Only a stay still going on changes with time alone; everything else
+    /// changes when something is written, and that already reloads. So a
+    /// library with nothing open is never stale, and one with a stay open is
+    /// stale once it has grown by `openStayRefreshInterval` or crossed into a
+    /// day it has not been laid out on.
+    func isStale(now: Date = Date(), calendar: Calendar = .current) -> Bool {
+        guard let laidOutAt, hasOpenStay else { return false }
+        if !calendar.isDate(laidOutAt, inSameDayAs: now) { return true }
+        return now.timeIntervalSince(laidOutAt) >= Self.openStayRefreshInterval
+    }
+
+    /// How far a stay in progress may fall behind before it is redrawn. Its
+    /// length is shown in minutes, so this is about how long the number may
+    /// sit wrong — not a sync interval, because nothing is fetched.
+    static let openStayRefreshInterval: TimeInterval = 5 * 60
+
+    var hasOpenStay: Bool {
+        parsed?.days.first?.visits.contains(where: \.isOpen) ?? false
+    }
+
+    /// Reload if the clock has moved past what is on screen.
+    func refreshIfStale(now: Date = Date()) {
+        guard !isLoading, isStale(now: now) else { return }
+        TimelineLog.info("open stay redrawn")
+        Task { await reloadFromLibrary(now: now) }
     }
 
     /// Suggest when a stay at `coordinate` happened, from the movement recorded
@@ -727,8 +781,9 @@ final class TimelineStore {
         }
     }
 
-    func apply(_ parsed: ParsedTimeline) {
+    func apply(_ parsed: ParsedTimeline, reframing: Bool = true) {
         self.parsed = parsed
+        laidOutAt = Date()
         hasCheckedLibrary = true
         sourceName = parsed.sourceName
         isLoading = false
@@ -746,6 +801,7 @@ final class TimelineStore {
         snappedRoutes = []
         snappedDayID = nil
         routesByDay = [:]
+        guard reframing else { return }
         #if os(iOS)
         selectedDayID = nil
         openTodayIfLaunching()

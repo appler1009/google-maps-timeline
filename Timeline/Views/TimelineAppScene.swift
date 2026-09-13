@@ -51,6 +51,7 @@ struct TimelineAppScene: View {
             }
             .onChange(of: scenePhase) { _, phase in
                 guard phase == .active, !TimelineLaunch.isUITesting else { return }
+                store.refreshIfStale()
                 applyPendingVisitChoice()
                 Task { await TimelineRecorder.shared.catchUp() }
                 CloudSyncController.shared.fetchNow()
@@ -82,9 +83,29 @@ struct TimelineAppScene: View {
             }
             .onChange(of: scenePhase) { _, phase in
                 guard phase == .active, !TimelineLaunch.isUITesting else { return }
+                store.refreshIfStale()
                 CloudSyncController.shared.fetchNow()
             }
             #endif
+            // A stay still in progress is drawn up to the moment the library was
+            // read. Nothing is written while you stay put, so nothing else would
+            // redraw it: left open overnight, the Mac showed no today at all.
+            .onReceive(NotificationCenter.default.publisher(for: .NSCalendarDayChanged)) { _ in
+                guard !TimelineLaunch.isUITesting else { return }
+                store.refreshIfStale()
+            }
+            .task {
+                guard !TimelineLaunch.isUITesting else { return }
+                while !Task.isCancelled {
+                    try? await Task.sleep(for: .seconds(60))
+                    #if os(iOS)
+                    // Relaunched in the background for every visit; redrawing a
+                    // screen nobody can see is battery spent on nothing.
+                    guard UIApplication.shared.applicationState == .active else { continue }
+                    #endif
+                    store.refreshIfStale()
+                }
+            }
             .sheet(isPresented: $luxSettingsPresented) {
                 LuxPhotosSettingsView()
                     #if os(macOS)
