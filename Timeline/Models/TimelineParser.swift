@@ -15,11 +15,62 @@ enum TimelineParseError: LocalizedError {
 }
 
 enum TimelineParser {
+    /// What an import understood, and what it did not.
+    ///
+    /// Google has changed this format before, and will again. A rename that
+    /// stops nine segments in ten being recognised still leaves enough to look
+    /// like success — the file imports, a timeline appears, and the missing
+    /// nine tenths are only noticed years later by someone looking for a day
+    /// that is not there. So the count of what could not be read is part of the
+    /// answer, not a log line.
+    struct ImportReport: Equatable, Sendable {
+        var segments = 0
+        var visits = 0
+        var activities = 0
+        var paths = 0
+        /// Segments carrying none of the shapes this understands.
+        var unrecognised = 0
+        /// Segments whose times could not be read, which is the shape most
+        /// likely to change and the hardest to notice.
+        var undatable = 0
+
+        var understood: Int { segments - unrecognised - undatable }
+        /// Nothing at all came through, which is a format this cannot read.
+        var isEmpty: Bool { visits == 0 && activities == 0 && paths == 0 }
+        /// Enough was missed to be worth saying out loud.
+        var isSuspicious: Bool {
+            guard segments > 0 else { return false }
+            return Double(unrecognised + undatable) / Double(segments) > 0.1
+        }
+
+        var summary: String {
+            var parts = ["\(visits) stays", "\(activities) journeys"]
+            if paths > 0 { parts.append("\(paths) routes") }
+            let skipped = unrecognised + undatable
+            if skipped > 0 {
+                parts.append("\(skipped) of \(segments) segments not understood")
+            }
+            return parts.joined(separator: ", ")
+        }
+    }
+
     static func parse(data: Data, sourceName: String) throws -> ParsedTimeline {
         assemble(try extract(data), sourceName: sourceName)
     }
 
+    /// Parse, and say what was understood along the way.
+    static func parseReporting(data: Data, sourceName: String) throws -> (ParsedTimeline, ImportReport) {
+        var report = ImportReport()
+        let batch = try extract(data, report: &report)
+        return (assemble(batch, sourceName: sourceName), report)
+    }
+
     static func extract(_ data: Data) throws -> TimelineBatch {
+        var ignored = ImportReport()
+        return try extract(data, report: &ignored)
+    }
+
+    static func extract(_ data: Data, report: inout ImportReport) throws -> TimelineBatch {
         let object = try JSONSerialization.jsonObject(with: data)
         let segments: [[String: Any]]
         if let array = object as? [[String: Any]] {
@@ -28,14 +79,14 @@ enum TimelineParser {
             if let nested = dict["semanticSegments"] as? [[String: Any]] {
                 segments = nested
             } else if let nested = dict["timelineObjects"] as? [[String: Any]] {
-                return collect(segments: try legacySegments(nested))
+                return collect(segments: try legacySegments(nested), report: &report)
             } else {
                 throw TimelineParseError.unrecognized
             }
         } else {
             throw TimelineParseError.unrecognized
         }
-        let batch = collect(segments: segments)
+        let batch = collect(segments: segments, report: &report)
         if batch.visits.isEmpty, batch.activities.isEmpty, batch.paths.isEmpty {
             throw TimelineParseError.unrecognized
         }
@@ -171,7 +222,8 @@ enum TimelineParser {
         return ParsedTimeline(sourceName: sourceName, days: days, places: places)
     }
 
-    private static func collect(segments: [[String: Any]]) -> TimelineBatch {
+    private static func collect(segments: [[String: Any]], report: inout ImportReport) -> TimelineBatch {
+        report.segments += segments.count
         var visits: [TimelineVisit] = []
         var activities: [TimelineActivity] = []
         var paths: [TimelinePath] = []
@@ -181,7 +233,14 @@ enum TimelineParser {
         for segment in segments {
             let start = parseDate(segment["startTime"] as? String)
             let end = parseDate(segment["endTime"] as? String)
-            guard let start, let end else { continue }
+            guard let start, let end else {
+                report.undatable += 1
+                continue
+            }
+            guard segment["visit"] != nil || segment["activity"] != nil || segment["timelinePath"] != nil else {
+                report.unrecognised += 1
+                continue
+            }
 
             if let visit = segment["visit"] as? [String: Any] {
                 let candidate = visit["topCandidate"] as? [String: Any]
@@ -239,6 +298,9 @@ enum TimelineParser {
                 }
             }
         }
+        report.visits += visits.count
+        report.activities += activities.count
+        report.paths += paths.count
         return TimelineBatch(visits: visits, activities: activities, paths: paths)
     }
 

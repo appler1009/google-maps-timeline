@@ -507,9 +507,18 @@ final class TimelineStore {
                 let data = try Data(contentsOf: url, options: [.mappedIfSafe])
                 saveBookmark(url)
                 let name = url.lastPathComponent
-                let batch = try await Task.detached {
-                    try TimelineParser.extract(data)
+                let (batch, report) = try await Task.detached {
+                    var report = TimelineParser.ImportReport()
+                    let batch = try TimelineParser.extract(data, report: &report)
+                    return (batch, report)
                 }.value
+                lastImportReport = report
+                TimelineLog.info("timeline imported", [
+                    "file": name,
+                    "summary": report.summary,
+                    "unrecognised": "\(report.unrecognised)",
+                    "undatable": "\(report.undatable)"
+                ])
                 try await database.upsert(batch: batch, sourceName: name)
                 // Fold the export into whatever the phone recorded before the
                 // library is assembled, so the day view never shows both.
@@ -526,6 +535,10 @@ final class TimelineStore {
             }
         }
     }
+
+    /// What the last import understood, so a format change that quietly halves
+    /// an export is visible rather than only logged.
+    private(set) var lastImportReport: TimelineParser.ImportReport?
 
     private static let bookmarkKey = "lastTimelineBookmark"
 

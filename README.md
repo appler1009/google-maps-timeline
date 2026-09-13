@@ -17,6 +17,44 @@ Apple Maps directions are replaced with `ScriptedMapDirectionsClient` in those t
 
 XCUITest covers the empty library and the Eiffel Tower marker/route flow on iOS and macOS (`TimelineUITests`). UI tests launch with an isolated store and the bundled Paris fixture.
 
+### Testing the importer against your own exports
+
+The bundled fixture checks the parser against what this app believes Google's
+format to be. That is not the same as checking it against what Google actually
+produces, and the two drift: the export format has changed before, and once the
+phone is recording for itself you might only open an export once a year — by
+which time a renamed field that stopped most segments being read looks like a
+year that simply had less in it.
+
+So put real exports where the tests can find them:
+
+```
+cp ~/Downloads/location-history.json LocalExports/
+xcodebuild test -scheme Timeline_macOS -destination 'platform=macOS' \
+  -only-testing:TimelineMacTests/LocalExportTests
+```
+
+Any number of `*.json` files; they run in name order. With the directory empty
+the tests skip, so an ordinary run is unaffected.
+
+`LocalExports/` is in `.gitignore` and must stay there. An export is years of
+precise location history and none of it belongs in the repository, however
+trimmed.
+
+What the tests check:
+
+- **Every segment is understood.** The failure worth catching is the partial
+  one — an import that succeeds while quietly dropping most of the file. A run
+  prints what each export gave (`2,481 stays, 903 journeys`) and fails if more
+  than a tenth of its segments could not be read.
+- **What comes out is coherent**: no stay ending before it began, none belonging
+  to no place, no day out of order.
+- **Importing twice changes nothing.** Ids are content hashes so a re-import
+  updates rather than duplicates; this is what says so.
+
+If the first of those fails, Google has changed something. The message says how
+many segments were missed out of how many, which is where to start.
+
 ## Open an export
 
 On Mac, **⌘O** or the folder button in the toolbar.
