@@ -5,3 +5,7 @@ DerivedData/
 .build/
 *.trace
 .cursor/
+
+# Real Google Timeline exports, for the importer tests to run against.
+# Years of location history: never committed, however trimmed.
+LocalExports/
