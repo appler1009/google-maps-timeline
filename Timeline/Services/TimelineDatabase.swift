@@ -2368,18 +2368,27 @@ actor TimelineDatabase {
         return ids.count
     }
 
+#if DEBUG
     /// Empty the stays table. Reproduces a library that has the note about the
     /// stay you are inside but no row for it, which is what replacing the app
     /// mid-stay used to leave behind.
+    ///
+    /// Debug only. A method that deletes every stay has no business existing in
+    /// the shipped app, whatever it is called.
     func clearVisitsForTesting() throws {
         try exec("DELETE FROM visits")
     }
+#endif
 
+#if DEBUG
     /// Drop every recorded merge origin. Reproduces the state a merge arriving
     /// from another device used to leave behind, so the recovery can be tested.
+    ///
+    /// Debug only: this is the trail an unmerge follows home.
     func forgetMergeOrigins() throws {
         try exec("UPDATE visits SET origin_place_id = NULL")
     }
+#endif
 
     /// Put back every stay a merge moved away from this place.
     /// Put back every stay a merge moved away from this place.
