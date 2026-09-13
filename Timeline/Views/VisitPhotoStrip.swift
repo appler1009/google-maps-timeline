@@ -125,6 +125,59 @@ struct LuxPhotoViewerOverlay: View {
     }
 }
 
+/// What a drag across the photo viewer means.
+///
+/// The viewer has one gesture doing two jobs — sideways moves between photos,
+/// up or down puts it away — so the reading of a drag is worth having on its
+/// own, where the thresholds can be argued with and tested rather than buried
+/// in a closure.
+enum PhotoViewerDrag {
+    /// Far enough to mean it, in points.
+    static let dismissDistance: CGFloat = 120
+    /// Or thrown hard enough that stopping short was not the intention: this is
+    /// measured against where the drag was heading, not where it ended.
+    static let throwDistance: CGFloat = 320
+    /// Sideways needs less, because there is nowhere else for it to go.
+    static let navigateDistance: CGFloat = 60
+
+    enum Outcome: Equatable {
+        case dismiss
+        case next
+        case previous
+        /// Not enough of anything: put it back.
+        case stay
+    }
+
+    /// Or thrown sideways: the same allowance as a dismissing throw, in
+    /// proportion to the shorter distance paging asks for. Without it a quick
+    /// flick between photos stays put while the same flick downward puts the
+    /// photo away, and the gesture feels sticky in one direction only.
+    static let navigateThrowDistance: CGFloat = 160
+
+    static func outcome(translation: CGSize, predictedEnd: CGSize) -> Outcome {
+        // Whichever axis the drag committed to, read from where the finger
+        // actually went rather than where it was heading — so a flick between
+        // photos that drifts downward still pages, whatever its momentum says.
+        //
+        // A dead-on diagonal counts as sideways. Something has to win a tie, and
+        // paging is the one you can undo by paging back.
+        if abs(translation.width) >= abs(translation.height) {
+            let far = abs(translation.width) >= navigateDistance
+            let thrown = abs(predictedEnd.width) >= navigateThrowDistance
+            guard far || thrown else { return .stay }
+            return translation.width < 0 ? .next : .previous
+        }
+        let far = abs(translation.height) >= dismissDistance
+        let thrown = abs(predictedEnd.height) >= throwDistance
+        return far || thrown ? .dismiss : .stay
+    }
+
+    /// How far through a dismissing drag this is, for fading and shrinking.
+    static func progress(height: CGFloat) -> Double {
+        Double(min(abs(height) / dismissDistance, 1))
+    }
+}
+
 struct VisitPhotoViewer: View {
     let photos: [LuxVisitPhoto]
     @Binding var index: Int
@@ -134,6 +187,8 @@ struct VisitPhotoViewer: View {
     @State private var errorMessage: String?
     @State private var sheetSize: CGSize = CGSize(width: 840, height: 560)
     @State private var navDirection: NavDirection = .none
+    /// How far a dismissing drag has got. Zero unless one is in progress.
+    @State private var drag: CGSize = .zero
     @FocusState private var isFocused: Bool
 
     private enum NavDirection {
@@ -159,10 +214,16 @@ struct VisitPhotoViewer: View {
     private var iosBody: some View {
         NavigationStack {
             ZStack {
-                Palette.ink.ignoresSafeArea()
+                // The ground fades as the photo is pulled away, so it is clear
+                // the drag is putting it back rather than moving it about.
+                Palette.ink
+                    .opacity(1 - PhotoViewerDrag.progress(height: drag.height) * 0.55)
+                    .ignoresSafeArea()
                 content
                     .id(photo.id)
                     .transition(imageTransition)
+                    .offset(y: drag.height)
+                    .scaleEffect(1 - PhotoViewerDrag.progress(height: drag.height) * 0.12)
             }
             .navigationTitle(photo.item.filename)
             .navigationBarTitleDisplayMode(.inline)
@@ -203,12 +264,41 @@ struct VisitPhotoViewer: View {
                 await load()
             }
             .gesture(
-                DragGesture(minimumDistance: 40)
+                DragGesture(minimumDistance: 20)
+                    .onChanged { value in
+                        // Follow the finger only once the drag has committed to
+                        // going up or down, so moving between photos does not
+                        // make the whole thing wobble.
+                        guard abs(value.translation.height) > abs(value.translation.width) else {
+                            // And drop whatever vertical it picked up before it
+                            // committed sideways, or the photo changes while
+                            // still shifted and then springs back under the new
+                            // one.
+                            if drag != .zero { drag = .zero }
+                            return
+                        }
+                        drag = CGSize(width: 0, height: value.translation.height)
+                    }
                     .onEnded { value in
-                        if value.translation.width < -60 {
+                        switch PhotoViewerDrag.outcome(
+                            translation: value.translation,
+                            predictedEnd: value.predictedEndTranslation
+                        ) {
+                        case .next:
+                            drag = .zero
                             goNext()
-                        } else if value.translation.width > 60 {
+                        case .previous:
+                            drag = .zero
                             goPrevious()
+                        case .dismiss:
+                            // Left where the finger put it. Springing back here
+                            // pulls the photo toward the middle of a view that
+                            // is already on its way out.
+                            onDismiss()
+                        case .stay:
+                            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                                drag = .zero
+                            }
                         }
                     }
             )
