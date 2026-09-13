@@ -278,7 +278,17 @@ actor TimelineDatabase {
         guard let db else { return 0 }
         var statement: OpaquePointer?
         defer { sqlite3_finalize(statement) }
-        guard sqlite3_prepare_v2(db, "SELECT id FROM visits WHERE end <= start", -1, &statement, nil) == SQLITE_OK else {
+        // A stay still going on is written ending where it starts, and grows on
+        // being read — so zero length is what it correctly looks like until you
+        // leave. Purging it destroyed the row on the very launch that created
+        // it, which made the whole thing invisible while appearing to work.
+        guard sqlite3_prepare_v2(
+            db,
+            "SELECT id FROM visits WHERE end <= start AND is_open = 0",
+            -1,
+            &statement,
+            nil
+        ) == SQLITE_OK else {
             return 0
         }
         var ids: [String] = []
@@ -348,116 +358,156 @@ actor TimelineDatabase {
     /// Deliberately not a rename and not a merge: renaming would relabel every
     /// other stay at that place, and merging would fold the two places together
     /// for good. This is for the stay that simply landed on the wrong neighbour.
-    /// A stay someone removed, kept in case it mattered.
-    struct DeletedVisit: Sendable {
+    /// A version of a stay that something replaced.
+    struct VisitVersion: Sendable {
+        /// What a stay is superseded by.
+        enum Change: String, Sendable {
+            case deleted
+            case times
+            case split
+            case moved
+        }
+
         var visit: TimelineVisit
-        var deletedAt: Date
+        var changedAt: Date
+        var change: Change
         var reason: String?
         var source: RecordSource
+        /// True when the stay is not in the timeline at all any more.
+        var isGone: Bool
+        /// Which row this is, so restoring can consume exactly the one it used
+        /// rather than whichever happens to be newest by the time it looks.
+        var seq: Int64
+    }
+
+    /// Write down a stay as it stands, before something changes it.
+    ///
+    /// Called before every edit that would otherwise overwrite. A correction is
+    /// usually right, but "usually" is the reason to keep what it replaced.
+    private func rememberVisit(
+        id: String,
+        change: VisitVersion.Change,
+        reason: String?,
+        now: Date,
+        db: OpaquePointer
+    ) throws {
+        var statement: OpaquePointer?
+        defer { sqlite3_finalize(statement) }
+        guard sqlite3_prepare_v2(
+            db,
+            """
+            INSERT INTO visit_history
+                (id, start, end, lat, lon, place_key, place_id, semantic_type, source, changed_at, change, reason)
+            SELECT id, start, end, lat, lon, place_key, place_id, semantic_type, source, ?1, ?2, ?3
+            FROM visits WHERE id = ?4
+            """,
+            -1,
+            &statement,
+            nil
+        ) == SQLITE_OK else { throw TimelineDatabaseError.execute(errmsg()) }
+        sqlite3_bind_double(statement, 1, now.timeIntervalSince1970)
+        sqlite3_bind_text(statement, 2, change.rawValue, -1, Self.transient)
+        if let reason, !reason.isEmpty {
+            sqlite3_bind_text(statement, 3, reason, -1, Self.transient)
+        } else {
+            sqlite3_bind_null(statement, 3)
+        }
+        sqlite3_bind_text(statement, 4, id, -1, Self.transient)
+        guard sqlite3_step(statement) == SQLITE_DONE else {
+            throw TimelineDatabaseError.execute(errmsg())
+        }
     }
 
     /// Take a stay out of the timeline without destroying it.
-    ///
-    /// Deleting is the one edit nothing else here can undo, so it does not
-    /// really delete: the row moves to `deleted_visits` in the order it was
-    /// removed. A wrong reading of where you were is still evidence of
-    /// something, and the difference between a mistake and a thing you have
-    /// forgotten is often only obvious later.
     @discardableResult
     func deleteVisit(id: String, reason: String? = nil, now: Date = Date()) throws -> Bool {
         guard let db, !id.isEmpty else { return false }
         try exec("BEGIN IMMEDIATE")
         do {
-            var copy: OpaquePointer?
-            defer { sqlite3_finalize(copy) }
-            guard sqlite3_prepare_v2(
-                db,
-                """
-                INSERT OR REPLACE INTO deleted_visits
-                    (id, start, end, lat, lon, place_key, place_id, semantic_type, source, deleted_at, reason)
-                SELECT id, start, end, lat, lon, place_key, place_id, semantic_type, source, ?1, ?2
-                FROM visits WHERE id = ?3
-                """,
-                -1,
-                &copy,
-                nil
-            ) == SQLITE_OK else { throw TimelineDatabaseError.execute(errmsg()) }
-            sqlite3_bind_double(copy, 1, now.timeIntervalSince1970)
-            if let reason, !reason.isEmpty {
-                sqlite3_bind_text(copy, 2, reason, -1, Self.transient)
-            } else {
-                sqlite3_bind_null(copy, 2)
-            }
-            sqlite3_bind_text(copy, 3, id, -1, Self.transient)
-            guard sqlite3_step(copy) == SQLITE_DONE else { throw TimelineDatabaseError.execute(errmsg()) }
-            let kept = sqlite3_changes(db) > 0
-
+            try rememberVisit(id: id, change: .deleted, reason: reason, now: now, db: db)
             try exec("DELETE FROM visits WHERE id = \(quote(id))")
             let removed = sqlite3_changes(db) > 0
             if removed { try logChange(.visit, id, .delete) }
             try exec("COMMIT")
-            return kept && removed
+            return removed
         } catch {
             sqlite3_exec(db, "ROLLBACK", nil, nil, nil)
             throw error
         }
     }
 
-    /// What is in the bin, most recently removed first.
-    func deletedVisits(limit: Int = 50) throws -> [DeletedVisit] {
+    /// Every superseded version, most recent first. Narrow to one stay with
+    /// `id`, or to deletions alone.
+    func visitHistory(id: String? = nil, onlyDeleted: Bool = false, limit: Int = 50) throws -> [VisitVersion] {
         guard let db else { return [] }
+        var clauses: [String] = []
+        if let id, !id.isEmpty { clauses.append("h.id = \(quote(id))") }
+        if onlyDeleted { clauses.append("h.change = 'deleted'") }
+        let filter = clauses.isEmpty ? "" : " WHERE " + clauses.joined(separator: " AND ")
         var statement: OpaquePointer?
         defer { sqlite3_finalize(statement) }
-        guard sqlite3_prepare_v2(
-            db,
+        let sql = """
+            SELECT h.id, h.start, h.end, h.lat, h.lon, COALESCE(h.place_id, h.place_key),
+                   h.semantic_type, h.changed_at, h.change, h.reason, h.source,
+                   (SELECT COUNT(*) FROM visits v WHERE v.id = h.id), h.seq
+            FROM visit_history h\(filter)
+            ORDER BY h.changed_at DESC, h.seq DESC LIMIT ?
             """
-            SELECT id, start, end, lat, lon, COALESCE(place_id, place_key), semantic_type,
-                   deleted_at, reason, source
-            FROM deleted_visits ORDER BY deleted_at DESC LIMIT ?
-            """,
-            -1,
-            &statement,
-            nil
-        ) == SQLITE_OK else { return [] }
+        guard sqlite3_prepare_v2(db, sql, -1, &statement, nil) == SQLITE_OK else { return [] }
         sqlite3_bind_int64(statement, 1, Int64(max(limit, 1)))
-        var rows: [DeletedVisit] = []
+        var rows: [VisitVersion] = []
         while sqlite3_step(statement) == SQLITE_ROW {
-            guard let id = text(statement, 0) else { continue }
+            guard let rowID = text(statement, 0) else { continue }
             rows.append(
-                DeletedVisit(
+                VisitVersion(
                     visit: TimelineVisit(
-                        id: id,
+                        id: rowID,
                         start: Date(timeIntervalSince1970: sqlite3_column_double(statement, 1)),
                         end: Date(timeIntervalSince1970: sqlite3_column_double(statement, 2)),
                         coordinate: coordinate(statement, lat: 3, lon: 4),
                         semanticType: text(statement, 6),
                         placeKey: text(statement, 5) ?? ""
                     ),
-                    deletedAt: Date(timeIntervalSince1970: sqlite3_column_double(statement, 7)),
-                    reason: text(statement, 8),
-                    source: RecordSource(rawValue: text(statement, 9) ?? "") ?? .device
+                    changedAt: Date(timeIntervalSince1970: sqlite3_column_double(statement, 7)),
+                    change: VisitVersion.Change(rawValue: text(statement, 8) ?? "") ?? .deleted,
+                    reason: text(statement, 9),
+                    source: RecordSource(rawValue: text(statement, 10) ?? "") ?? .device,
+                    isGone: sqlite3_column_int64(statement, 11) == 0,
+                    seq: sqlite3_column_int64(statement, 12)
                 )
             )
         }
         return rows
     }
 
-    /// Put one back where it was.
+    /// Put a stay back to one of the versions kept for it.
+    ///
+    /// Nothing is removed from the record to do it: the state being replaced is
+    /// written down first, so the history only ever grows. That means restoring
+    /// twice does not walk further back on its own — the second restore would
+    /// find the state the first one replaced sitting at the top. To go further,
+    /// name the version: `stay_history` gives each one a number.
     @discardableResult
-    func restoreDeletedVisit(id: String) throws -> TimelineVisit? {
+    func restoreVisit(id: String, version wanted: Int64? = nil, now: Date = Date()) throws -> TimelineVisit? {
         guard let db, !id.isEmpty else { return nil }
-        guard let found = try deletedVisits(limit: 5_000).first(where: { $0.visit.id == id }) else {
-            return nil
+        let kept = try visitHistory(id: id, limit: 5_000)
+        let version: VisitVersion?
+        if let wanted {
+            version = kept.first { $0.seq == wanted }
+        } else {
+            version = kept.first
         }
-        try record(batch: TimelineBatch(visits: [found.visit], activities: [], paths: []), source: found.source)
-        try exec("DELETE FROM deleted_visits WHERE id = \(quote(id))")
-        return found.visit
+        guard let version else { return nil }
+        try? rememberVisit(id: id, change: .times, reason: "replaced by a restore", now: now, db: db)
+        try record(batch: TimelineBatch(visits: [version.visit], activities: [], paths: []), source: version.source)
+        return version.visit
     }
 
     /// Correct when a stay began and ended.
     @discardableResult
-    func setVisitTimes(id: String, start: Date, end: Date) throws -> Bool {
+    func setVisitTimes(id: String, start: Date, end: Date, now: Date = Date()) throws -> Bool {
         guard let db, !id.isEmpty, end > start else { return false }
+        try rememberVisit(id: id, change: .times, reason: nil, now: now, db: db)
         var statement: OpaquePointer?
         defer { sqlite3_finalize(statement) }
         guard sqlite3_prepare_v2(
@@ -482,7 +532,7 @@ actor TimelineDatabase {
     /// that began when it began; the second half is a new stay at the same
     /// place. Used when a long stretch at home turns out to have had something
     /// in the middle of it.
-    func splitVisit(id: String, at moment: Date) throws -> TimelineVisit? {
+    func splitVisit(id: String, at moment: Date, now: Date = Date()) throws -> TimelineVisit? {
         guard let db, !id.isEmpty else { return nil }
         let existing = try loadVisits().first { $0.id == id }
         guard let original = existing else { return nil }
@@ -499,6 +549,7 @@ actor TimelineDatabase {
         )
         try exec("BEGIN IMMEDIATE")
         do {
+            try rememberVisit(id: id, change: .split, reason: nil, now: now, db: db)
             try exec(
                 """
                 UPDATE visits SET end = \(moment.timeIntervalSince1970), is_open = 0
@@ -1443,6 +1494,42 @@ actor TimelineDatabase {
         try record(batch: TimelineBatch(visits: [opened], activities: [], paths: []))
     }
 
+    /// Give the stay we are inside a row, if it has not got one.
+    ///
+    /// A stay becomes a row when Core Location reports the arrival. A stay that
+    /// was already in flight when the app was replaced never gets that report —
+    /// the arrival happened under the previous build — so it would sit in
+    /// open_visit forever, invisible to the other device, until the next time
+    /// you left and came back.
+    @discardableResult
+    func backfillOpenStayRow(now: Date = Date()) throws -> Bool {
+        guard let open = try openStop(), open.stop.arrivalIsKnown, !open.placeKey.isEmpty else {
+            return false
+        }
+        let since = now.timeIntervalSince(open.stop.start)
+        guard since >= 0, since <= Self.longestOpenStay else { return false }
+        let id = PlaceClusterer.visitID(placeKey: open.placeKey, start: open.stop.start)
+        if try loadVisits().contains(where: { $0.id == id }) { return false }
+        try record(
+            batch: TimelineBatch(
+                visits: [
+                    TimelineVisit(
+                        id: id,
+                        start: open.stop.start,
+                        end: open.stop.start,
+                        coordinate: open.stop.coordinate,
+                        semanticType: nil,
+                        placeKey: open.placeKey,
+                        isOpen: true
+                    )
+                ],
+                activities: [],
+                paths: []
+            )
+        )
+        return true
+    }
+
     func clearOpenStop() throws {
         try exec("DELETE FROM open_visit")
     }
@@ -2281,11 +2368,27 @@ actor TimelineDatabase {
         return ids.count
     }
 
+#if DEBUG
+    /// Empty the stays table. Reproduces a library that has the note about the
+    /// stay you are inside but no row for it, which is what replacing the app
+    /// mid-stay used to leave behind.
+    ///
+    /// Debug only. A method that deletes every stay has no business existing in
+    /// the shipped app, whatever it is called.
+    func clearVisitsForTesting() throws {
+        try exec("DELETE FROM visits")
+    }
+#endif
+
+#if DEBUG
     /// Drop every recorded merge origin. Reproduces the state a merge arriving
     /// from another device used to leave behind, so the recovery can be tested.
+    ///
+    /// Debug only: this is the trail an unmerge follows home.
     func forgetMergeOrigins() throws {
         try exec("UPDATE visits SET origin_place_id = NULL")
     }
+#endif
 
     /// Put back every stay a merge moved away from this place.
     /// Put back every stay a merge moved away from this place.
@@ -2473,15 +2576,20 @@ actor TimelineDatabase {
         // opens so the other device can see it; its end is only provisional
         // until it closes.
         try addColumn(db, table: "visits", column: "is_open INTEGER NOT NULL DEFAULT 0")
-        // Deleting a stay takes it out of the timeline; it does not destroy it.
-        // A place you went is a fact about your life, and a wrong reading of it
-        // is still evidence of something — so it waits here in the order it was
-        // removed, and can be looked at or put back.
+        // Every version of a stay that was superseded, in the order it happened.
+        //
+        // Deleting one takes it out of the timeline; it does not destroy it. The
+        // same goes for correcting its times or cutting it in two: what was
+        // there before is still a reading of where you were, and the difference
+        // between a mistake and a thing you have forgotten is often only
+        // obvious later. So nothing is overwritten without the previous version
+        // being written down first, and any of them can be put back.
         try exec(
             db,
             """
-            CREATE TABLE IF NOT EXISTS deleted_visits (
-                id TEXT PRIMARY KEY,
+            CREATE TABLE IF NOT EXISTS visit_history (
+                seq INTEGER PRIMARY KEY AUTOINCREMENT,
+                id TEXT NOT NULL,
                 start REAL NOT NULL,
                 end REAL NOT NULL,
                 lat REAL,
@@ -2490,12 +2598,33 @@ actor TimelineDatabase {
                 place_id TEXT,
                 semantic_type TEXT,
                 source TEXT NOT NULL DEFAULT 'device',
-                deleted_at REAL NOT NULL,
+                changed_at REAL NOT NULL,
+                change TEXT NOT NULL,
                 reason TEXT
             );
-            CREATE INDEX IF NOT EXISTS deleted_visits_when ON deleted_visits(deleted_at);
+            CREATE INDEX IF NOT EXISTS visit_history_when ON visit_history(changed_at);
+            CREATE INDEX IF NOT EXISTS visit_history_stay ON visit_history(id);
             """
         )
+        // The bin came first and only held deletions. Its rows are versions too.
+        //
+        // Guarded in Swift, not in SQL: SQLite resolves table names when a
+        // statement is prepared, so a query mentioning a table that was never
+        // created fails before any WHERE clause can say "only if it exists" —
+        // and a migration that throws halfway leaves every later column
+        // unadded.
+        if try Self.tableExists("deleted_visits", db: db) {
+            try exec(
+                db,
+                """
+                INSERT INTO visit_history
+                    (id, start, end, lat, lon, place_key, place_id, semantic_type, source, changed_at, change, reason)
+                SELECT id, start, end, lat, lon, place_key, place_id, semantic_type, source, deleted_at, 'deleted', reason
+                FROM deleted_visits
+                WHERE id NOT IN (SELECT id FROM visit_history WHERE change = 'deleted')
+                """
+            )
+        }
         // Where the stay was before a merge moved it, so unmerging can put it
         // back. Repointing without this would be a one-way door.
         try addColumn(db, table: "visits", column: "origin_place_id TEXT")
@@ -2504,6 +2633,21 @@ actor TimelineDatabase {
     }
 
     /// `ALTER TABLE ADD COLUMN` has no `IF NOT EXISTS`, so ask first.
+    private static func tableExists(_ name: String, db: OpaquePointer?) throws -> Bool {
+        guard let db else { return false }
+        var statement: OpaquePointer?
+        defer { sqlite3_finalize(statement) }
+        guard sqlite3_prepare_v2(
+            db,
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
+            -1,
+            &statement,
+            nil
+        ) == SQLITE_OK else { return false }
+        sqlite3_bind_text(statement, 1, name, -1, transient)
+        return sqlite3_step(statement) == SQLITE_ROW
+    }
+
     private static func addColumn(_ db: OpaquePointer?, table: String, column: String) throws {
         guard let db else { throw TimelineDatabaseError.open }
         let name = String(column.prefix(while: { $0 != " " }))

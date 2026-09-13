@@ -117,6 +117,11 @@ final class TimelineRecorder {
     /// recorded while we were not running, then tidy.
     func catchUp() async {
         guard settings.mode.isRecording else { return }
+        // A stay already in flight when the app was replaced never got an
+        // arrival report under this build, so it has no row and cannot travel.
+        if (try? await database.backfillOpenStayRow()) == true {
+            TimelineLog.info("open stay given a row")
+        }
         await backfillMotion()
         await flushFixes()
         await enrichFromHealth()
@@ -168,12 +173,27 @@ final class TimelineRecorder {
 
         // A stay we are already inside keeps the key it was given, so closing it
         // updates one row instead of opening a second place next to the first.
+        var stop = stop
         let placeKey: String
         let match: PlaceClusterer.Match
         if let known, abs(known.stop.start.timeIntervalSince(stop.start)) < 60 {
             placeKey = known.placeKey
             let anchor = anchors.first { $0.placeKey == known.placeKey }
             match = PlaceClusterer.Match(placeKey: known.placeKey, isNew: anchor == nil, anchor: anchor)
+            // And where it was, not where the departure was reported from.
+            //
+            // Core Location fixes a departure as you leave, often once you are
+            // already moving: a music school came back two hundred and forty
+            // metres west of itself, which is further than clustering would ever
+            // have accepted as the same place. The arrival is the fix taken while
+            // you were actually there, so that is the one the stay keeps.
+            stop = CapturedStop(
+                coordinate: known.stop.coordinate,
+                horizontalAccuracy: known.stop.horizontalAccuracy,
+                start: stop.start,
+                end: stop.end,
+                arrivalIsKnown: stop.arrivalIsKnown
+            )
         } else {
             match = PlaceClusterer.match(stop, among: anchors)
             placeKey = match.placeKey

@@ -285,6 +285,8 @@ final class TimelineStore {
     }
 
     private var correctedLocations: Set<String> = []
+    /// Where each place is, from the place rows themselves.
+    private var placeCoordinates: [String: CLLocationCoordinate2D] = [:]
 
     func refreshCorrectedLocations() async {
         correctedLocations = Set((try? await database.loadPlaceLocations().keys).map(Array.init) ?? [])
@@ -382,6 +384,24 @@ final class TimelineStore {
             guard place.id != placeID, let coordinate = place.coordinate else { return nil }
             return (place.id, displayName(for: place), place.visitCount, coordinate)
         }
+    }
+
+    /// Where each visible place is, so a pin goes to the place rather than to
+    /// whichever fix happened to be recorded there.
+    ///
+    /// From the place rows, not from the day's stays. A `PlaceRecord` takes its
+    /// coordinate from the most recent stay at that place, which for a music
+    /// school visited twice was the evening fix that landed two hundred metres
+    /// west — so consolidating the pins onto that put the single pin somewhere
+    /// worse than either of the two it replaced.
+    func mapAnnotationCoordinates() -> [String: CLLocationCoordinate2D] {
+        var coordinates = placeCoordinates
+        // Anything with no row yet keeps the old behaviour rather than no pin.
+        for place in parsed?.places ?? [] where coordinates[place.id] == nil {
+            guard let coordinate = place.coordinate else { continue }
+            coordinates[place.id] = coordinate
+        }
+        return coordinates
     }
 
     /// Titles for the currently visible map annotations (day visits and/or selected place).
@@ -762,6 +782,9 @@ final class TimelineStore {
         placeNames = (try? await database.loadPlaceNames()) ?? placeNames
         placeMerges = (try? await database.loadPlaceMerges()) ?? placeMerges
         mergedOrigins = (try? await database.mergedOriginsByPlace()) ?? mergedOrigins
+        if let rows = try? await database.loadPlaces() {
+            placeCoordinates = rows.compactMapValues(\.coordinate)
+        }
         await refreshCorrectedLocations()
     }
 

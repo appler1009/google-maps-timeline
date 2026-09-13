@@ -201,6 +201,85 @@ final class MarkerMapTests: XCTestCase {
         XCTAssertTrue(lines.allSatisfy { !$0.isCasing })
     }
 
+
+    /// Going somewhere twice in a day is one place, so one pin.
+    ///
+    /// It used to be one pin per consecutive run of stays, each drawn where that
+    /// stay was recorded. A music school visited in the morning and again in the
+    /// evening got two, a couple of hundred metres apart because one fix was
+    /// off, with the name written twice over itself. Places returned to within a
+    /// single run only looked right because their stays landed on the same spot.
+    func testOnePinPerPlaceHoweverOftenYouGoThere() throws {
+        let start = Date(timeIntervalSince1970: 1_800_000_000)
+        let school = CLLocationCoordinate2D(latitude: 49.274856, longitude: -123.144436)
+        // The evening fix landed a couple of hundred metres west of the school.
+        let strayFix = CLLocationCoordinate2D(latitude: 49.274484, longitude: -123.147782)
+
+        func stay(_ id: String, hours: Double, at: CLLocationCoordinate2D, place: String) -> TimelineVisit {
+            TimelineVisit(
+                id: id,
+                start: start.addingTimeInterval(hours * 3_600),
+                end: start.addingTimeInterval(hours * 3_600 + 600),
+                coordinate: at,
+                semanticType: nil,
+                placeKey: place
+            )
+        }
+        let day = DayRecord(
+            day: Calendar.current.startOfDay(for: start),
+            visits: [
+                stay("morning", hours: 1, at: school, place: "ChIJ_school"),
+                stay("errand", hours: 3, at: Landmark.louvrePyramid, place: "ChIJ_shop"),
+                stay("evening", hours: 8, at: strayFix, place: "ChIJ_school")
+            ],
+            paths: [],
+            activityLines: [],
+            travelMeters: 0,
+            region: MKCoordinateRegion(center: school, latitudinalMeters: 1_000, longitudinalMeters: 1_000)
+        )
+
+        let pins = TimelineMapPlotter.dayPins(
+            for: day,
+            titles: ["ChIJ_school": "Vancouver Academy of Music", "ChIJ_shop": "A Shop"],
+            placeCoordinates: ["ChIJ_school": school]
+        )
+
+        XCTAssertEqual(pins.count, 2, "two places, not three visits")
+        let academy = try XCTUnwrap(pins.first { $0.placeKey == "ChIJ_school" })
+        XCTAssertEqual(academy.title, "Vancouver Academy of Music")
+        XCTAssertEqual(academy.coordinate.latitude, school.latitude, accuracy: 0.000001)
+        XCTAssertEqual(academy.coordinate.longitude, school.longitude, accuracy: 0.000001)
+    }
+
+    /// A place with nowhere recorded for it still gets a pin, at the stay.
+    func testAPlaceWithNoKnownLocationFallsBackToTheStay() throws {
+        let start = Date(timeIntervalSince1970: 1_800_000_000)
+        let day = DayRecord(
+            day: Calendar.current.startOfDay(for: start),
+            visits: [
+                TimelineVisit(
+                    id: "only",
+                    start: start,
+                    end: start.addingTimeInterval(600),
+                    coordinate: Landmark.eiffelTower,
+                    semanticType: nil,
+                    placeKey: "unknown"
+                )
+            ],
+            paths: [],
+            activityLines: [],
+            travelMeters: 0,
+            region: MKCoordinateRegion(
+                center: Landmark.eiffelTower,
+                latitudinalMeters: 1_000,
+                longitudinalMeters: 1_000
+            )
+        )
+        let pins = TimelineMapPlotter.dayPins(for: day, titles: [:], placeCoordinates: [:])
+        XCTAssertEqual(pins.count, 1)
+        XCTAssertEqual(pins[0].coordinate.latitude, Landmark.eiffelTower.latitude, accuracy: 0.000001)
+    }
+
     private func bundledFixture() throws -> URL {
         try XCTUnwrap(Bundle.main.url(forResource: "eiffel-tower-day", withExtension: "json"))
     }

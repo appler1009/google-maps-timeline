@@ -313,11 +313,11 @@ final class MCPTimelineToolsTests: XCTestCase {
         }
     }
 
-    // MARK: - The bin
+    // MARK: - What was replaced
 
     /// Deleting takes a stay out of the timeline. It does not destroy it: a
     /// wrong reading of where you were is still evidence of something.
-    func testADeletedStayWaitsInTheBinAndComesBack() async throws {
+    func testADeletedStayIsKeptAndComesBack() async throws {
         let (tools, db, url) = library()
         defer { try? FileManager.default.removeItem(at: url) }
         try await seed(db)
@@ -329,22 +329,73 @@ final class MCPTimelineToolsTests: XCTestCase {
         let gone = try await db.loadBatch()?.visits ?? []
         XCTAssertFalse(gone.contains { $0.id == "s1" }, "out of the timeline")
 
-        let binned = try await tools.call("list_deleted_stays", arguments: .object([:]))
-        let entry = try XCTUnwrap(binned["deleted"]?.arrayValue?.first)
+        let history = try await tools.call("stay_history", arguments: .object(["only_deleted": true]))
+        let entry = try XCTUnwrap(history["versions"]?.arrayValue?.first)
         XCTAssertEqual(entry["stay_id"]?.stringValue, "s1")
         XCTAssertEqual(entry["reason"]?.stringValue, "was never there")
+        XCTAssertEqual(entry["change"]?.stringValue, "deleted")
         XCTAssertEqual(entry["place"]?.stringValue, "Save-On-Foods", "still known for what it was")
+        XCTAssertEqual(entry["still_in_timeline"]?.boolValue, false)
 
         _ = try await tools.call("restore_stay", arguments: .object(["stay_id": "s1"]))
         let back = try await db.loadBatch()?.visits ?? []
         XCTAssertTrue(back.contains { $0.id == "s1" })
-
-        let afterwards = try await tools.call("list_deleted_stays", arguments: .object([:]))
-        XCTAssertEqual(afterwards["deleted"]?.arrayValue?.count, 0, "and out of the bin")
     }
 
-    /// The bin keeps its order, so what was removed when is answerable later.
-    func testTheBinKeepsItsOrder() async throws {
+    /// Correcting times used to overwrite with nothing kept. A correction is
+    /// usually right, and "usually" is the reason to keep what it replaced.
+    func testRetimingAStayKeepsWhatItReplaced() async throws {
+        let (tools, db, url) = library()
+        defer { try? FileManager.default.removeItem(at: url) }
+        try await seed(db)
+        let loaded = try await db.loadBatch()
+        let before = try XCTUnwrap(loaded?.visits.first { $0.id == "s1" })
+
+        let from = start.addingTimeInterval(50 * 3_600)
+        _ = try await tools.call("set_stay_times", arguments: .object([
+            "stay_id": "s1",
+            "start": .number(from.timeIntervalSince1970),
+            "end": .number(from.addingTimeInterval(900).timeIntervalSince1970)
+        ]))
+
+        let history = try await tools.call("stay_history", arguments: .object(["stay_id": "s1"]))
+        let kept = try XCTUnwrap(history["versions"]?.arrayValue?.first)
+        XCTAssertEqual(kept["change"]?.stringValue, "times")
+        XCTAssertEqual(kept["still_in_timeline"]?.boolValue, true, "the stay is still there, just different")
+
+        // And undone: the stay goes back to the times it had.
+        _ = try await tools.call("restore_stay", arguments: .object(["stay_id": "s1"]))
+        let reloaded = try await db.loadBatch()
+        let restored = try XCTUnwrap(reloaded?.visits.first { $0.id == "s1" })
+        XCTAssertEqual(restored.start, before.start)
+        XCTAssertEqual(restored.end, before.end)
+    }
+
+    /// Splitting is an edit to the first half, so the whole stay is kept.
+    func testSplittingKeepsTheWholeStay() async throws {
+        let (tools, db, url) = library()
+        defer { try? FileManager.default.removeItem(at: url) }
+        try await seed(db)
+        let loadedBefore = try await db.loadBatch()
+        let before = try XCTUnwrap(loadedBefore?.visits.first { $0.id == "s1" })
+
+        let middle = before.start.addingTimeInterval(before.duration / 2)
+        _ = try await tools.call("split_stay", arguments: .object([
+            "stay_id": "s1", "at": .number(middle.timeIntervalSince1970)
+        ]))
+
+        let history = try await tools.call("stay_history", arguments: .object(["stay_id": "s1"]))
+        let kept = try XCTUnwrap(history["versions"]?.arrayValue?.first)
+        XCTAssertEqual(kept["change"]?.stringValue, "split")
+
+        _ = try await tools.call("restore_stay", arguments: .object(["stay_id": "s1"]))
+        let loadedWhole = try await db.loadBatch()
+        let whole = try XCTUnwrap(loadedWhole?.visits.first { $0.id == "s1" })
+        XCTAssertEqual(whole.end, before.end, "the first half is whole again")
+    }
+
+    /// History keeps its order, so what happened when is answerable later.
+    func testHistoryKeepsItsOrder() async throws {
         let (tools, db, url) = library()
         defer { try? FileManager.default.removeItem(at: url) }
         try await seed(db)
@@ -352,9 +403,9 @@ final class MCPTimelineToolsTests: XCTestCase {
         _ = try await tools.call("delete_stay", arguments: .object(["stay_id": "s1"]))
         _ = try await tools.call("delete_stay", arguments: .object(["stay_id": "s3"]))
 
-        let binned = try await tools.call("list_deleted_stays", arguments: .object([:]))
-        let ids = try XCTUnwrap(binned["deleted"]?.arrayValue).compactMap { $0["stay_id"]?.stringValue }
-        XCTAssertEqual(ids, ["s3", "s1"], "most recently removed first")
+        let history = try await tools.call("stay_history", arguments: .object(["only_deleted": true]))
+        let ids = try XCTUnwrap(history["versions"]?.arrayValue).compactMap { $0["stay_id"]?.stringValue }
+        XCTAssertEqual(ids, ["s3", "s1"], "most recently changed first")
     }
 
     func testCountingTimeSpentSomewhere() async throws {
@@ -366,6 +417,133 @@ final class MCPTimelineToolsTests: XCTestCase {
         XCTAssertEqual(counted["place"]?.stringValue, "Save-On-Foods")
         XCTAssertEqual(counted["stays"]?.intValue, 2)
         XCTAssertNotNil(counted["first"]?.stringValue)
+    }
+
+
+    // MARK: - Right now
+
+    /// The Mac has no recorder, so the only way it can answer "where am I" is
+    /// for the stay to have reached it as a row.
+    func testCurrentStayAnswersWhileAStayIsStillGoing() async throws {
+        let (tools, db, url) = library()
+        defer { try? FileManager.default.removeItem(at: url) }
+        try await seed(db)
+
+        let arrived = Date().addingTimeInterval(-2 * 3_600)
+        try await db.setOpenStop(
+            CapturedStop(coordinate: here, horizontalAccuracy: 50, start: arrived, end: nil),
+            placeKey: "shop"
+        )
+
+        let now = try await tools.call("current_stay", arguments: .object([:]))
+        XCTAssertEqual(now["in_progress"]?.boolValue, true)
+        XCTAssertEqual(now["place"]?.stringValue, "Save-On-Foods")
+        XCTAssertEqual(try XCTUnwrap(now["minutes_so_far"]?.doubleValue), 120, accuracy: 2)
+    }
+
+    /// And says so plainly when there is nothing to report, rather than
+    /// implying the last stay of the day is where you are.
+    func testCurrentStaySaysWhenNothingIsOpen() async throws {
+        let (tools, db, url) = library()
+        defer { try? FileManager.default.removeItem(at: url) }
+        try await seed(db)
+
+        let now = try await tools.call("current_stay", arguments: .object([:]))
+        XCTAssertEqual(now["in_progress"]?.boolValue, false)
+        XCTAssertNil(now["place"])
+    }
+
+    /// A stay that is still going has run for that long so far, not lasted it.
+    func testAnInProgressStayIsFlaggedWhereStaysAreListed() async throws {
+        let (tools, db, url) = library()
+        defer { try? FileManager.default.removeItem(at: url) }
+        try await seed(db)
+        try await db.setOpenStop(
+            CapturedStop(coordinate: here, horizontalAccuracy: 50, start: Date().addingTimeInterval(-600), end: nil),
+            placeKey: "shop"
+        )
+
+        let counted = try await tools.call("stays_at_place", arguments: .object(["place_id": "shop"]))
+        let recent = try XCTUnwrap(counted["recent"]?.arrayValue)
+        XCTAssertTrue(recent.contains { $0["in_progress"]?.boolValue == true })
+    }
+
+
+    /// Nothing is removed from the record to restore, so going further back
+    /// means naming a version. The numbers come from stay_history.
+    func testRestoringCanGoBackToAnyVersion() async throws {
+        let (tools, db, url) = library()
+        defer { try? FileManager.default.removeItem(at: url) }
+        try await seed(db)
+        let loaded = try await db.loadBatch()
+        let original = try XCTUnwrap(loaded?.visits.first { $0.id == "s1" })
+
+        func retime(to offset: Double) async throws {
+            let from = start.addingTimeInterval(offset)
+            _ = try await tools.call("set_stay_times", arguments: .object([
+                "stay_id": "s1",
+                "start": .number(from.timeIntervalSince1970),
+                "end": .number(from.addingTimeInterval(600).timeIntervalSince1970)
+            ]))
+        }
+        func currentStart() async throws -> Date {
+            let batch = try await db.loadBatch()
+            return try XCTUnwrap(batch?.visits.first { $0.id == "s1" }).start
+        }
+
+        try await retime(to: 40 * 3_600)
+        let second = try await currentStart()
+        try await retime(to: 60 * 3_600)
+
+        // Unasked, it goes back to the state before the last change.
+        _ = try await tools.call("restore_stay", arguments: .object(["stay_id": "s1"]))
+        let afterOne = try await currentStart()
+        XCTAssertEqual(afterOne, second)
+
+        // Further back needs naming the version, and every one is still listed.
+        let history = try await tools.call("stay_history", arguments: .object(["stay_id": "s1"]))
+        let versions = try XCTUnwrap(history["versions"]?.arrayValue)
+        let oldest = try XCTUnwrap(versions.last)
+        XCTAssertEqual(
+            oldest["was_from"]?.stringValue,
+            MCPValue.dayFormatter.string(from: original.start) + " " + Self.hourMinute(original.start)
+        )
+
+        _ = try await tools.call("restore_stay", arguments: .object([
+            "stay_id": "s1",
+            "version": .number(try XCTUnwrap(oldest["version"]?.doubleValue))
+        ]))
+        let afterNamed = try await currentStart()
+        XCTAssertEqual(afterNamed, original.start)
+    }
+
+    /// The record only grows: every version is still there afterwards.
+    func testRestoringNeverRemovesAVersion() async throws {
+        let (tools, db, url) = library()
+        defer { try? FileManager.default.removeItem(at: url) }
+        try await seed(db)
+
+        let from = start.addingTimeInterval(40 * 3_600)
+        _ = try await tools.call("set_stay_times", arguments: .object([
+            "stay_id": "s1",
+            "start": .number(from.timeIntervalSince1970),
+            "end": .number(from.addingTimeInterval(600).timeIntervalSince1970)
+        ]))
+        let before = try await tools.call("stay_history", arguments: .object(["stay_id": "s1"]))
+        let countBefore = try XCTUnwrap(before["versions"]?.arrayValue).count
+
+        _ = try await tools.call("restore_stay", arguments: .object(["stay_id": "s1"]))
+
+        let after = try await tools.call("stay_history", arguments: .object(["stay_id": "s1"]))
+        let countAfter = try XCTUnwrap(after["versions"]?.arrayValue).count
+        XCTAssertEqual(countAfter, countBefore + 1, "the restore is recorded, and nothing is dropped")
+    }
+
+    private static func hourMinute(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm"
+        formatter.timeZone = .current
+        return formatter.string(from: date)
     }
 
 }

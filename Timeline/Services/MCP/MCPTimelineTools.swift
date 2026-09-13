@@ -184,19 +184,26 @@ struct MCPTimelineTools: MCPToolProviding {
                 ])
             ),
             MCPTool(
-                name: "list_deleted_stays",
-                description: "What is in the bin, most recently removed first, with when and why.",
+                name: "stay_history",
+                description: "Every version of a stay that something replaced, most recent first — deleted, retimed or split — with when and why. Nothing here is lost; restore_stay puts any of it back.",
                 schema: .object([
                     "type": "object",
-                    "properties": .object(["limit": .object(["type": "number", "description": "default 50"])])
+                    "properties": .object([
+                        "stay_id": .object(["type": "string", "description": "narrow to one stay; omit for everything"]),
+                        "only_deleted": .object(["type": "boolean", "description": "just the bin"]),
+                        "limit": .object(["type": "number", "description": "default 50"])
+                    ])
                 ])
             ),
             MCPTool(
                 name: "restore_stay",
-                description: "Put a stay from the bin back into the timeline.",
+                description: "Put a stay back to one of the versions kept for it — after a delete, a retime or a split. Without a version it goes back to the state before the last change. Nothing is removed from the record to do it, so restoring twice does not walk further back on its own: to go further, name a version from stay_history.",
                 schema: .object([
                     "type": "object",
-                    "properties": .object(["stay_id": .object(["type": "string"])]),
+                    "properties": .object([
+                        "stay_id": .object(["type": "string"]),
+                        "version": .object(["type": "number", "description": "a version number from stay_history; omit for the most recent"])
+                    ]),
                     "required": .array(["stay_id"])
                 ])
             ),
@@ -213,6 +220,11 @@ struct MCPTimelineTools: MCPToolProviding {
                     ]),
                     "required": .array(["query"])
                 ])
+            ),
+            MCPTool(
+                name: "current_stay",
+                description: "Where you are right now, if a stay is still going on: the place, when it began, and how long so far. Answers nothing when the last thing recorded was a journey, or when the device doing the recording has not synced.",
+                schema: .object(["type": "object", "properties": .object([:])])
             ),
             MCPTool(
                 name: "stays_at_place",
@@ -257,10 +269,11 @@ struct MCPTimelineTools: MCPToolProviding {
         case "set_stay_times": return try await setStayTimes(arguments)
         case "split_stay": return try await splitStay(arguments)
         case "delete_stay": return try await deleteStay(arguments)
-        case "list_deleted_stays": return try await listDeletedStays(arguments)
+        case "stay_history": return try await stayHistory(arguments)
         case "restore_stay": return try await restoreStay(arguments)
         case "find_place_on_map": return try await findPlaceOnMap(arguments)
         case "stays_at_place": return try await staysAtPlace(arguments)
+        case "current_stay": return try await currentStay()
         default: throw MCPToolFailure(message: "no tool called \(name)")
         }
     }
@@ -369,10 +382,11 @@ struct MCPTimelineTools: MCPToolProviding {
         var described = Self.describe(place, stays: counts[id] ?? 0).objectValue ?? [:]
         described["folded_in"] = .array(merges.filter { $0.value == id }.keys.sorted().map { .string($0) })
         described["recent_stays"] = .array(recent.sorted { $0.start > $1.start }.map { visit in
-            .object([
+            .of([
                 "stay_id": .string(visit.id),
                 "start": .string(Self.stamp.string(from: visit.start)),
-                "minutes": .number((visit.duration / 60).rounded())
+                "minutes": .number((visit.duration / 60).rounded()),
+                "in_progress": visit.isOpen ? MCPValue.bool(true) : nil
             ])
         })
         return .object(described)
@@ -686,29 +700,35 @@ struct MCPTimelineTools: MCPToolProviding {
         ])
     }
 
-    private func listDeletedStays(_ arguments: MCPValue) async throws -> MCPValue {
+    private func stayHistory(_ arguments: MCPValue) async throws -> MCPValue {
         let limit = arguments["limit"]?.intValue ?? 50
-        let removed = try await database.deletedVisits(limit: limit)
+        let onlyDeleted = arguments["only_deleted"]?.boolValue ?? false
+        let stayID = arguments["stay_id"]?.stringValue
+        let versions = try await database.visitHistory(id: stayID, onlyDeleted: onlyDeleted, limit: limit)
         let names = try await placeNames()
-        let described = removed.map { entry in
+        let described = versions.map { version in
             MCPValue.of([
-                "stay_id": .string(entry.visit.id),
-                "from": .string(Self.stamp.string(from: entry.visit.start)),
-                "to": .string(Self.stamp.string(from: entry.visit.end)),
-                "place": .string(names[entry.visit.placeKey] ?? entry.visit.placeKey),
-                "deleted_at": .string(Self.stamp.string(from: entry.deletedAt)),
-                "reason": entry.reason.map { MCPValue.string($0) }
+                "version": .number(Double(version.seq)),
+                "stay_id": .string(version.visit.id),
+                "was_from": .string(Self.stamp.string(from: version.visit.start)),
+                "was_to": .string(Self.stamp.string(from: version.visit.end)),
+                "place": .string(names[version.visit.placeKey] ?? version.visit.placeKey),
+                "change": .string(version.change.rawValue),
+                "changed_at": .string(Self.stamp.string(from: version.changedAt)),
+                "reason": version.reason.map { MCPValue.string($0) },
+                "still_in_timeline": .bool(!version.isGone)
             ])
         }
-        return .object(["deleted": .array(described)])
+        return .object(["versions": .array(described)])
     }
 
     private func restoreStay(_ arguments: MCPValue) async throws -> MCPValue {
         guard let id = arguments["stay_id"]?.stringValue, !id.isEmpty else {
             throw MCPToolFailure(message: "stay_id is required")
         }
-        guard let restored = try await database.restoreDeletedVisit(id: id) else {
-            throw MCPToolFailure(message: "nothing in the bin with id \(id)")
+        let wanted = arguments["version"]?.intValue.map(Int64.init)
+        guard let restored = try await database.restoreVisit(id: id, version: wanted) else {
+            throw MCPToolFailure(message: "no such version of \(id) was kept")
         }
         onChanged()
         return .object([
@@ -752,6 +772,36 @@ struct MCPTimelineTools: MCPToolProviding {
         })])
     }
 
+    // MARK: - Now
+
+    private func currentStay() async throws -> MCPValue {
+        let now = Date()
+        guard let batch = try await database.loadBatch(now: now) else {
+            throw MCPToolFailure(message: "the library is empty")
+        }
+        // The most recent one, in case an older stay was left open by a
+        // departure nobody saw.
+        let open = batch.visits.filter(\.isOpen).max { $0.start < $1.start }
+        guard let open else {
+            return .object([
+                "in_progress": .bool(false),
+                "note": "nothing is open — either you are on the move, or the device recording it has not synced yet"
+            ])
+        }
+        let names = try await placeNames()
+        let minutes = (now.timeIntervalSince(open.start) / 60).rounded()
+        return .of([
+            "in_progress": .bool(true),
+            "stay_id": .string(open.id),
+            "place_id": .string(open.placeKey),
+            "place": .string(names[open.placeKey] ?? open.semanticType ?? "unnamed"),
+            "since": .string(Self.stamp.string(from: open.start)),
+            "minutes_so_far": .number(minutes),
+            "latitude": open.coordinate.map { MCPValue.number($0.latitude) },
+            "longitude": open.coordinate.map { MCPValue.number($0.longitude) }
+        ])
+    }
+
     // MARK: - Counting
 
     private func staysAtPlace(_ arguments: MCPValue) async throws -> MCPValue {
@@ -768,10 +818,13 @@ struct MCPTimelineTools: MCPToolProviding {
         let stays = try await database.visits(placeKey: id, from: from, to: to)
         let minutes = stays.reduce(0.0) { $0 + $1.duration / 60 }
         let listed = stays.suffix(50).map { visit in
-            MCPValue.object([
+            MCPValue.of([
                 "stay_id": .string(visit.id),
                 "from": .string(Self.stamp.string(from: visit.start)),
-                "minutes": .number((visit.duration / 60).rounded())
+                "minutes": .number((visit.duration / 60).rounded()),
+                // Still going on, so the length is how long so far rather than
+                // how long it was.
+                "in_progress": visit.isOpen ? MCPValue.bool(true) : nil
             ])
         }
         return .object([

@@ -28,19 +28,51 @@ enum TimelineMapPlotter {
         day: DayRecord?,
         place: PlaceRecord?,
         routed: [RoutedHop],
-        titles: [String: String] = [:]
+        titles: [String: String] = [:],
+        placeCoordinates: [String: CLLocationCoordinate2D] = [:]
     ) {
         if let day {
             addDayPaths(map: map, routed: routed)
-            // One pin per consecutive same-place run (matches day-legend folding).
-            for run in PlaceVisitRun.coalesced(from: day.visits) {
-                guard let visit = run.visits.first(where: { $0.coordinate != nil }),
-                      let coordinate = visit.coordinate else { continue }
-                map.addAnnotation(pin(visit: visit, coordinate: coordinate, titles: titles))
+            for pin in dayPins(for: day, titles: titles, placeCoordinates: placeCoordinates) {
+                map.addAnnotation(pin)
             }
         } else if let place, let coordinate = place.coordinate {
             map.addAnnotation(pin(place: place, coordinate: coordinate, titles: titles))
         }
+    }
+
+    /// One pin per place, wherever the place is.
+    ///
+    /// It used to be one per consecutive run of stays, drawn where each stay was
+    /// recorded — so going somewhere twice in a day put two pins on the map, and
+    /// two copies of the name written over each other. Places you return to
+    /// within the same run looked fine only because their stays happened to land
+    /// on the same spot; a music school visited twice, once with a fix a couple
+    /// of hundred metres out, did not.
+    ///
+    /// The pin goes where the place is, not where a particular fix landed. The
+    /// stays keep their own coordinates: that is the record of where you
+    /// actually were, and it is what says a fix was off in the first place.
+    static func dayPins(
+        for day: DayRecord,
+        titles: [String: String],
+        placeCoordinates: [String: CLLocationCoordinate2D]
+    ) -> [VisitAnnotation] {
+        var seen: Set<String> = []
+        var pins: [VisitAnnotation] = []
+        for run in PlaceVisitRun.coalesced(from: day.visits) {
+            guard let visit = run.visits.first(where: { $0.coordinate != nil }),
+                  let recorded = visit.coordinate else { continue }
+            guard seen.insert(visit.placeKey).inserted else { continue }
+            pins.append(
+                pin(
+                    visit: visit,
+                    coordinate: placeCoordinates[visit.placeKey] ?? recorded,
+                    titles: titles
+                )
+            )
+        }
+        return pins
     }
 
     static func pin(

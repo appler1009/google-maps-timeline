@@ -657,6 +657,37 @@ final class TimelineRecorderTests: XCTestCase {
         let activities = try await database.loadBatch()?.activities ?? []
         XCTAssertTrue(activities.isEmpty)
     }
+
+    /// A stay keeps where it was, not where the departure was reported from.
+    ///
+    /// Core Location fixes a departure as you leave, often once you are already
+    /// moving. A music school came back two hundred and forty metres west of
+    /// itself that way — further than clustering would ever have accepted as the
+    /// same place, and it only kept the right name because a stay already open
+    /// keeps its key. The arrival is the fix taken while you were actually
+    /// there.
+    func testAStayKeepsTheArrivalCoordinateNotTheDeparture() async throws {
+        let (recorder, _, _, database, url) = makeRecorder()
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let start = Date(timeIntervalSince1970: 1_700_000_000)
+        await recorder.handle(stop: stop(start: start, minutes: nil))
+
+        // The departure is reported from 240 m away, as departures are.
+        let drifted = offset(home, metersNorth: 240)
+        await recorder.handle(stop: stop(at: drifted, start: start, minutes: 30))
+
+        let visits = try await database.loadBatch()?.visits ?? []
+        let recorded = try XCTUnwrap(visits.first { !$0.isOpen })
+        let placed = try XCTUnwrap(recorded.coordinate)
+        XCTAssertEqual(
+            RoutePlanner.meters(placed, home),
+            0,
+            accuracy: 5,
+            "the stay sits where it was, not where the departure was seen"
+        )
+    }
+
 }
 
 // MARK: - Reconciliation with imported exports
@@ -682,7 +713,46 @@ final class TimelineReconcilerTests: XCTestCase {
         )
     }
 
-    func testImportedDaysTheDeviceRecordedAreShadowed() {
+    /// The reported case: one stay recorded in the evening hid the whole day.
+    ///
+    /// On the sixth of September the phone recorded a single stay at eight in
+    /// the evening. That hid eleven imported stays, including a place in another
+    /// town at lunchtime that the phone never saw — and Takeout is the only
+    /// record of it. The Mac showed them because only the phone reconciles, so
+    /// the same library read differently on each device.
+    func testAStayTheDeviceNeverSawSurvivesTheRestOfTheDay() {
+        let device = [visit(id: "d1", placeKey: "49.2765,-123.0680", offsetHours: 12, hours: 1)]
+        let imported = [
+            // Lunchtime, in another town: nothing recorded it.
+            visit(
+                id: "g-elsewhere",
+                placeKey: "ChIJ_chilliwack",
+                offsetHours: 4,
+                hours: 0.02,
+                coordinate: offset(home, metersNorth: 60_000)
+            ),
+            // And the stay the device did record, which it has better timing for.
+            visit(id: "g-same", placeKey: "ChIJ_home", offsetHours: 12.25, hours: 0.5),
+        ]
+        let plan = TimelineReconciler.plan(device: device, imported: imported)
+        XCTAssertEqual(plan.shadowedVisitIDs, ["g-same"])
+    }
+
+    /// An export and a recording seldom agree on the minute a stay began, so a
+    /// near miss at the same place is still one visit, not two.
+    func testANearMissAtTheSamePlaceIsStillOneVisit() {
+        let device = [visit(id: "d1", placeKey: "49.2765,-123.0680", offsetHours: 2, hours: 1)]
+        let imported = [visit(
+            id: "g1",
+            placeKey: "ChIJ_home",
+            offsetHours: 3.2,
+            hours: 0.5,
+            coordinate: offset(home, metersNorth: 40)
+        )]
+        XCTAssertEqual(TimelineReconciler.plan(device: device, imported: imported).shadowedVisitIDs, ["g1"])
+    }
+
+    func testImportedStaysTheDeviceAlsoRecordedAreShadowed() {
         let device = [visit(id: "d1", placeKey: "49.2765,-123.0680", offsetHours: 0, hours: 2)]
         let imported = [
             visit(id: "g1", placeKey: "ChIJ_home", offsetHours: 0.5, hours: 1),
@@ -742,6 +812,18 @@ final class TimelineReconcilerTests: XCTestCase {
         XCTAssertTrue(TimelineReconciler.plan(device: device, imported: []).isEmpty)
         XCTAssertTrue(TimelineReconciler.plan(device: [], imported: device).isEmpty)
     }
+
+    /// Changing the rule has to take effect at once. Reconciling is throttled to
+    /// twenty hours, so a day already decided under the old rule would keep its
+    /// old answer for most of a day and the fix would look like it did nothing.
+    func testTheReconcileMarkCarriesTheRuleItRanUnder() {
+        XCTAssertNotEqual(
+            CaptureMark.reconcile,
+            "reconcile",
+            "bumping the mark is what makes a rule change apply to libraries already reconciled"
+        )
+    }
+
 }
 
 final class ReconciliationDatabaseTests: XCTestCase {
