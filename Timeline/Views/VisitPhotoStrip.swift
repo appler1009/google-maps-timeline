@@ -125,6 +125,47 @@ struct LuxPhotoViewerOverlay: View {
     }
 }
 
+/// What a drag across the photo viewer means.
+///
+/// The viewer has one gesture doing two jobs — sideways moves between photos,
+/// up or down puts it away — so the reading of a drag is worth having on its
+/// own, where the thresholds can be argued with and tested rather than buried
+/// in a closure.
+enum PhotoViewerDrag {
+    /// Far enough to mean it, in points.
+    static let dismissDistance: CGFloat = 120
+    /// Or thrown hard enough that stopping short was not the intention: this is
+    /// measured against where the drag was heading, not where it ended.
+    static let throwDistance: CGFloat = 320
+    /// Sideways needs less, because there is nowhere else for it to go.
+    static let navigateDistance: CGFloat = 60
+
+    enum Outcome: Equatable {
+        case dismiss
+        case next
+        case previous
+        /// Not enough of anything: put it back.
+        case stay
+    }
+
+    static func outcome(translation: CGSize, predictedEnd: CGSize) -> Outcome {
+        // Whichever axis the drag committed to. A gesture that wanders is read
+        // as the thing it did most of.
+        if abs(translation.width) > abs(translation.height) {
+            guard abs(translation.width) >= navigateDistance else { return .stay }
+            return translation.width < 0 ? .next : .previous
+        }
+        let far = abs(translation.height) >= dismissDistance
+        let thrown = abs(predictedEnd.height) >= throwDistance
+        return far || thrown ? .dismiss : .stay
+    }
+
+    /// How far through a dismissing drag this is, for fading and shrinking.
+    static func progress(height: CGFloat) -> Double {
+        Double(min(abs(height) / dismissDistance, 1))
+    }
+}
+
 struct VisitPhotoViewer: View {
     let photos: [LuxVisitPhoto]
     @Binding var index: Int
@@ -134,6 +175,8 @@ struct VisitPhotoViewer: View {
     @State private var errorMessage: String?
     @State private var sheetSize: CGSize = CGSize(width: 840, height: 560)
     @State private var navDirection: NavDirection = .none
+    /// How far a dismissing drag has got. Zero unless one is in progress.
+    @State private var drag: CGSize = .zero
     @FocusState private var isFocused: Bool
 
     private enum NavDirection {
@@ -159,10 +202,16 @@ struct VisitPhotoViewer: View {
     private var iosBody: some View {
         NavigationStack {
             ZStack {
-                Palette.ink.ignoresSafeArea()
+                // The ground fades as the photo is pulled away, so it is clear
+                // the drag is putting it back rather than moving it about.
+                Palette.ink
+                    .opacity(1 - PhotoViewerDrag.progress(height: drag.height) * 0.55)
+                    .ignoresSafeArea()
                 content
                     .id(photo.id)
                     .transition(imageTransition)
+                    .offset(y: drag.height)
+                    .scaleEffect(1 - PhotoViewerDrag.progress(height: drag.height) * 0.12)
             }
             .navigationTitle(photo.item.filename)
             .navigationBarTitleDisplayMode(.inline)
@@ -203,12 +252,30 @@ struct VisitPhotoViewer: View {
                 await load()
             }
             .gesture(
-                DragGesture(minimumDistance: 40)
+                DragGesture(minimumDistance: 20)
+                    .onChanged { value in
+                        // Follow the finger only once the drag has committed to
+                        // going up or down, so moving between photos does not
+                        // make the whole thing wobble.
+                        guard abs(value.translation.height) > abs(value.translation.width) else { return }
+                        drag = CGSize(width: 0, height: value.translation.height)
+                    }
                     .onEnded { value in
-                        if value.translation.width < -60 {
+                        switch PhotoViewerDrag.outcome(
+                            translation: value.translation,
+                            predictedEnd: value.predictedEndTranslation
+                        ) {
+                        case .next:
                             goNext()
-                        } else if value.translation.width > 60 {
+                        case .previous:
                             goPrevious()
+                        case .dismiss:
+                            onDismiss()
+                        case .stay:
+                            break
+                        }
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                            drag = .zero
                         }
                     }
             )
