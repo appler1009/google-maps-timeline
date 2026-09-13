@@ -375,6 +375,9 @@ actor TimelineDatabase {
         var source: RecordSource
         /// True when the stay is not in the timeline at all any more.
         var isGone: Bool
+        /// Which row this is, so restoring can consume exactly the one it used
+        /// rather than whichever happens to be newest by the time it looks.
+        var seq: Int64
     }
 
     /// Write down a stay as it stands, before something changes it.
@@ -446,7 +449,7 @@ actor TimelineDatabase {
         let sql = """
             SELECT h.id, h.start, h.end, h.lat, h.lon, COALESCE(h.place_id, h.place_key),
                    h.semantic_type, h.changed_at, h.change, h.reason, h.source,
-                   (SELECT COUNT(*) FROM visits v WHERE v.id = h.id)
+                   (SELECT COUNT(*) FROM visits v WHERE v.id = h.id), h.seq
             FROM visit_history h\(filter)
             ORDER BY h.changed_at DESC, h.seq DESC LIMIT ?
             """
@@ -469,32 +472,34 @@ actor TimelineDatabase {
                     change: VisitVersion.Change(rawValue: text(statement, 8) ?? "") ?? .deleted,
                     reason: text(statement, 9),
                     source: RecordSource(rawValue: text(statement, 10) ?? "") ?? .device,
-                    isGone: sqlite3_column_int64(statement, 11) == 0
+                    isGone: sqlite3_column_int64(statement, 11) == 0,
+                    seq: sqlite3_column_int64(statement, 12)
                 )
             )
         }
         return rows
     }
 
-    /// Put a stay back as it was before the last thing that changed it.
+    /// Put a stay back to one of the versions kept for it.
     ///
-    /// The same move whether it was deleted or merely edited: the most recent
-    /// superseded version becomes the current one again.
+    /// Nothing is removed from the record to do it: the state being replaced is
+    /// written down first, so the history only ever grows. That means restoring
+    /// twice does not walk further back on its own — the second restore would
+    /// find the state the first one replaced sitting at the top. To go further,
+    /// name the version: `stay_history` gives each one a number.
     @discardableResult
-    func restoreVisit(id: String, now: Date = Date()) throws -> TimelineVisit? {
+    func restoreVisit(id: String, version wanted: Int64? = nil, now: Date = Date()) throws -> TimelineVisit? {
         guard let db, !id.isEmpty else { return nil }
-        guard let version = try visitHistory(id: id, limit: 1).first else { return nil }
-        // Restoring is itself a change, so what it replaces is kept too — undo
-        // that can be undone.
+        let kept = try visitHistory(id: id, limit: 5_000)
+        let version: VisitVersion?
+        if let wanted {
+            version = kept.first { $0.seq == wanted }
+        } else {
+            version = kept.first
+        }
+        guard let version else { return nil }
         try? rememberVisit(id: id, change: .times, reason: "replaced by a restore", now: now, db: db)
         try record(batch: TimelineBatch(visits: [version.visit], activities: [], paths: []), source: version.source)
-        try exec(
-            """
-            DELETE FROM visit_history
-            WHERE seq = (SELECT seq FROM visit_history WHERE id = \(quote(id))
-                         ORDER BY changed_at DESC, seq DESC LIMIT 1)
-            """
-        )
         return version.visit
     }
 

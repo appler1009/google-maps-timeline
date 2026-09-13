@@ -197,10 +197,13 @@ struct MCPTimelineTools: MCPToolProviding {
             ),
             MCPTool(
                 name: "restore_stay",
-                description: "Put a stay back as it was before the last thing that changed it — whether that was a delete, a retime or a split. Restoring is itself recorded, so it can be undone too.",
+                description: "Put a stay back to one of the versions kept for it — after a delete, a retime or a split. Without a version it goes back to the state before the last change. Nothing is removed from the record to do it, so restoring twice does not walk further back on its own: to go further, name a version from stay_history.",
                 schema: .object([
                     "type": "object",
-                    "properties": .object(["stay_id": .object(["type": "string"])]),
+                    "properties": .object([
+                        "stay_id": .object(["type": "string"]),
+                        "version": .object(["type": "number", "description": "a version number from stay_history; omit for the most recent"])
+                    ]),
                     "required": .array(["stay_id"])
                 ])
             ),
@@ -705,6 +708,7 @@ struct MCPTimelineTools: MCPToolProviding {
         let names = try await placeNames()
         let described = versions.map { version in
             MCPValue.of([
+                "version": .number(Double(version.seq)),
                 "stay_id": .string(version.visit.id),
                 "was_from": .string(Self.stamp.string(from: version.visit.start)),
                 "was_to": .string(Self.stamp.string(from: version.visit.end)),
@@ -722,8 +726,9 @@ struct MCPTimelineTools: MCPToolProviding {
         guard let id = arguments["stay_id"]?.stringValue, !id.isEmpty else {
             throw MCPToolFailure(message: "stay_id is required")
         }
-        guard let restored = try await database.restoreVisit(id: id) else {
-            throw MCPToolFailure(message: "no earlier version of \(id) was kept")
+        let wanted = arguments["version"]?.intValue.map(Int64.init)
+        guard let restored = try await database.restoreVisit(id: id, version: wanted) else {
+            throw MCPToolFailure(message: "no such version of \(id) was kept")
         }
         onChanged()
         return .object([

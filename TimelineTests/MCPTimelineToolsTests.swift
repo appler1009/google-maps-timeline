@@ -468,4 +468,82 @@ final class MCPTimelineToolsTests: XCTestCase {
         XCTAssertTrue(recent.contains { $0["in_progress"]?.boolValue == true })
     }
 
+
+    /// Nothing is removed from the record to restore, so going further back
+    /// means naming a version. The numbers come from stay_history.
+    func testRestoringCanGoBackToAnyVersion() async throws {
+        let (tools, db, url) = library()
+        defer { try? FileManager.default.removeItem(at: url) }
+        try await seed(db)
+        let loaded = try await db.loadBatch()
+        let original = try XCTUnwrap(loaded?.visits.first { $0.id == "s1" })
+
+        func retime(to offset: Double) async throws {
+            let from = start.addingTimeInterval(offset)
+            _ = try await tools.call("set_stay_times", arguments: .object([
+                "stay_id": "s1",
+                "start": .number(from.timeIntervalSince1970),
+                "end": .number(from.addingTimeInterval(600).timeIntervalSince1970)
+            ]))
+        }
+        func currentStart() async throws -> Date {
+            let batch = try await db.loadBatch()
+            return try XCTUnwrap(batch?.visits.first { $0.id == "s1" }).start
+        }
+
+        try await retime(to: 40 * 3_600)
+        let second = try await currentStart()
+        try await retime(to: 60 * 3_600)
+
+        // Unasked, it goes back to the state before the last change.
+        _ = try await tools.call("restore_stay", arguments: .object(["stay_id": "s1"]))
+        let afterOne = try await currentStart()
+        XCTAssertEqual(afterOne, second)
+
+        // Further back needs naming the version, and every one is still listed.
+        let history = try await tools.call("stay_history", arguments: .object(["stay_id": "s1"]))
+        let versions = try XCTUnwrap(history["versions"]?.arrayValue)
+        let oldest = try XCTUnwrap(versions.last)
+        XCTAssertEqual(
+            oldest["was_from"]?.stringValue,
+            MCPValue.dayFormatter.string(from: original.start) + " " + Self.hourMinute(original.start)
+        )
+
+        _ = try await tools.call("restore_stay", arguments: .object([
+            "stay_id": "s1",
+            "version": .number(try XCTUnwrap(oldest["version"]?.doubleValue))
+        ]))
+        let afterNamed = try await currentStart()
+        XCTAssertEqual(afterNamed, original.start)
+    }
+
+    /// The record only grows: every version is still there afterwards.
+    func testRestoringNeverRemovesAVersion() async throws {
+        let (tools, db, url) = library()
+        defer { try? FileManager.default.removeItem(at: url) }
+        try await seed(db)
+
+        let from = start.addingTimeInterval(40 * 3_600)
+        _ = try await tools.call("set_stay_times", arguments: .object([
+            "stay_id": "s1",
+            "start": .number(from.timeIntervalSince1970),
+            "end": .number(from.addingTimeInterval(600).timeIntervalSince1970)
+        ]))
+        let before = try await tools.call("stay_history", arguments: .object(["stay_id": "s1"]))
+        let countBefore = try XCTUnwrap(before["versions"]?.arrayValue).count
+
+        _ = try await tools.call("restore_stay", arguments: .object(["stay_id": "s1"]))
+
+        let after = try await tools.call("stay_history", arguments: .object(["stay_id": "s1"]))
+        let countAfter = try XCTUnwrap(after["versions"]?.arrayValue).count
+        XCTAssertEqual(countAfter, countBefore + 1, "the restore is recorded, and nothing is dropped")
+    }
+
+    private static func hourMinute(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm"
+        formatter.timeZone = .current
+        return formatter.string(from: date)
+    }
+
 }
