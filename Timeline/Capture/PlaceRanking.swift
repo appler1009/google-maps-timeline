@@ -93,6 +93,11 @@ struct HeuristicPlaceRanker: PlaceRanking {
     /// things on two different scales, which would have misled the first caller
     /// who reached that branch. One candidate has nothing to be confused with,
     /// so the gap is total.
+    ///
+    /// A gap says nothing about how good either candidate is: two places can
+    /// both score well and still be a coin toss between them, and two poor ones
+    /// can be clearly ordered. Being told apart is the only question here, and
+    /// `confidenceFloor` is where it stops being answerable.
     func confidence(
         _ candidates: [PlaceNameSuggestion],
         context: VisitNamingContext

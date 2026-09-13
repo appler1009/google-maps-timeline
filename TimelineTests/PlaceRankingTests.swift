@@ -553,9 +553,14 @@ final class FoundationModelChooserTests: XCTestCase {
         XCTAssertFalse(choice.reason.isEmpty)
         print("[model] chose \(choice.title) — \(choice.reason) (\(choice.confidence))")
     }
-    /// Measures the on-device model: how long a call takes, whether prewarming
-    /// helps, and whether it actually picks better than the arithmetic it is
-    /// there to improve on.
+    /// Measures the on-device model: how long a call takes, and whether it
+    /// actually picks better than the arithmetic it is there to improve on.
+    ///
+    /// The first call and the ones after it are reported apart, because that is
+    /// the cold-versus-warm question in the form it actually arrives: a session
+    /// is built per call, and whatever one-time cost the model has lands on
+    /// whichever call comes first. If the gap between them were large against
+    /// the timeout, prewarming would be worth adding; the numbers say what it is.
     ///
     ///     defaults write com.appler.Timeline.tests runModelTests -bool YES
     func testMeasureTheModel() async throws {
@@ -577,17 +582,27 @@ final class FoundationModelChooserTests: XCTestCase {
         for run in 1...5 {
             let began = Date()
             let choice = try await chooser.choose(from: titles, prompt: prompt)
-            let took = Date().timeIntervalSince(began)
-            timings.append(took)
+            timings.append(Date().timeIntervalSince(began))
             picks[choice.title, default: 0] += 1
             print(String(format: "[measure] run %d: %.2fs — %@ (%.2f) — %@",
-                         run, took, choice.title, choice.confidence, choice.reason))
+                         run, timings[run - 1], choice.title, choice.confidence, choice.reason))
         }
-        let mean = timings.reduce(0, +) / Double(timings.count)
-        print(String(format: "[measure] mean %.2fs, slowest %.2fs, budget %.0fs",
-                     mean, timings.max() ?? 0, Double(ModelPlaceRanker.defaultTimeout.components.seconds)))
+
+        let cold = timings[0]
+        let warm = timings.dropFirst()
+        let warmMean = warm.reduce(0, +) / Double(warm.count)
+        let budget = Double(ModelPlaceRanker.defaultTimeout.components.seconds)
+        print(String(format: "[measure] first call %.2fs, later calls %.2fs mean, warm-up costs %.2fs",
+                     cold, warmMean, cold - warmMean))
+        print(String(format: "[measure] slowest %.2fs against a %.0fs budget — %.0f%% of it",
+                     timings.max() ?? 0, budget, (timings.max() ?? 0) / budget * 100))
         print("[measure] picks: \(picks)")
-        print("[measure] the arithmetic picks: \(await HeuristicPlaceRanker().rank(candidates, context: lunch).first?.title ?? "-")")
+        let arithmetic = await HeuristicPlaceRanker().rank(candidates, context: lunch).first?.title ?? "-"
+        print("[measure] the arithmetic picks: \(arithmetic)")
+
+        // Not an assertion about which is right — that is the open question —
+        // only that the run happened and stayed inside the budget it is given.
+        XCTAssertLessThan(timings.max() ?? .infinity, budget)
     }
 
 }

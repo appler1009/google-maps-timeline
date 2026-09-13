@@ -9,6 +9,11 @@ struct ModelPlaceChoice: Equatable, Sendable {
     /// shown: a name the model got wrong is fixed in two taps, but knowing
     /// *why* it went wrong is the difference between fixing the prompt and
     /// guessing at it — and this is a path with no other way to see inside.
+    ///
+    /// Logged means it leaves the device wherever the log goes. The phrase
+    /// names candidates and timings, so it is of a kind with the place names
+    /// already logged beside it — but the inference being on-device is not by
+    /// itself a promise about the diagnostics.
     let reason: String
 }
 
@@ -71,15 +76,17 @@ struct ModelPlaceRanker: PlaceRanking {
             TimelineLog.info("place model answered off-list", ["title": choice.title])
             return ordered
         }
-        TimelineLog.info(
-            "place model reranked",
-            [
-                "title": winner.title,
-                "instead of": ordered.first?.title ?? "-",
-                "confidence": String(format: "%.2f", choice.confidence),
-                "reason": choice.reason
-            ]
-        )
+        // Agreeing and overruling are different events and should read as
+        // different events. "reranked", with the same name on both sides of it,
+        // announced an overrule that had not happened.
+        let overruled = ordered.first.map { $0.id != winner.id } ?? false
+        var details = [
+            "title": winner.title,
+            "confidence": String(format: "%.2f", choice.confidence),
+            "reason": choice.reason
+        ]
+        if overruled { details["overruled"] = ordered.first?.title ?? "-" }
+        TimelineLog.info(overruled ? "place model overruled" : "place model agreed", details)
         return [winner] + ordered.filter { $0.id != winner.id }
     }
 
