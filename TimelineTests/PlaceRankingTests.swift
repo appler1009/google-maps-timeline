@@ -136,10 +136,15 @@ final class HeuristicPlaceRankerTests: XCTestCase {
         XCTAssertLessThan(ambiguous, ModelPlaceRanker.confidenceFloor, "this is exactly when to ask a model")
     }
 
+    /// Confidence is always the gap to the runner-up, never a score. One
+    /// candidate has nothing to be confused with, so the gap is total — and no
+    /// model is asked about a choice of one.
     func testASingleCandidateIsNotAmbiguous() {
         XCTAssertEqual(ranker.confidence([], context: context()), 0)
-        let single = ranker.confidence([candidate("Only Option", meters: 20)], context: context())
-        XCTAssertGreaterThan(single, 0)
+        XCTAssertEqual(ranker.confidence([candidate("Only Option", meters: 20)], context: context()), 1)
+        // Even a candidate that scores poorly on its own is unambiguous alone.
+        let weak = candidate("Distant Warehouse", meters: 440, source: .address)
+        XCTAssertEqual(ranker.confidence([weak], context: context()), 1)
     }
 }
 
@@ -548,4 +553,56 @@ final class FoundationModelChooserTests: XCTestCase {
         XCTAssertFalse(choice.reason.isEmpty)
         print("[model] chose \(choice.title) — \(choice.reason) (\(choice.confidence))")
     }
+    /// Measures the on-device model: how long a call takes, and whether it
+    /// actually picks better than the arithmetic it is there to improve on.
+    ///
+    /// The first call and the ones after it are reported apart, because that is
+    /// the cold-versus-warm question in the form it actually arrives: a session
+    /// is built per call, and whatever one-time cost the model has lands on
+    /// whichever call comes first. If the gap between them were large against
+    /// the timeout, prewarming would be worth adding; the numbers say what it is.
+    ///
+    ///     defaults write com.appler.Timeline.tests runModelTests -bool YES
+    func testMeasureTheModel() async throws {
+        try XCTSkipUnless(modelTestsEnabled, "set runModelTests to measure")
+        let chooser = PlaceChooserFactory.make()
+        try XCTSkipUnless(chooser.isAvailable, PlaceChooserFactory.unavailableReason() ?? "no model")
+
+        let lunch = context(startMinutes: 12 * 60 + 30, durationMinutes: 40)
+        let candidates = [
+            candidate("Bright Smile Dental", meters: 45, category: "Dentist"),
+            candidate("Chipotle", meters: 40, category: "Restaurant"),
+            candidate("QuickShip Postal", meters: 52, category: "PostOffice"),
+        ]
+        let titles = candidates.map(\.title)
+        let prompt = PlaceNamingPrompt.build(context: lunch, candidates: candidates)
+
+        var picks: [String: Int] = [:]
+        var timings: [Double] = []
+        for run in 1...5 {
+            let began = Date()
+            let choice = try await chooser.choose(from: titles, prompt: prompt)
+            timings.append(Date().timeIntervalSince(began))
+            picks[choice.title, default: 0] += 1
+            print(String(format: "[measure] run %d: %.2fs — %@ (%.2f) — %@",
+                         run, timings[run - 1], choice.title, choice.confidence, choice.reason))
+        }
+
+        let cold = timings[0]
+        let warm = timings.dropFirst()
+        let warmMean = warm.reduce(0, +) / Double(warm.count)
+        let budget = Double(ModelPlaceRanker.defaultTimeout.components.seconds)
+        print(String(format: "[measure] first call %.2fs, later calls %.2fs mean, warm-up costs %.2fs",
+                     cold, warmMean, cold - warmMean))
+        print(String(format: "[measure] slowest %.2fs against a %.0fs budget — %.0f%% of it",
+                     timings.max() ?? 0, budget, (timings.max() ?? 0) / budget * 100))
+        print("[measure] picks: \(picks)")
+        let arithmetic = await HeuristicPlaceRanker().rank(candidates, context: lunch).first?.title ?? "-"
+        print("[measure] the arithmetic picks: \(arithmetic)")
+
+        // Not an assertion about which is right — that is the open question —
+        // only that the run happened and stayed inside the budget it is given.
+        XCTAssertLessThan(timings.max() ?? .infinity, budget)
+    }
+
 }

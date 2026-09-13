@@ -84,17 +84,28 @@ struct HeuristicPlaceRanker: PlaceRanking {
             }
     }
 
-    /// How clearly the winner won. Low means the top two are interchangeable on
-    /// the evidence we have, which is exactly when a language model is worth
-    /// asking.
+    /// How clearly the winner won: the gap to the runner-up. Low means the top
+    /// two are interchangeable on the evidence we have, which is exactly when a
+    /// language model is worth asking.
+    ///
+    /// Always a gap, never a score. It used to return the winner's own score
+    /// when there was only one candidate — the same name meaning two different
+    /// things on two different scales, which would have misled the first caller
+    /// who reached that branch. One candidate has nothing to be confused with,
+    /// so the gap is total.
+    ///
+    /// A gap says nothing about how good either candidate is: two places can
+    /// both score well and still be a coin toss between them, and two poor ones
+    /// can be clearly ordered. Being told apart is the only question here, and
+    /// `confidenceFloor` is where it stops being answerable.
     func confidence(
         _ candidates: [PlaceNameSuggestion],
         context: VisitNamingContext
     ) -> Double {
         let ordered = scored(candidates, context: context)
-        guard let best = ordered.first else { return 0 }
-        guard ordered.count > 1 else { return best.score }
-        return min(max(best.score - ordered[1].score, 0), 1)
+        guard !ordered.isEmpty else { return 0 }
+        guard ordered.count > 1 else { return 1 }
+        return min(max(ordered[0].score - ordered[1].score, 0), 1)
     }
 
     static func score(_ candidate: PlaceNameSuggestion, context: VisitNamingContext) -> Double {
