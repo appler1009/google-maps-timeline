@@ -180,7 +180,13 @@ struct PlaceAnchor: Equatable {
 enum CaptureMark {
     static let motion = "motion"
     static let fixes = "fixes"
-    static let reconcile = "reconcile"
+    /// Reconciling carries the rule it last ran under, so changing the rule
+    /// takes effect at once rather than whenever the throttle next expires.
+    /// Without that, a day already reconciled under the old rule keeps its old
+    /// answer for up to twenty hours and the fix looks like it did nothing.
+    ///
+    /// Bump the number when the shadowing rule changes.
+    static let reconcile = "reconcile.2"
     static let health = "health"
 }
 
