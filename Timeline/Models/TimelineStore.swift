@@ -599,19 +599,47 @@ final class TimelineStore {
     /// which is right for opening a library and wrong for every reload after
     /// it: the selection came back but the map did not, and the day's routes
     /// were dropped for a day nobody was looking at.
-    func reloadFromLibrary(now: Date = Date()) async {
-        guard let batch = try? await database.loadBatch(includingShadowed: showsShadowedImports, now: now) else { return }
-        await refreshPlaceIdentity()
-        let name = (try? await database.latestSourceName()) ?? sourceName ?? "This device"
+    ///
+    /// One at a time. Waking the app asks both the clock and iCloud for a
+    /// reload, and two reading side by side finish in whatever order they
+    /// finish — so the one that read before the sync could land last and put
+    /// the rows that just arrived back out of sight. A reload asked for while
+    /// one is under way is folded into it: that one reads again rather than
+    /// showing what it read before the write.
+    func reloadFromLibrary(now: Date? = nil) async {
+        if isReloading {
+            reloadAgain = true
+            return
+        }
+        isReloading = true
+        defer { isReloading = false }
+        repeat {
+            reloadAgain = false
+            let moment = now ?? Date()
+            guard let batch = try? await database.loadBatch(includingShadowed: showsShadowedImports, now: moment) else { return }
+            await refreshPlaceIdentity()
+            let name = (try? await database.latestSourceName()) ?? sourceName ?? "This device"
+            guard !reloadAgain else { continue }
+            layOut(TimelineParser.assemble(batch, sourceName: name, now: moment), at: moment)
+        } while reloadAgain
+    }
+
+    private var isReloading = false
+    private var reloadAgain = false
+
+    private func layOut(_ timeline: ParsedTimeline, at moment: Date) {
         let keptDay = selectedDayID
         let keptPlace = selectedPlaceID
+        let keptVisit = selectedVisitID
         let keptTab = tab
         let keptYear = filterYear
         let keptMonth = filterMonth
         let keptSearch = search
+        let previousDay = selectedDay
+        let previousRoutes = (day: snappedDayID, hops: snappedRoutes, cached: keptDay.flatMap { routesByDay[$0] })
         let isFirstLoad = parsed == nil
-        apply(TimelineParser.assemble(batch, sourceName: name, now: now), reframing: isFirstLoad)
-        laidOutAt = now
+        apply(timeline, reframing: isFirstLoad)
+        laidOutAt = moment
         tab = keptTab
         search = keptSearch
         filterYear = keptYear
@@ -630,8 +658,46 @@ final class TimelineStore {
         if let keptPlace, placesByID[keptPlace] != nil {
             selectedPlaceID = keptPlace
         }
-        if !isFirstLoad, let day = selectedDay {
+        guard !isFirstLoad, let day = selectedDay else { return }
+        if let keptVisit, day.visits.contains(where: { $0.id == keptVisit }) {
+            selectedVisitID = keptVisit
+        }
+        guard let previousDay, previousDay.day == day.day else {
             requestRoutes(for: day)
+            return
+        }
+        // A stay growing longer moves no pin and no route, and redrawing them
+        // anyway fades the day's lines out and back every few minutes.
+        if Self.hopSignature(previousDay) == Self.hopSignature(day) {
+            if let cached = previousRoutes.cached { routesByDay[day.day] = cached }
+            snappedRoutes = previousRoutes.hops
+            snappedDayID = previousRoutes.day
+        } else {
+            requestRoutes(for: day)
+        }
+        if Self.pinSignature(previousDay) != Self.pinSignature(day) {
+            dayContentGeneration &+= 1
+        }
+    }
+
+    /// Bumped when a reload changes the pins of the day already on screen —
+    /// a stay arriving from the other device, or midnight handing the day a
+    /// new one. The map rebuilds on a change of day, and this is the same day.
+    private(set) var dayContentGeneration: UInt64 = 0
+
+    /// What the day's pins are drawn from: which places, where, in what order.
+    /// Not how long anyone stayed, which is what changes while a stay runs.
+    private static func pinSignature(_ day: DayRecord) -> [String] {
+        day.visits.map { visit in
+            let where_ = visit.coordinate.map { "\($0.latitude),\($0.longitude)" } ?? "-"
+            return "\(visit.id)|\(visit.placeKey)|\(where_)|\(visit.semanticType ?? "")"
+        }
+    }
+
+    private static func hopSignature(_ day: DayRecord) -> [String] {
+        RoutePlanner.plannedHops(for: day).map { hop in
+            let line = hop.points.map { "\($0.latitude),\($0.longitude)" }.joined(separator: ";")
+            return "\(hop.id)|\(hop.kind)|\(hop.at.timeIntervalSince1970)|\(hop.until.timeIntervalSince1970)|\(line)"
         }
     }
 
@@ -647,10 +713,16 @@ final class TimelineStore {
     /// library with nothing open is never stale, and one with a stay open is
     /// stale once it has grown by `openStayRefreshInterval` or crossed into a
     /// day it has not been laid out on.
+    ///
+    /// Until the stay stops growing. Past `longestOpenStay` the library no
+    /// longer extends it — the departure was missed — so the clock has nothing
+    /// left to add, and reassembling every few minutes would change nothing.
     func isStale(now: Date = Date(), calendar: Calendar = .current) -> Bool {
-        guard let laidOutAt, hasOpenStay else { return false }
-        if !calendar.isDate(laidOutAt, inSameDayAs: now) { return true }
-        return now.timeIntervalSince(laidOutAt) >= Self.openStayRefreshInterval
+        guard let laidOutAt, let growsUntil = openStayGrowsUntil else { return false }
+        let reach = min(now, growsUntil)
+        guard reach > laidOutAt else { return false }
+        if !calendar.isDate(laidOutAt, inSameDayAs: reach) { return true }
+        return reach.timeIntervalSince(laidOutAt) >= Self.openStayRefreshInterval
     }
 
     /// How far a stay in progress may fall behind before it is redrawn. Its
@@ -658,15 +730,32 @@ final class TimelineStore {
     /// sit wrong — not a sync interval, because nothing is fetched.
     static let openStayRefreshInterval: TimeInterval = 5 * 60
 
-    var hasOpenStay: Bool {
-        parsed?.days.first?.visits.contains(where: \.isOpen) ?? false
+    var hasOpenStay: Bool { openStayGrowsUntil != nil }
+
+    /// When the stay in progress stops being stretched to the present, or nil
+    /// when nothing is in progress.
+    private(set) var openStayGrowsUntil: Date?
+
+    /// Read off the days rather than the rows, so every path into `apply`
+    /// agrees. A stay is sliced across the days it covers; its arrival is the
+    /// earliest slice, and none reaches back further than the cap allows.
+    private static func openStayGrowsUntil(in days: [DayRecord]) -> Date? {
+        let recent = days.prefix(Int(TimelineDatabase.longestOpenStay / 86_400) + 2)
+        let openIDs = Set(recent.flatMap { $0.visits.filter(\.isOpen).map(\.id) })
+        guard !openIDs.isEmpty else { return nil }
+        let arrival = recent
+            .flatMap(\.visits)
+            .filter { openIDs.contains($0.id) }
+            .map(\.start)
+            .min()
+        return arrival?.addingTimeInterval(TimelineDatabase.longestOpenStay)
     }
 
     /// Reload if the clock has moved past what is on screen.
     func refreshIfStale(now: Date = Date()) {
         guard !isLoading, isStale(now: now) else { return }
         TimelineLog.info("open stay redrawn")
-        Task { await reloadFromLibrary(now: now) }
+        Task { await reloadFromLibrary() }
     }
 
     /// Suggest when a stay at `coordinate` happened, from the movement recorded
@@ -784,6 +873,7 @@ final class TimelineStore {
     func apply(_ parsed: ParsedTimeline, reframing: Bool = true) {
         self.parsed = parsed
         laidOutAt = Date()
+        openStayGrowsUntil = Self.openStayGrowsUntil(in: parsed.days)
         hasCheckedLibrary = true
         sourceName = parsed.sourceName
         isLoading = false
@@ -1023,6 +1113,11 @@ final class TimelineStore {
     func rerouteSelectedDay() {
         guard let day = selectedDay else { return }
         requestRoutes(for: day, fresh: true)
+    }
+
+    /// Waits for the routes being fetched for the selected day, if any.
+    func routesSettled() async {
+        await routeTask?.value
     }
 
     private func requestRoutes(for day: DayRecord, fresh: Bool = false) {

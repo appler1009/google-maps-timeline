@@ -120,4 +120,82 @@ final class OpenStayRefreshTests: XCTestCase {
         XCTAssertEqual(store.selectedDayID, tenth)
         XCTAssertEqual(store.focusGeneration, generation)
     }
+
+    /// A stay growing longer moves nothing on the map, so nothing is redrawn.
+    func testAStayGrowingLongerLeavesTheMapAlone() async throws {
+        try await recordOpenStay()
+        let store = TimelineStore(database: database)
+        await store.reloadFromLibrary(now: at(day: 13, hour: 8))
+        let today = try XCTUnwrap(store.parsed?.days.first { $0.day == calendar.startOfDay(for: at(day: 13, hour: 0)) })
+        store.select(day: today)
+        store.focusVisit(id: "home-open")
+        await store.routesSettled()
+        let routes = store.routeGeneration
+        let content = store.dayContentGeneration
+
+        await store.reloadFromLibrary(now: at(day: 13, hour: 9))
+        await store.routesSettled()
+        XCTAssertEqual(store.routeGeneration, routes)
+        XCTAssertEqual(store.dayContentGeneration, content)
+        XCTAssertEqual(store.selectedVisitID, "home-open")
+    }
+
+    /// A stay arriving for the day on screen does change its pins.
+    func testANewStayOnTheSameDayRedrawsItsPins() async throws {
+        try await recordOpenStay()
+        let store = TimelineStore(database: database)
+        await store.reloadFromLibrary(now: at(day: 12, hour: 21))
+        let day = try XCTUnwrap(store.parsed?.days.first { $0.day == calendar.startOfDay(for: arrival) })
+        store.select(day: day)
+        let content = store.dayContentGeneration
+
+        try await database.record(batch: TimelineBatch(visits: [TimelineVisit(
+            id: "gym",
+            start: at(day: 12, hour: 15),
+            end: at(day: 12, hour: 16),
+            coordinate: CLLocationCoordinate2D(latitude: 49.2700, longitude: -123.1000),
+            semanticType: nil,
+            placeKey: "gym"
+        )], activities: [], paths: []))
+        await store.reloadFromLibrary(now: at(day: 12, hour: 21, minute: 1))
+        XCTAssertNotEqual(store.dayContentGeneration, content)
+    }
+
+    /// A reload asked for while one is reading folds into it, so a write that
+    /// lands in between is never shown and then taken away.
+    func testOverlappingReloadsEndOnTheNewestRead() async throws {
+        try await recordOpenStay()
+        let store = TimelineStore(database: database)
+        await store.reloadFromLibrary(now: at(day: 12, hour: 21))
+
+        let first = Task { await store.reloadFromLibrary(now: at(day: 12, hour: 21, minute: 1)) }
+        try await database.record(batch: TimelineBatch(visits: [TimelineVisit(
+            id: "gym",
+            start: at(day: 12, hour: 15),
+            end: at(day: 12, hour: 16),
+            coordinate: CLLocationCoordinate2D(latitude: 49.2700, longitude: -123.1000),
+            semanticType: nil,
+            placeKey: "gym"
+        )], activities: [], paths: []))
+        await store.reloadFromLibrary(now: at(day: 12, hour: 21, minute: 1))
+        await first.value
+
+        let visits = store.parsed?.days.flatMap(\.visits) ?? []
+        XCTAssertTrue(visits.contains { $0.id == "gym" })
+    }
+
+    /// Past the cap the library stops stretching the stay, so the clock has
+    /// nothing to add — but a midnight before the cap still counts.
+    func testAStayPastTheCapStopsGoingStale() async throws {
+        try await recordOpenStay()
+        let store = TimelineStore(database: database)
+        let cap = arrival.addingTimeInterval(TimelineDatabase.longestOpenStay)
+
+        await store.reloadFromLibrary(now: cap.addingTimeInterval(-3_600))
+        XCTAssertTrue(store.isStale(now: cap.addingTimeInterval(86_400), calendar: calendar))
+
+        await store.reloadFromLibrary(now: cap.addingTimeInterval(3_600))
+        XCTAssertFalse(store.isStale(now: cap.addingTimeInterval(7_200), calendar: calendar))
+        XCTAssertFalse(store.isStale(now: cap.addingTimeInterval(3 * 86_400), calendar: calendar))
+    }
 }
