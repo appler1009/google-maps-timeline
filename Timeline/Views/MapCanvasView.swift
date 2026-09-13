@@ -839,8 +839,14 @@ struct SelectionCard: View {
 
     /// Distance from the bottom of the map to the top of the card, for the
     /// settled state only — the map must not chase the sheet mid-drag.
+    ///
+    /// Capped at the middle tier. Raised to the top, the sheet leaves a strip of
+    /// map too thin to be worth framing a day into, and zooming out to fit it
+    /// only threw away the view the middle tier had. The map keeps that framing
+    /// and lets the sheet cover it.
     private func publishCoverage() {
-        let visible = Self.iosCardPadding * 2 + headerHeight + Self.iosCardSpacing + settledBodyHeight
+        let body = min(settledBodyHeight, mediumBodyHeight)
+        let visible = Self.iosCardPadding * 2 + headerHeight + Self.iosCardSpacing + body
         store.legendCoverage = visible + 8
     }
 
