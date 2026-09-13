@@ -136,10 +136,15 @@ final class HeuristicPlaceRankerTests: XCTestCase {
         XCTAssertLessThan(ambiguous, ModelPlaceRanker.confidenceFloor, "this is exactly when to ask a model")
     }
 
+    /// Confidence is always the gap to the runner-up, never a score. One
+    /// candidate has nothing to be confused with, so the gap is total — and no
+    /// model is asked about a choice of one.
     func testASingleCandidateIsNotAmbiguous() {
         XCTAssertEqual(ranker.confidence([], context: context()), 0)
-        let single = ranker.confidence([candidate("Only Option", meters: 20)], context: context())
-        XCTAssertGreaterThan(single, 0)
+        XCTAssertEqual(ranker.confidence([candidate("Only Option", meters: 20)], context: context()), 1)
+        // Even a candidate that scores poorly on its own is unambiguous alone.
+        let weak = candidate("Distant Warehouse", meters: 440, source: .address)
+        XCTAssertEqual(ranker.confidence([weak], context: context()), 1)
     }
 }
 
@@ -548,4 +553,41 @@ final class FoundationModelChooserTests: XCTestCase {
         XCTAssertFalse(choice.reason.isEmpty)
         print("[model] chose \(choice.title) — \(choice.reason) (\(choice.confidence))")
     }
+    /// Measures the on-device model: how long a call takes, whether prewarming
+    /// helps, and whether it actually picks better than the arithmetic it is
+    /// there to improve on.
+    ///
+    ///     defaults write com.appler.Timeline.tests runModelTests -bool YES
+    func testMeasureTheModel() async throws {
+        try XCTSkipUnless(modelTestsEnabled, "set runModelTests to measure")
+        let chooser = PlaceChooserFactory.make()
+        try XCTSkipUnless(chooser.isAvailable, PlaceChooserFactory.unavailableReason() ?? "no model")
+
+        let lunch = context(startMinutes: 12 * 60 + 30, durationMinutes: 40)
+        let candidates = [
+            candidate("Bright Smile Dental", meters: 45, category: "Dentist"),
+            candidate("Chipotle", meters: 40, category: "Restaurant"),
+            candidate("QuickShip Postal", meters: 52, category: "PostOffice"),
+        ]
+        let titles = candidates.map(\.title)
+        let prompt = PlaceNamingPrompt.build(context: lunch, candidates: candidates)
+
+        var picks: [String: Int] = [:]
+        var timings: [Double] = []
+        for run in 1...5 {
+            let began = Date()
+            let choice = try await chooser.choose(from: titles, prompt: prompt)
+            let took = Date().timeIntervalSince(began)
+            timings.append(took)
+            picks[choice.title, default: 0] += 1
+            print(String(format: "[measure] run %d: %.2fs — %@ (%.2f) — %@",
+                         run, took, choice.title, choice.confidence, choice.reason))
+        }
+        let mean = timings.reduce(0, +) / Double(timings.count)
+        print(String(format: "[measure] mean %.2fs, slowest %.2fs, budget %.0fs",
+                     mean, timings.max() ?? 0, Double(ModelPlaceRanker.defaultTimeout.components.seconds)))
+        print("[measure] picks: \(picks)")
+        print("[measure] the arithmetic picks: \(await HeuristicPlaceRanker().rank(candidates, context: lunch).first?.title ?? "-")")
+    }
+
 }

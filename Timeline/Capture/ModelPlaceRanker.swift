@@ -5,8 +5,10 @@ struct ModelPlaceChoice: Equatable, Sendable {
     /// Must be one of the titles it was offered; anything else is discarded.
     let title: String
     let confidence: Double
-    /// One short phrase, shown to the user so a wrong guess is legible rather
-    /// than mysterious.
+    /// One short phrase saying what the choice was made on. Logged rather than
+    /// shown: a name the model got wrong is fixed in two taps, but knowing
+    /// *why* it went wrong is the difference between fixing the prompt and
+    /// guessing at it — and this is a path with no other way to see inside.
     let reason: String
 }
 
@@ -71,7 +73,12 @@ struct ModelPlaceRanker: PlaceRanking {
         }
         TimelineLog.info(
             "place model reranked",
-            ["title": winner.title, "confidence": String(format: "%.2f", choice.confidence)]
+            [
+                "title": winner.title,
+                "instead of": ordered.first?.title ?? "-",
+                "confidence": String(format: "%.2f", choice.confidence),
+                "reason": choice.reason
+            ]
         )
         return [winner] + ordered.filter { $0.id != winner.id }
     }
