@@ -69,6 +69,8 @@ struct TimelineKitMap: UIViewRepresentable {
     var hovered: TimelineVisit?
     var routed: [RoutedHop]
     var routeGeneration: UInt64
+    /// Same day, different pins: a reload changed what the day holds.
+    var contentGeneration: UInt64
     var visitFocusID: String?
     var placeNameGeneration: UInt64
     var annotationTitles: [String: String]
@@ -124,6 +126,7 @@ struct TimelineKitMap: UIViewRepresentable {
                 hovered: hovered,
                 routed: routed,
                 routeGeneration: routeGeneration,
+                contentGeneration: contentGeneration,
                 visitFocusID: visitFocusID,
                 placeNameGeneration: placeNameGeneration,
                 annotationTitles: annotationTitles,
@@ -147,6 +150,7 @@ struct TimelineKitMap: UIViewRepresentable {
 
         private var lastHoverID: String?
         private var lastRouteGeneration: UInt64 = 0
+        private var lastContentGeneration: UInt64 = 0
         private var lastVisitFocusID: String?
         private var lastPlaceNameGeneration: UInt64 = .max
         private var lastRegion: MKCoordinateRegion?
@@ -182,6 +186,7 @@ struct TimelineKitMap: UIViewRepresentable {
             hovered: TimelineVisit?,
             routed: [RoutedHop],
             routeGeneration: UInt64,
+            contentGeneration: UInt64,
             visitFocusID: String?,
             placeNameGeneration: UInt64,
             annotationTitles: [String: String],
@@ -201,6 +206,7 @@ struct TimelineKitMap: UIViewRepresentable {
             if dayID != lastDayID || placeID != lastPlaceID {
                 lastDayID = dayID
                 lastPlaceID = placeID
+                lastContentGeneration = contentGeneration
                 lastHoverID = nil
                 lastPlaceNameGeneration = placeNameGeneration
                 pathTick &+= 1
@@ -217,6 +223,23 @@ struct TimelineKitMap: UIViewRepresentable {
                     )
                     self.lastRouteGeneration = self.latestRouteGeneration
                     self.lastVisitFocusID = self.latestVisitFocusID
+                }
+            } else if contentGeneration != lastContentGeneration {
+                // The same day, reloaded with different pins. Redrawn in place:
+                // the crossfade is for going somewhere else, and this is not.
+                lastContentGeneration = contentGeneration
+                lastRouteGeneration = routeGeneration
+                lastVisitFocusID = visitFocusID
+                if !contentInFlight {
+                    rebuild(
+                        map: map,
+                        day: latestDay,
+                        place: latestPlace,
+                        routed: latestRouted,
+                        titles: latestTitles,
+                        placeCoordinates: latestPlaceCoordinates
+                    )
+                    lastHoverID = nil
                 }
             } else if routeGeneration != lastRouteGeneration || visitFocusID != lastVisitFocusID {
                 if contentInFlight { return }

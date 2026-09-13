@@ -242,6 +242,7 @@ private struct TimelineKitMapHost: View {
                     hovered: store.hoveredVisit,
                     routed: store.routesForDisplay,
                     routeGeneration: store.routeGeneration,
+                    contentGeneration: store.dayContentGeneration,
                     visitFocusID: store.selectedVisitID,
                     placeNameGeneration: store.placeNameGeneration,
                     annotationTitles: store.mapAnnotationTitles(),
@@ -285,6 +286,8 @@ struct TimelineKitMap: NSViewRepresentable {
     var hovered: TimelineVisit?
     var routed: [RoutedHop]
     var routeGeneration: UInt64
+    /// Same day, different pins: a reload changed what the day holds.
+    var contentGeneration: UInt64
     var visitFocusID: String?
     var placeNameGeneration: UInt64
     var annotationTitles: [String: String]
@@ -324,6 +327,7 @@ struct TimelineKitMap: NSViewRepresentable {
             hovered: hovered,
             routed: routed,
             routeGeneration: routeGeneration,
+            contentGeneration: contentGeneration,
             visitFocusID: visitFocusID,
             placeNameGeneration: placeNameGeneration,
             annotationTitles: annotationTitles,
@@ -340,6 +344,7 @@ struct TimelineKitMap: NSViewRepresentable {
 
         private var lastHoverID: String?
         private var lastRouteGeneration: UInt64 = 0
+        private var lastContentGeneration: UInt64 = 0
         private var lastVisitFocusID: String?
         private var lastPlaceNameGeneration: UInt64 = .max
         private var overlayRenderers: [ObjectIdentifier: MKOverlayRenderer] = [:]
@@ -369,6 +374,7 @@ struct TimelineKitMap: NSViewRepresentable {
             hovered: TimelineVisit?,
             routed: [RoutedHop],
             routeGeneration: UInt64,
+            contentGeneration: UInt64,
             visitFocusID: String?,
             placeNameGeneration: UInt64,
             annotationTitles: [String: String],
@@ -386,6 +392,7 @@ struct TimelineKitMap: NSViewRepresentable {
             if dayID != lastDayID || placeID != lastPlaceID {
                 lastDayID = dayID
                 lastPlaceID = placeID
+                lastContentGeneration = contentGeneration
                 lastRouteGeneration = routeGeneration
                 lastVisitFocusID = visitFocusID
                 lastPlaceNameGeneration = placeNameGeneration
@@ -404,6 +411,23 @@ struct TimelineKitMap: NSViewRepresentable {
                     )
                     self.lastRouteGeneration = self.latestRouteGeneration
                     self.lastVisitFocusID = self.latestVisitFocusID
+                }
+            } else if contentGeneration != lastContentGeneration {
+                // The same day, reloaded with different pins. Redrawn in place:
+                // the crossfade is for going somewhere else, and this is not.
+                lastContentGeneration = contentGeneration
+                lastRouteGeneration = routeGeneration
+                lastVisitFocusID = visitFocusID
+                if !contentInFlight {
+                    rebuild(
+                        map: map,
+                        day: latestDay,
+                        place: latestPlace,
+                        routed: latestRouted,
+                        titles: latestTitles,
+                        placeCoordinates: latestPlaceCoordinates
+                    )
+                    lastHoverID = nil
                 }
             } else if routeGeneration != lastRouteGeneration || visitFocusID != lastVisitFocusID {
                 lastRouteGeneration = routeGeneration
@@ -839,8 +863,14 @@ struct SelectionCard: View {
 
     /// Distance from the bottom of the map to the top of the card, for the
     /// settled state only — the map must not chase the sheet mid-drag.
+    ///
+    /// Capped at the middle tier. Raised to the top, the sheet leaves a strip of
+    /// map too thin to be worth framing a day into, and zooming out to fit it
+    /// only threw away the view the middle tier had. The map keeps that framing
+    /// and lets the sheet cover it.
     private func publishCoverage() {
-        let visible = Self.iosCardPadding * 2 + headerHeight + Self.iosCardSpacing + settledBodyHeight
+        let body = min(settledBodyHeight, mediumBodyHeight)
+        let visible = Self.iosCardPadding * 2 + headerHeight + Self.iosCardSpacing + body
         store.legendCoverage = visible + 8
     }
 
