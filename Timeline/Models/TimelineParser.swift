@@ -35,8 +35,6 @@ enum TimelineParser {
         var undatable = 0
 
         var understood: Int { segments - unrecognised - undatable }
-        /// Nothing at all came through, which is a format this cannot read.
-        var isEmpty: Bool { visits == 0 && activities == 0 && paths == 0 }
         /// Enough was missed to be worth saying out loud.
         var isSuspicious: Bool {
             guard segments > 0 else { return false }
@@ -56,13 +54,6 @@ enum TimelineParser {
 
     static func parse(data: Data, sourceName: String) throws -> ParsedTimeline {
         assemble(try extract(data), sourceName: sourceName)
-    }
-
-    /// Parse, and say what was understood along the way.
-    static func parseReporting(data: Data, sourceName: String) throws -> (ParsedTimeline, ImportReport) {
-        var report = ImportReport()
-        let batch = try extract(data, report: &report)
-        return (assemble(batch, sourceName: sourceName), report)
     }
 
     static func extract(_ data: Data) throws -> TimelineBatch {

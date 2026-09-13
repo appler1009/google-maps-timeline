@@ -512,7 +512,8 @@ final class TimelineStore {
                     let batch = try TimelineParser.extract(data, report: &report)
                     return (batch, report)
                 }.value
-                lastImportReport = report
+                // Logged rather than held: nothing reads it back yet, and an
+                // unread property is a promise the app has not made.
                 TimelineLog.info("timeline imported", [
                     "file": name,
                     "summary": report.summary,
@@ -535,10 +536,6 @@ final class TimelineStore {
             }
         }
     }
-
-    /// What the last import understood, so a format change that quietly halves
-    /// an export is visible rather than only logged.
-    private(set) var lastImportReport: TimelineParser.ImportReport?
 
     private static let bookmarkKey = "lastTimelineBookmark"
 
