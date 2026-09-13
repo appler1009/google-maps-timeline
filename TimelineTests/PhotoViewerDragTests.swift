@@ -52,6 +52,44 @@ final class PhotoViewerDragTests: XCTestCase {
         XCTAssertEqual(outcome(-200, -190), .next, "still mostly sideways")
     }
 
+    /// The axis is read from where the finger went, not from where it was
+    /// heading. A flick between photos that drifts downward as it lifts still
+    /// pages, whatever its momentum says — otherwise paging would occasionally
+    /// throw the photo away instead.
+    func testMomentumDoesNotChooseTheAxis() {
+        XCTAssertEqual(
+            outcome(-200, 60, predicted: CGSize(width: -220, height: 400)),
+            .next,
+            "mostly sideways, however it was heading"
+        )
+        XCTAssertEqual(
+            outcome(60, 200, predicted: CGSize(width: 400, height: 220)),
+            .dismiss,
+            "and mostly downward stays downward"
+        )
+    }
+
+    /// Something has to win a dead-on diagonal, and paging is the one you can
+    /// undo by paging back.
+    func testADiagonalCountsAsSideways() {
+        XCTAssertEqual(outcome(-100, 100), .next)
+        XCTAssertEqual(outcome(100, -100), .previous)
+    }
+
+    /// A quick flick sideways counts the same way a quick flick down does. Only
+    /// having the allowance on one axis made paging feel sticky beside a
+    /// dismiss that went at a touch.
+    func testAQuickFlickPagesEvenWhenItStopsShort() {
+        XCTAssertEqual(
+            outcome(-20, 0, predicted: CGSize(width: -PhotoViewerDrag.navigateThrowDistance, height: 0)),
+            .next
+        )
+        XCTAssertEqual(
+            outcome(20, 0, predicted: CGSize(width: PhotoViewerDrag.navigateThrowDistance, height: 0)),
+            .previous
+        )
+    }
+
     /// Neither far enough nor thrown: put it back rather than guess.
     func testASmallDragDoesNothing() {
         XCTAssertEqual(outcome(0, 30), .stay)

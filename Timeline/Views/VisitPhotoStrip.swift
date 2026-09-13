@@ -148,11 +148,23 @@ enum PhotoViewerDrag {
         case stay
     }
 
+    /// Or thrown sideways: the same allowance as a dismissing throw, in
+    /// proportion to the shorter distance paging asks for. Without it a quick
+    /// flick between photos stays put while the same flick downward puts the
+    /// photo away, and the gesture feels sticky in one direction only.
+    static let navigateThrowDistance: CGFloat = 160
+
     static func outcome(translation: CGSize, predictedEnd: CGSize) -> Outcome {
-        // Whichever axis the drag committed to. A gesture that wanders is read
-        // as the thing it did most of.
-        if abs(translation.width) > abs(translation.height) {
-            guard abs(translation.width) >= navigateDistance else { return .stay }
+        // Whichever axis the drag committed to, read from where the finger
+        // actually went rather than where it was heading — so a flick between
+        // photos that drifts downward still pages, whatever its momentum says.
+        //
+        // A dead-on diagonal counts as sideways. Something has to win a tie, and
+        // paging is the one you can undo by paging back.
+        if abs(translation.width) >= abs(translation.height) {
+            let far = abs(translation.width) >= navigateDistance
+            let thrown = abs(predictedEnd.width) >= navigateThrowDistance
+            guard far || thrown else { return .stay }
             return translation.width < 0 ? .next : .previous
         }
         let far = abs(translation.height) >= dismissDistance
@@ -257,7 +269,14 @@ struct VisitPhotoViewer: View {
                         // Follow the finger only once the drag has committed to
                         // going up or down, so moving between photos does not
                         // make the whole thing wobble.
-                        guard abs(value.translation.height) > abs(value.translation.width) else { return }
+                        guard abs(value.translation.height) > abs(value.translation.width) else {
+                            // And drop whatever vertical it picked up before it
+                            // committed sideways, or the photo changes while
+                            // still shifted and then springs back under the new
+                            // one.
+                            if drag != .zero { drag = .zero }
+                            return
+                        }
                         drag = CGSize(width: 0, height: value.translation.height)
                     }
                     .onEnded { value in
@@ -266,16 +285,20 @@ struct VisitPhotoViewer: View {
                             predictedEnd: value.predictedEndTranslation
                         ) {
                         case .next:
+                            drag = .zero
                             goNext()
                         case .previous:
+                            drag = .zero
                             goPrevious()
                         case .dismiss:
+                            // Left where the finger put it. Springing back here
+                            // pulls the photo toward the middle of a view that
+                            // is already on its way out.
                             onDismiss()
                         case .stay:
-                            break
-                        }
-                        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                            drag = .zero
+                            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                                drag = .zero
+                            }
                         }
                     }
             )
