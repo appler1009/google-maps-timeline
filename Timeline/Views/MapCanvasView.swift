@@ -245,6 +245,7 @@ private struct TimelineKitMapHost: View {
                     visitFocusID: store.selectedVisitID,
                     placeNameGeneration: store.placeNameGeneration,
                     annotationTitles: store.mapAnnotationTitles(),
+                    annotationCoordinates: store.mapAnnotationCoordinates(),
                     onSelectVisit: { store.focusVisit(id: $0) },
                     legendCoverage: store.legendCoverage
                 )
@@ -287,6 +288,7 @@ struct TimelineKitMap: NSViewRepresentable {
     var visitFocusID: String?
     var placeNameGeneration: UInt64
     var annotationTitles: [String: String]
+    var annotationCoordinates: [String: CLLocationCoordinate2D]
     var onSelectVisit: (String) -> Void
     /// Unused on macOS, where the legend sits beside the map rather than over it.
     var legendCoverage: CGFloat
@@ -325,6 +327,7 @@ struct TimelineKitMap: NSViewRepresentable {
             visitFocusID: visitFocusID,
             placeNameGeneration: placeNameGeneration,
             annotationTitles: annotationTitles,
+            annotationCoordinates: annotationCoordinates,
             onSelectVisit: onSelectVisit
         )
     }
@@ -347,6 +350,7 @@ struct TimelineKitMap: NSViewRepresentable {
         private var latestDay: DayRecord?
         private var latestPlace: PlaceRecord?
         private var latestRouted: [RoutedHop] = []
+        private var latestPlaceCoordinates: [String: CLLocationCoordinate2D] = [:]
         private var latestRouteGeneration: UInt64 = 0
         private var latestVisitFocusID: String?
         private var latestTitles: [String: String] = [:]
@@ -368,6 +372,7 @@ struct TimelineKitMap: NSViewRepresentable {
             visitFocusID: String?,
             placeNameGeneration: UInt64,
             annotationTitles: [String: String],
+            annotationCoordinates: [String: CLLocationCoordinate2D],
             onSelectVisit: @escaping (String) -> Void
         ) {
             self.onSelectVisit = onSelectVisit
@@ -377,6 +382,7 @@ struct TimelineKitMap: NSViewRepresentable {
             latestRouteGeneration = routeGeneration
             latestVisitFocusID = visitFocusID
             latestTitles = annotationTitles
+            latestPlaceCoordinates = annotationCoordinates
             if dayID != lastDayID || placeID != lastPlaceID {
                 lastDayID = dayID
                 lastPlaceID = placeID
@@ -393,7 +399,8 @@ struct TimelineKitMap: NSViewRepresentable {
                         day: self.latestDay,
                         place: self.latestPlace,
                         routed: self.latestRouted,
-                        titles: self.latestTitles
+                        titles: self.latestTitles,
+                        placeCoordinates: self.latestPlaceCoordinates
                     )
                     self.lastRouteGeneration = self.latestRouteGeneration
                     self.lastVisitFocusID = self.latestVisitFocusID
@@ -510,7 +517,8 @@ struct TimelineKitMap: NSViewRepresentable {
             day: DayRecord?,
             place: PlaceRecord?,
             routed: [RoutedHop],
-            titles: [String: String]
+            titles: [String: String],
+            placeCoordinates: [String: CLLocationCoordinate2D]
         ) {
             overlayRenderers.removeAll(keepingCapacity: true)
             map.removeOverlays(map.overlays)
@@ -518,7 +526,14 @@ struct TimelineKitMap: NSViewRepresentable {
             hoverOverlay = nil
 
             if let day {
-                TimelineMapPlotter.install(on: map, day: day, place: nil, routed: routed, titles: titles)
+                TimelineMapPlotter.install(
+                    on: map,
+                    day: day,
+                    place: nil,
+                    routed: routed,
+                    titles: titles,
+                    placeCoordinates: placeCoordinates
+                )
             } else if let place {
                 TimelineMapPlotter.install(on: map, day: nil, place: place, routed: [], titles: titles)
             }

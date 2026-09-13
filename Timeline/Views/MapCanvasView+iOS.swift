@@ -72,6 +72,7 @@ struct TimelineKitMap: UIViewRepresentable {
     var visitFocusID: String?
     var placeNameGeneration: UInt64
     var annotationTitles: [String: String]
+    var annotationCoordinates: [String: CLLocationCoordinate2D]
     var onSelectVisit: (String) -> Void
     /// Points of map the legend sheet covers at the bottom.
     var legendCoverage: CGFloat
@@ -126,6 +127,7 @@ struct TimelineKitMap: UIViewRepresentable {
                 visitFocusID: visitFocusID,
                 placeNameGeneration: placeNameGeneration,
                 annotationTitles: annotationTitles,
+                annotationCoordinates: annotationCoordinates,
                 onSelectVisit: onSelectVisit,
                 legendCoverage: legendCoverage
             )
@@ -161,6 +163,7 @@ struct TimelineKitMap: UIViewRepresentable {
         private var latestDay: DayRecord?
         private var latestPlace: PlaceRecord?
         private var latestRouted: [RoutedHop] = []
+        private var latestPlaceCoordinates: [String: CLLocationCoordinate2D] = [:]
         private var latestRouteGeneration: UInt64 = 0
         private var latestVisitFocusID: String?
         private var latestTitles: [String: String] = [:]
@@ -182,6 +185,7 @@ struct TimelineKitMap: UIViewRepresentable {
             visitFocusID: String?,
             placeNameGeneration: UInt64,
             annotationTitles: [String: String],
+            annotationCoordinates: [String: CLLocationCoordinate2D],
             onSelectVisit: @escaping (String) -> Void,
             legendCoverage: CGFloat
         ) {
@@ -193,6 +197,7 @@ struct TimelineKitMap: UIViewRepresentable {
             latestRouteGeneration = routeGeneration
             latestVisitFocusID = visitFocusID
             latestTitles = annotationTitles
+            latestPlaceCoordinates = annotationCoordinates
             if dayID != lastDayID || placeID != lastPlaceID {
                 lastDayID = dayID
                 lastPlaceID = placeID
@@ -207,7 +212,8 @@ struct TimelineKitMap: UIViewRepresentable {
                         day: self.latestDay,
                         place: self.latestPlace,
                         routed: self.latestRouted,
-                        titles: self.latestTitles
+                        titles: self.latestTitles,
+                        placeCoordinates: self.latestPlaceCoordinates
                     )
                     self.lastRouteGeneration = self.latestRouteGeneration
                     self.lastVisitFocusID = self.latestVisitFocusID
@@ -389,7 +395,8 @@ struct TimelineKitMap: UIViewRepresentable {
             day: DayRecord?,
             place: PlaceRecord?,
             routed: [RoutedHop],
-            titles: [String: String]
+            titles: [String: String],
+            placeCoordinates: [String: CLLocationCoordinate2D]
         ) {
             overlayRenderers.removeAll(keepingCapacity: true)
             map.removeOverlays(map.overlays)
@@ -397,7 +404,14 @@ struct TimelineKitMap: UIViewRepresentable {
             hoverOverlay = nil
 
             if let day {
-                TimelineMapPlotter.install(on: map, day: day, place: nil, routed: routed, titles: titles)
+                TimelineMapPlotter.install(
+                    on: map,
+                    day: day,
+                    place: nil,
+                    routed: routed,
+                    titles: titles,
+                    placeCoordinates: placeCoordinates
+                )
             } else if let place {
                 TimelineMapPlotter.install(on: map, day: nil, place: place, routed: [], titles: titles)
             }

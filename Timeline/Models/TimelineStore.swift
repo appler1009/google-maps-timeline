@@ -384,6 +384,18 @@ final class TimelineStore {
         }
     }
 
+    /// Where each visible place is, so a pin goes to the place rather than to
+    /// whichever fix happened to be first.
+    func mapAnnotationCoordinates() -> [String: CLLocationCoordinate2D] {
+        var coordinates: [String: CLLocationCoordinate2D] = [:]
+        guard let parsed else { return coordinates }
+        for place in parsed.places {
+            guard let coordinate = place.coordinate else { continue }
+            coordinates[place.id] = coordinate
+        }
+        return coordinates
+    }
+
     /// Titles for the currently visible map annotations (day visits and/or selected place).
     func mapAnnotationTitles() -> [String: String] {
         var titles: [String: String] = [:]
