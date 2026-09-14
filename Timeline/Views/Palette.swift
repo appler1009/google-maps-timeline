@@ -68,6 +68,48 @@ enum Palette {
     }
 }
 
+extension View {
+    /// Escape dismisses, the same way the photo lightbox does.
+    ///
+    /// A SwiftUI sheet does not treat Escape as cancel, and a focused text
+    /// field swallows the key before a toolbar button sees it. The shortcut
+    /// still fires; the key press covers the case where nothing has field focus.
+    /// `onExitCommand` is the Mac's exit command and is not available on iOS.
+    /// `isEnabled` is false while a nested confirmation should take the key
+    /// instead — one Escape closes that, the next closes the sheet.
+    func dismissesOnEscape(isEnabled: Bool = true, _ dismiss: @escaping () -> Void) -> some View {
+        modifier(EscapeDismissModifier(isEnabled: isEnabled, dismiss: dismiss))
+    }
+}
+
+private struct EscapeDismissModifier: ViewModifier {
+    var isEnabled: Bool
+    let dismiss: () -> Void
+
+    func body(content: Content) -> some View {
+        if isEnabled {
+            content
+                #if os(macOS)
+                .onExitCommand(perform: dismiss)
+                #endif
+                .onKeyPress(.escape) {
+                    dismiss()
+                    return .handled
+                }
+                .background {
+                    Button(action: dismiss) { EmptyView() }
+                        .keyboardShortcut(.cancelAction)
+                        .labelsHidden()
+                        .accessibilityHidden(true)
+                        .frame(width: 0, height: 0)
+                        .opacity(0)
+                }
+        } else {
+            content
+        }
+    }
+}
+
 /// Shared day-legend metrics so photo strips line up with place titles.
 enum LegendLayout {
     static let rowHorizontalPadding: CGFloat = 6

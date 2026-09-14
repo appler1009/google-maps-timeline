@@ -48,6 +48,12 @@ struct PlaceNameSuggestion: Identifiable, Hashable {
 @Observable
 final class PlaceNameSuggester: NSObject, MKLocalSearchCompleterDelegate {
     private(set) var suggestions: [PlaceNameSuggestion] = []
+    /// Places already been to, filtered by what was typed. The rename sheet's
+    /// History tab. Not capped by how many new places sit beside them.
+    private(set) var historySuggestions: [PlaceNameSuggestion] = []
+    /// Nearby map and address rows that are not a place already in history.
+    /// The rename sheet's Nearby tab.
+    private(set) var nearbySuggestions: [PlaceNameSuggestion] = []
     private(set) var isLoading = false
 
     private let completer = MKLocalSearchCompleter()
@@ -247,6 +253,10 @@ final class PlaceNameSuggester: NSObject, MKLocalSearchCompleterDelegate {
 
         // Visited stays first, then map / address — the same ranking the recorder
         // uses for notification guesses, so the two can never disagree.
+        // The rename sheet does not use that combined list: a long history
+        // used up the twenty rows and a new place next door never appeared.
         suggestions = PlaceGuessRanker.merge(visited: visitedRows, map: mapRows, keepingBranches: isAddingStay)
+        historySuggestions = visitedRows
+        nearbySuggestions = PlaceGuessRanker.neverVisited(map: mapRows, visited: visited)
     }
 }

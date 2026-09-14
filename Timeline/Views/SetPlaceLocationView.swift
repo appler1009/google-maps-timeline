@@ -26,6 +26,10 @@ struct SetPlaceLocationView: View {
                         .focused($searchFocused)
                         .submitLabel(.search)
                         .accessibilityIdentifier("set-location-search")
+                        .onKeyPress(.escape) {
+                            onDone()
+                            return .handled
+                        }
                         .onChange(of: query) { _, value in
                             suggester.updateQuery(value)
                         }
@@ -81,10 +85,12 @@ struct SetPlaceLocationView: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel", action: onDone)
+                        .keyboardShortcut(.cancelAction)
                 }
             }
             .onAppear(perform: configureSearch)
         }
+        .dismissesOnEscape(onDone)
     }
 
     private var footer: String {

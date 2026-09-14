@@ -21,7 +21,8 @@ protocol PlaceGuessing: Sendable {
 /// is `@MainActor` and owns an `MKLocalSearchCompleter`. The recorder needs the
 /// same answers on a background wake with nobody typing, so the lookup and the
 /// ranking live here and both front ends share them — which is the only way the
-/// notification's guesses and the rename sheet's list can never disagree.
+/// notification's guesses and the rename sheet's history tab can never disagree.
+/// New places sit on a second tab, so a long history cannot hide them.
 struct PlaceGuessService: PlaceGuessing {
     var searchRadius: CLLocationDistance = 450
 
@@ -175,6 +176,29 @@ enum PlaceGuessRanker {
     static let resultLimit = 20
     /// Two results of one name closer than this are the same branch.
     static let sameBranch: CLLocationDistance = 150
+
+    /// Map and address rows that are not already a place in `visited`.
+    ///
+    /// The rename sheet shows these on their own tab. Folding them into the
+    /// visited list and then keeping the first twenty meant a dense history
+    /// used up every row, and a new place next door never appeared.
+    static func neverVisited(
+        map: [PlaceNameSuggestion],
+        visited: [PlaceNameSuggestion],
+        limit: Int = resultLimit
+    ) -> [PlaceNameSuggestion] {
+        let been = Set(visited.map { $0.title.lowercased() })
+        var seen = Set<String>()
+        var rows: [PlaceNameSuggestion] = []
+        for row in map {
+            let name = row.title.lowercased()
+            guard !name.isEmpty, name != "unnamed place", name != "place" else { continue }
+            guard !been.contains(name), seen.insert(name).inserted else { continue }
+            rows.append(row)
+            if rows.count >= limit { break }
+        }
+        return rows
+    }
 
     /// Visited places first, then map and address rows, deduped by name.
     ///

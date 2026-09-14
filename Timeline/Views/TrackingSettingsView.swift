@@ -163,6 +163,7 @@ struct TrackingSettingsView: View {
                 diagnostics = await recorder.diagnostics()
             }
         }
+        .dismissesOnEscape { dismiss() }
     }
 
     /// "Somewhere since 09:12" is the answer to "why is today still zero".
