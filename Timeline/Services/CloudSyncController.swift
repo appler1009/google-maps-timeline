@@ -106,6 +106,26 @@ final class CloudSyncController {
         Task { try? await sync.fetchNow() }
     }
 
+    #if os(macOS)
+    /// How often a plugged-in Mac asks iCloud for changes on its own.
+    static let wallPowerFetchInterval: TimeInterval = 5 * 60
+    private var lastScheduledFetch: Date?
+
+    /// Ask iCloud for changes if the Mac is plugged in and it has been a while.
+    ///
+    /// iCloud is meant to announce changes, and on the Mac it does so only
+    /// sometimes: the phone's evening came through on its own at one point
+    /// and sat unfetched for minutes at another, until the window was
+    /// clicked. Plugged in, a regular look costs nothing that matters. On
+    /// battery the Mac keeps waiting to be told.
+    func fetchIfOnWallPower(now: Date = Date(), onWallPower: Bool = PowerSource.isOnWallPower) {
+        guard status == .on, onWallPower else { return }
+        if let lastScheduledFetch, now.timeIntervalSince(lastScheduledFetch) < Self.wallPowerFetchInterval { return }
+        lastScheduledFetch = now
+        fetchNow()
+    }
+    #endif
+
     private func observeLibraryChanges() {
         guard observer == nil else { return }
         observer = NotificationCenter.default.addObserver(
