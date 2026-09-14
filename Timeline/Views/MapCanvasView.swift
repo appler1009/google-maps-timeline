@@ -598,7 +598,14 @@ struct TimelineKitMap: NSViewRepresentable {
             return renderer
         }
 
+        /// Every frame of a zoom or pan: how close two pins look changes with
+        /// the scale, and so does whether their names collide.
+        func mapViewDidChangeVisibleRegion(_ mapView: MKMapView) {
+            PinLabelLayout.apply(to: mapView)
+        }
+
         func mapView(_ mapView: MKMapView, didAdd views: [MKAnnotationView]) {
+            PinLabelLayout.apply(to: mapView)
             guard annotationFadeIn else { return }
             annotationFadeIn = false
             for view in views { view.alphaValue = 0 }
@@ -651,8 +658,12 @@ enum TimelineMapChrome {
 }
 
 #if os(macOS)
-private final class VisitMarkerView: MKAnnotationView, VisitMarkerTitleUpdating {
+private final class VisitMarkerView: MKAnnotationView, VisitMarkerTitleUpdating, VisitMarkerLabelPlacing {
     private let hosting = NSHostingView(rootView: MapVisitPinChrome(title: nil, semantic: nil))
+    private var pinTitle: String?
+    private var semantic: String?
+    var labelPlacement: PinLabelPlacement = .below
+    private(set) var labelSize: CGSize?
 
     override init(annotation: MKAnnotation?, reuseIdentifier: String?) {
         super.init(annotation: annotation, reuseIdentifier: reuseIdentifier)
@@ -665,9 +676,6 @@ private final class VisitMarkerView: MKAnnotationView, VisitMarkerTitleUpdating 
         layer?.backgroundColor = .clear
         hosting.wantsLayer = true
         hosting.layer?.backgroundColor = .clear
-        if #available(macOS 14.0, *) {
-            hosting.sizingOptions = [.intrinsicContentSize]
-        }
         hosting.frame = .zero
         addSubview(hosting)
         bounds.size = CGSize(width: MapVisitPinChrome.pinSpan, height: MapVisitPinChrome.pinSpan)
@@ -680,19 +688,47 @@ private final class VisitMarkerView: MKAnnotationView, VisitMarkerTitleUpdating 
     override var isFlipped: Bool { true }
 
     func apply(_ annotation: VisitAnnotation?) {
-        hosting.rootView = MapVisitPinChrome(title: annotation?.title, semantic: annotation?.semantic)
+        if annotation?.title != pinTitle || labelSize == nil {
+            pinTitle = annotation?.title
+            labelSize = pinTitle.flatMap { title in
+                guard MapVisitPinChrome.showsLabel(title) else { return nil }
+                return NSHostingView(rootView: MapVisitPinLabel(title: title)).fittingSize
+            }
+        }
+        semantic = annotation?.semantic
+        // The pin sits in the middle of the canvas, so the view's centre is the
+        // coordinate and there is nothing to offset — and moving the label
+        // never resizes the view, which AppKit would do from its corner.
+        bounds.size = MapVisitPinChrome.canvasSize(labelSize: labelSize)
+        centerOffset = .zero
+        layOutForPlacement()
+    }
+
+    func layOutForPlacement() {
+        hosting.rootView = MapVisitPinChrome(
+            title: pinTitle,
+            semantic: semantic,
+            placement: labelPlacement,
+            labelSize: labelSize
+        )
         needsLayout = true
     }
 
     override func layout() {
         super.layout()
-        let size = hosting.fittingSize
-        let width = max(MapVisitPinChrome.pinSpan, size.width)
-        let height = max(MapVisitPinChrome.pinSpan, size.height)
-        bounds.size = CGSize(width: width, height: height)
-        hosting.frame = CGRect(origin: .zero, size: bounds.size)
-        // Keep the glass pin centered on the coordinate; label hangs below.
-        centerOffset = CGPoint(x: 0, y: height / 2 - MapVisitPinChrome.pinSpan / 2)
+        hosting.frame = bounds
+    }
+
+    /// Only the pin and its label take a click; the rest of the canvas is map.
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        guard let superview else { return nil }
+        let local = convert(point, from: superview)
+        let centre = CGPoint(x: bounds.midX, y: bounds.midY)
+        let span = MapVisitPinChrome.pinSpan
+        let pin = CGRect(x: centre.x - span / 2, y: centre.y - span / 2, width: span, height: span)
+        let label = labelSize.map { PinLabelLayout.rect(for: labelPlacement, size: $0, at: centre) }
+        guard pin.contains(local) || (label?.contains(local) ?? false) else { return nil }
+        return super.hitTest(point)
     }
 }
 #endif
