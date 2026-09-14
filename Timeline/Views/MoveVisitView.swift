@@ -23,6 +23,10 @@ struct MoveVisitView: View {
                         .focused($searchFocused)
                         .submitLabel(.search)
                         .accessibilityIdentifier("move-visit-search")
+                        .onKeyPress(.escape) {
+                            onDone()
+                            return .handled
+                        }
                         .onChange(of: query) { _, value in
                             suggester.updateQuery(value)
                         }
@@ -68,10 +72,12 @@ struct MoveVisitView: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel", action: onDone)
+                        .keyboardShortcut(.cancelAction)
                 }
             }
             .onAppear(perform: configureSearch)
         }
+        .dismissesOnEscape(onDone)
     }
 
     private var currentName: String {

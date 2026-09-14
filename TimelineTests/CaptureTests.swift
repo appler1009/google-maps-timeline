@@ -369,6 +369,46 @@ final class PlaceGuessRankerTests: XCTestCase {
         XCTAssertEqual(merged.map(\.title), ["Continental Coffee", "JJ Bean", "Grandview Park"])
         XCTAssertEqual(merged.first?.targetPlaceID, "a")
     }
+
+    /// A dense history used to fill the only list. A place next door that has
+    /// never been visited has to survive on its own, and a name already in
+    /// history must not show up there as if it were new.
+    func testAPlaceNeverVisitedSurvivesAHistoryThatFillsTheList() {
+        let visited = (0..<PlaceGuessRanker.resultLimit).map { index in
+            PlaceNameSuggestion(
+                id: "visited:\(index)",
+                title: "Place \(index)",
+                subtitle: nil,
+                source: .visited,
+                visitCount: index + 1,
+                distanceMeters: Double(index * 20),
+                targetPlaceID: "id-\(index)"
+            )
+        }
+        let known = PlaceNameSuggestion(
+            id: "poi:known",
+            title: "Place 0",
+            subtitle: "Cafe",
+            source: .map,
+            visitCount: 0,
+            distanceMeters: 12,
+            targetPlaceID: nil
+        )
+        let fresh = PlaceNameSuggestion(
+            id: "poi:new",
+            title: "Grandview Park",
+            subtitle: "Park",
+            source: .map,
+            visitCount: 0,
+            distanceMeters: 40,
+            targetPlaceID: nil
+        )
+        XCTAssertFalse(PlaceGuessRanker.merge(visited: visited, map: [known, fresh]).contains { $0.id == "poi:new" })
+        XCTAssertEqual(
+            PlaceGuessRanker.neverVisited(map: [known, fresh], visited: visited).map(\.id),
+            ["poi:new"]
+        )
+    }
 }
 
 // MARK: - Scripted sources

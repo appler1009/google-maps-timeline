@@ -230,6 +230,7 @@ struct VisitPhotoViewer: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Done") { onDismiss() }
+                        .keyboardShortcut(.cancelAction)
                 }
                 ToolbarItemGroup(placement: .topBarTrailing) {
                     Button {
@@ -263,6 +264,7 @@ struct VisitPhotoViewer: View {
             .task(id: photo.id) {
                 await load()
             }
+            .dismissesOnEscape(onDismiss)
             .gesture(
                 DragGesture(minimumDistance: 20)
                     .onChanged { value in

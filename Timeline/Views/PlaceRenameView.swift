@@ -11,9 +11,24 @@ struct PlaceRenameView: View {
 
     @State private var draft: String
     @State private var suggester = PlaceNameSuggester()
+    @State private var list: SuggestionList = .history
     @State private var highlightedIndex: Int?
     @State private var pendingMerge: PlaceNameSuggestion?
     @FocusState private var nameFocused: Bool
+
+    private enum SuggestionList: String, CaseIterable, Identifiable {
+        case history
+        case nearby
+
+        var id: String { rawValue }
+
+        var title: String {
+            switch self {
+            case .history: "History"
+            case .nearby: "Nearby"
+            }
+        }
+    }
 
     init(
         place: PlaceRecord,
@@ -35,59 +50,63 @@ struct PlaceRenameView: View {
 
     var body: some View {
         NavigationStack {
-            ScrollViewReader { proxy in
-                List {
-                    Section {
-                        TextField("Place name", text: $draft)
-                            .textFieldStyle(.plain)
-                            .font(.system(size: 17, weight: .regular, design: .serif))
-                            .focused($nameFocused)
-                            .submitLabel(.done)
-                            .onSubmit(commitFromKeyboard)
-                            .accessibilityIdentifier("place-rename-field")
-                            .onKeyPress(.downArrow) {
-                                moveHighlight(by: 1)
-                                return .handled
-                            }
-                            .onKeyPress(.upArrow) {
-                                moveHighlight(by: -1)
-                                return .handled
-                            }
-                    } footer: {
-                        Text(footerText)
-                    }
-
-                    if !suggester.suggestions.isEmpty || suggester.isLoading {
-                        Section("Suggestions") {
-                            if suggester.isLoading && suggester.suggestions.isEmpty {
-                                HStack(spacing: 10) {
-                                    ProgressView()
-                                    Text("Looking up nearby places…")
-                                        .foregroundStyle(Palette.muted)
-                                }
-                            }
-                            ForEach(Array(suggester.suggestions.enumerated()), id: \.element.id) { index, suggestion in
-                                Button {
-                                    applySuggestion(suggestion)
-                                } label: {
-                                    suggestionRow(suggestion, highlighted: highlightedIndex == index)
-                                }
-                                .buttonStyle(.plain)
-                                .listRowBackground(rowBackground(highlighted: highlightedIndex == index))
-                                .accessibilityLabel(suggestion.accessibilityLabel)
-                                .accessibilityAddTraits(highlightedIndex == index ? .isSelected : [])
-                                .id(suggestion.id)
-                            }
+            VStack(spacing: 0) {
+                VStack(alignment: .leading, spacing: 6) {
+                    TextField("Place name", text: $draft)
+                        .textFieldStyle(.plain)
+                        .font(.system(size: 17, weight: .regular, design: .serif))
+                        .focused($nameFocused)
+                        .submitLabel(.done)
+                        .onSubmit(commitFromKeyboard)
+                        .accessibilityIdentifier("place-rename-field")
+                        .onKeyPress(.escape) {
+                            dismissFromEscape()
+                            return .handled
                         }
-                    }
+                        .onKeyPress(.downArrow) {
+                            moveHighlight(by: 1)
+                            return .handled
+                        }
+                        .onKeyPress(.upArrow) {
+                            moveHighlight(by: -1)
+                            return .handled
+                        }
+                        .padding(12)
+                        .background(Palette.inkLift, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    Text(footerText)
+                        .font(.system(size: 11))
+                        .foregroundStyle(Palette.muted)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
-                #if os(iOS)
-                .listStyle(.insetGrouped)
-                #endif
-                .onChange(of: highlightedIndex) { _, index in
-                    guard let index, suggester.suggestions.indices.contains(index) else { return }
-                    withAnimation(.easeInOut(duration: 0.12)) {
-                        proxy.scrollTo(suggester.suggestions[index].id, anchor: .center)
+                .padding(.horizontal, 16)
+                .padding(.top, 12)
+                .padding(.bottom, 10)
+
+                suggestionTabs
+                    .padding(.horizontal, 16)
+                    .padding(.top, 2)
+                    .padding(.bottom, 6)
+
+                Text(listCaption)
+                    .font(.system(size: 12))
+                    .foregroundStyle(Palette.muted)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 20)
+                    .padding(.bottom, 8)
+
+                ScrollViewReader { proxy in
+                    List {
+                        suggestionRows
+                    }
+                    #if os(iOS)
+                    .listStyle(.insetGrouped)
+                    #endif
+                    .frame(maxHeight: .infinity)
+                    .onChange(of: highlightedIndex) { _, index in
+                        guard let index, visibleSuggestions.indices.contains(index) else { return }
+                        withAnimation(.easeInOut(duration: 0.12)) {
+                            proxy.scrollTo(visibleSuggestions[index].id, anchor: .center)
+                        }
                     }
                 }
             }
@@ -114,6 +133,7 @@ struct PlaceRenameView: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel", action: onCancel)
+                        .keyboardShortcut(.cancelAction)
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save", action: save)
@@ -136,6 +156,7 @@ struct PlaceRenameView: View {
             }
         }
         .foregroundStyle(Palette.parchment)
+        .dismissesOnEscape(isEnabled: pendingMerge == nil, onCancel)
         #if os(macOS)
         .frame(minWidth: 440, idealWidth: 480, minHeight: 520, idealHeight: 560)
         #endif
@@ -155,7 +176,10 @@ struct PlaceRenameView: View {
         .onChange(of: draft) { _, newValue in
             suggester.updateQuery(newValue)
         }
-        .onChange(of: suggester.suggestions) { _, newValue in
+        .onChange(of: list) { _, _ in
+            highlightedIndex = nil
+        }
+        .onChange(of: visibleSuggestions) { _, newValue in
             if let highlightedIndex, newValue.indices.contains(highlightedIndex) {
                 return
             }
@@ -163,11 +187,125 @@ struct PlaceRenameView: View {
         }
     }
 
+    private var visibleSuggestions: [PlaceNameSuggestion] {
+        switch list {
+        case .history: suggester.historySuggestions
+        case .nearby: suggester.nearbySuggestions
+        }
+    }
+
+    private var listCaption: String {
+        switch list {
+        case .history:
+            "Places you've been near here. Choosing one merges into it."
+        case .nearby:
+            "Places close by that you haven't been. Choosing one names this place."
+        }
+    }
+
+    private var suggestionTabs: some View {
+        HStack(spacing: 0) {
+            tabButton(.history, count: suggester.historySuggestions.count)
+            tabButton(.nearby, count: suggester.nearbySuggestions.count)
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Suggestion lists")
+    }
+
+    private func tabButton(_ tab: SuggestionList, count: Int) -> some View {
+        let selected = list == tab
+        return Button {
+            list = tab
+        } label: {
+            VStack(spacing: 8) {
+                HStack(spacing: 6) {
+                    Text(tab.title)
+                        .font(.system(size: 13, weight: selected ? .semibold : .medium))
+                    if count > 0 {
+                        Text("\(count)")
+                            .font(.system(size: 11, weight: .semibold, design: .rounded))
+                            .foregroundStyle(selected ? Palette.ink : Palette.muted)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 1)
+                            .background(
+                                Capsule().fill(selected ? Palette.parchment : Palette.parchment.opacity(0.12))
+                            )
+                    } else if tab == .nearby && suggester.isLoading {
+                        ProgressView()
+                            .controlSize(.mini)
+                    }
+                }
+                .foregroundStyle(selected ? Palette.parchment : Palette.muted)
+                Rectangle()
+                    .fill(selected ? Palette.copper : Palette.rule.opacity(0.45))
+                    .frame(height: 2)
+            }
+            .frame(maxWidth: .infinity, minHeight: 36)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(tab == .history ? "History, places you've been" : "Nearby, places you haven't been")
+        .accessibilityValue("\(count)")
+        .accessibilityAddTraits(selected ? .isSelected : [])
+        .accessibilityIdentifier(tab == .history ? "place-rename-tab-history" : "place-rename-tab-nearby")
+    }
+
+    @ViewBuilder
+    private var suggestionRows: some View {
+        if visibleSuggestions.isEmpty {
+            if list == .nearby && suggester.isLoading {
+                HStack(spacing: 10) {
+                    ProgressView()
+                    Text("Looking up nearby places…")
+                        .foregroundStyle(Palette.muted)
+                }
+            } else {
+                Text(emptyListText)
+                    .foregroundStyle(Palette.muted)
+            }
+        } else {
+            ForEach(Array(visibleSuggestions.enumerated()), id: \.element.id) { index, suggestion in
+                Button {
+                    applySuggestion(suggestion)
+                } label: {
+                    suggestionRow(suggestion, highlighted: highlightedIndex == index)
+                }
+                .buttonStyle(.plain)
+                .listRowBackground(rowBackground(highlighted: highlightedIndex == index))
+                .accessibilityLabel(suggestion.accessibilityLabel)
+                .accessibilityAddTraits(highlightedIndex == index ? .isSelected : [])
+                .id(suggestion.id)
+            }
+        }
+    }
+
+    private var emptyListText: String {
+        let typed = !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        switch list {
+        case .history:
+            if !suggester.nearbySuggestions.isEmpty {
+                return "Nothing in your history matches. Nearby has places you haven't been to."
+            }
+            return typed ? "Nothing in your history matches." : "No places you've been nearby."
+        case .nearby:
+            return typed ? "No nearby matches." : "Nothing nearby you haven't already been to."
+        }
+    }
+
+    /// Escape closes a merge confirmation first. The next one closes the sheet.
+    private func dismissFromEscape() {
+        if pendingMerge != nil {
+            pendingMerge = nil
+            return
+        }
+        onCancel()
+    }
+
     private var footerText: String {
         #if os(macOS)
-        "Suggestions nearby prefer places you visit often. Choosing a starred visit merges into that place. Use ↑↓ then Return to choose. Clear the name to restore the default label."
+        "History first, then nearby places you haven't been. Use ↑↓ then Return to choose. Clear the name to restore the default label."
         #else
-        "Suggestions nearby prefer places you visit often. Choosing a starred visit merges into that place. Clear the name to restore the default label."
+        "History first, then nearby places you haven't been. Clear the name to restore the default label."
         #endif
     }
 
@@ -224,7 +362,7 @@ struct PlaceRenameView: View {
     }
 
     private func moveHighlight(by delta: Int) {
-        let items = suggester.suggestions
+        let items = visibleSuggestions
         guard !items.isEmpty else {
             highlightedIndex = nil
             return
@@ -239,9 +377,9 @@ struct PlaceRenameView: View {
     @discardableResult
     private func applyHighlightedSuggestion() -> Bool {
         guard let highlightedIndex,
-              suggester.suggestions.indices.contains(highlightedIndex)
+              visibleSuggestions.indices.contains(highlightedIndex)
         else { return false }
-        applySuggestion(suggester.suggestions[highlightedIndex])
+        applySuggestion(visibleSuggestions[highlightedIndex])
         return true
     }
 

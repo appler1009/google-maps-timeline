@@ -34,6 +34,7 @@ struct MCPPairingSheet: View {
         }
         .padding(28)
         .frame(width: 380)
+        .dismissesOnEscape(onDismiss)
     }
 
     /// Grouped in threes, which is how anybody reads six digits aloud.

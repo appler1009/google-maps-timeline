@@ -33,6 +33,10 @@ struct AddVisitView: View {
                         .focused($searchFocused)
                         .submitLabel(.search)
                         .accessibilityIdentifier("add-visit-search")
+                        .onKeyPress(.escape) {
+                            onDone()
+                            return .handled
+                        }
                         .onChange(of: query) { _, value in
                             suggester.updateQuery(value)
                         }
@@ -76,6 +80,7 @@ struct AddVisitView: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel", action: onDone)
+                        .keyboardShortcut(.cancelAction)
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Add", action: save)
@@ -85,6 +90,7 @@ struct AddVisitView: View {
             }
             .onAppear(perform: configureSearch)
         }
+        .dismissesOnEscape(onDone)
     }
 
     @ViewBuilder

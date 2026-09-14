@@ -207,6 +207,7 @@ struct MacCloudSyncSettingsView: View {
                 }
             }
         }
+        .dismissesOnEscape { dismiss() }
     }
 }
 #endif

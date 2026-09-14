@@ -46,6 +46,7 @@ struct LuxPhotosSettingsView: View {
                     Button("Done") { dismiss() }
                 }
             }
+            .dismissesOnEscape { dismiss() }
             .onAppear {
                 NSLog("[Timeline] LuxPhotosSettingsView appeared")
                 TimelineLog.info("lux settings view appeared", [
@@ -67,6 +68,10 @@ struct LuxPhotosSettingsView: View {
                 Text("Enter the 6-digit code shown in Lux")
                     .foregroundStyle(Palette.muted)
                 TextField("Code", text: $link.confirmationCode)
+                    .onKeyPress(.escape) {
+                        dismiss()
+                        return .handled
+                    }
                     #if os(iOS)
                     .keyboardType(.numberPad)
                     #endif
