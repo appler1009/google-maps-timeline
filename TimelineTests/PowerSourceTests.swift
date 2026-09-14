@@ -4,15 +4,20 @@ import IOKit.ps
 @testable import Timeline
 
 final class PowerSourceTests: XCTestCase {
-    func testOnlyWallPowerCountsAndLowPowerModeOverrulesIt() {
-        XCTAssertTrue(PowerSource.isWallPower(providingType: kIOPSACPowerValue, lowPowerMode: false))
-        XCTAssertFalse(PowerSource.isWallPower(providingType: kIOPSBatteryPowerValue, lowPowerMode: false))
-        XCTAssertFalse(PowerSource.isWallPower(providingType: kIOPSACPowerValue, lowPowerMode: true))
+    /// Mains, mains through a UPS, and a desktop with no battery all report no
+    /// time limit.
+    func testUnlimitedPowerIsTheWall() {
+        XCTAssertTrue(PowerSource.isWallPower(timeRemaining: kIOPSTimeRemainingUnlimited, lowPowerMode: false))
     }
 
-    /// A desktop reports no power source; it has no battery to save.
-    func testAMacWithNoPowerSourceIsOnTheWall() {
-        XCTAssertTrue(PowerSource.isWallPower(providingType: nil, lowPowerMode: false))
+    /// A laptop battery, or a UPS carrying the Mac through an outage.
+    func testAnythingRunningDownIsNot() {
+        XCTAssertFalse(PowerSource.isWallPower(timeRemaining: 3 * 3_600, lowPowerMode: false))
+        XCTAssertFalse(PowerSource.isWallPower(timeRemaining: kIOPSTimeRemainingUnknown, lowPowerMode: false))
+    }
+
+    func testLowPowerModeOverrulesTheWall() {
+        XCTAssertFalse(PowerSource.isWallPower(timeRemaining: kIOPSTimeRemainingUnlimited, lowPowerMode: true))
     }
 }
 #endif

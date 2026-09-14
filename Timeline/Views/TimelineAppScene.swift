@@ -92,17 +92,18 @@ struct TimelineAppScene: View {
             // redraw it: left open overnight, the Mac showed no today at all.
             // Coming back to the app redraws it, and this tick keeps it current
             // where that is cheap: a Mac on the wall, or the phone app on screen.
-            // Nothing redraws at midnight by itself — nobody is looking then,
-            // and looking again catches up.
+            // Nothing redraws at midnight by itself. "Coming back" means the app
+            // becoming active: a Mac on battery with Timeline already in front
+            // stays active overnight, and shows no today until you switch away
+            // and back — clicking its window is not enough.
             .task {
                 guard !TimelineLaunch.isUITesting else { return }
                 while !Task.isCancelled {
                     try? await Task.sleep(for: .seconds(60))
                     #if os(macOS)
                     // Plugged in, keep current by the clock. On battery, both
-                    // wait: the stay is redrawn at midnight and whenever the app
-                    // comes forward, and iCloud's own notice still fetches — so
-                    // what is lost is only a length ticking while you watch.
+                    // wait for the app to become active again, and iCloud's own
+                    // notice still fetches.
                     guard PowerSource.isOnWallPower else { continue }
                     CloudSyncController.shared.fetchIfOnWallPower(onWallPower: true)
                     #endif

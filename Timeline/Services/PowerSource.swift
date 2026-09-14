@@ -10,23 +10,25 @@ import IOKit.ps
 /// changed, or for you to bring it forward, as it always has.
 enum PowerSource {
     static var isOnWallPower: Bool {
-        let info = IOPSCopyPowerSourcesInfo()?.takeRetainedValue()
-        let providing = info.flatMap { IOPSGetProvidingPowerSourceType($0)?.takeUnretainedValue() as String? }
-        return isWallPower(
-            providingType: providing,
+        isWallPower(
+            timeRemaining: IOPSGetTimeRemainingEstimate(),
             lowPowerMode: ProcessInfo.processInfo.isLowPowerModeEnabled
         )
     }
 
     /// The decision alone, so it can be tested without unplugging anything.
     ///
-    /// A Mac that reports no power source at all is a desktop: it has no
-    /// battery to save. Low Power Mode is someone asking for less work to be
-    /// done, plugged in or not.
-    static func isWallPower(providingType: String?, lowPowerMode: Bool) -> Bool {
+    /// Asked as "is there a time limit", not "which source is providing".
+    /// The providing source has a third answer, "UPS Power", which IOKit uses
+    /// both for a Mac on a UPS with the mains present and for one running off
+    /// the UPS's own battery. The time-remaining estimate tells those apart:
+    /// it is unlimited on external power with no limit — mains, mains through
+    /// a UPS, or a desktop with no battery at all — and anything else is a
+    /// battery running down. Low Power Mode is someone asking for less work to
+    /// be done, plugged in or not.
+    static func isWallPower(timeRemaining: CFTimeInterval, lowPowerMode: Bool) -> Bool {
         guard !lowPowerMode else { return false }
-        guard let providingType else { return true }
-        return providingType == kIOPSACPowerValue
+        return timeRemaining == kIOPSTimeRemainingUnlimited
     }
 }
 #endif
