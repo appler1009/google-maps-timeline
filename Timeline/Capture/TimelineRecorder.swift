@@ -246,7 +246,7 @@ final class TimelineRecorder {
             if let known, known.stop.arrivalIsKnown {
                 let openID = PlaceClusterer.visitID(placeKey: known.placeKey, start: known.stop.start)
                 if openID != visit.id {
-                    try? await database.deleteVisit(id: openID, reason: "closed as \(visit.id)")
+                    _ = try? await database.deleteVisit(id: openID, reason: "closed as \(visit.id)")
                 }
             }
             try? await database.clearOpenStop()
