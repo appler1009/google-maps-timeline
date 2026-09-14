@@ -58,6 +58,67 @@ struct PlaceGuessService: PlaceGuessing {
         }
     }
 
+    /// What was typed, looked up around each of several places at once.
+    ///
+    /// The completer takes a single region, and a day's stops are rarely in one:
+    /// asked around the middle of a day spent at both ends of a city, it offered
+    /// the branch of a chain in the middle and neither of the ones at the ends.
+    func search(
+        _ query: String,
+        near anchors: [CLLocationCoordinate2D],
+        radius: CLLocationDistance = 2_000
+    ) async -> [PlaceNameSuggestion] {
+        await withTaskGroup(of: [PlaceNameSuggestion].self) { group in
+            for anchor in anchors {
+                group.addTask {
+                    let request = MKLocalSearch.Request()
+                    request.naturalLanguageQuery = query
+                    request.resultTypes = [.pointOfInterest, .address]
+                    request.region = MKCoordinateRegion(
+                        center: anchor,
+                        latitudinalMeters: radius * 2,
+                        longitudinalMeters: radius * 2
+                    )
+                    guard let response = try? await MKLocalSearch(request: request).start() else { return [] }
+                    return response.mapItems.compactMap { item in
+                        Self.suggestion(for: item, near: anchors)
+                    }
+                }
+            }
+            var found: [PlaceNameSuggestion] = []
+            for await rows in group { found.append(contentsOf: rows) }
+            return found.sorted { $0.distanceMeters < $1.distanceMeters }
+        }
+    }
+
+    private static func suggestion(for item: MKMapItem, near anchors: [CLLocationCoordinate2D]) -> PlaceNameSuggestion? {
+        let title = item.name?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !title.isEmpty else { return nil }
+        let coordinate = item.placemark.coordinate
+        guard CLLocationCoordinate2DIsValid(coordinate) else { return nil }
+        let distance = anchors.map { RoutePlanner.meters($0, coordinate) }.min() ?? .infinity
+        let category = item.pointOfInterestCategory?.rawValue
+            .replacingOccurrences(of: "MKPOICategory", with: "")
+        let address = [item.placemark.subThoroughfare, item.placemark.thoroughfare, item.placemark.locality]
+            .compactMap { $0 }
+            .joined(separator: " ")
+        let subtitle = [address.isEmpty ? nil : address, PlaceGuessRanker.distanceLabel(distance) + " from that day's stops"]
+            .compactMap { $0 }
+            .joined(separator: " · ")
+        return PlaceNameSuggestion(
+            id: "search:\(coordinate.latitude),\(coordinate.longitude):\(title)",
+            title: title,
+            subtitle: subtitle,
+            source: .map,
+            visitCount: 0,
+            distanceMeters: distance,
+            targetPlaceID: nil,
+            category: category,
+            latitude: coordinate.latitude,
+            longitude: coordinate.longitude
+        )
+    }
+
     /// The street address, used as a fallback name when no POI fits.
     func address(at coordinate: CLLocationCoordinate2D) async -> PlaceNameSuggestion? {
         let location = CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude)
@@ -112,23 +173,105 @@ struct PlaceGuessService: PlaceGuessing {
 /// The one ranking both the rename sheet and the notification use.
 enum PlaceGuessRanker {
     static let resultLimit = 20
+    /// Two results of one name closer than this are the same branch.
+    static let sameBranch: CLLocationDistance = 150
 
     /// Visited places first, then map and address rows, deduped by name.
+    ///
+    /// `keepingBranches` dedupes by name *and* place instead, for adding a stay:
+    /// a chain has a branch near home and another an hour away, and which one
+    /// you stopped at is the whole question. A row with no position — a typed
+    /// completion — is dropped when a positioned row of the same name is there,
+    /// since it cannot say which branch it is.
     static func merge(
         visited: [PlaceNameSuggestion],
         map: [PlaceNameSuggestion],
+        keepingBranches: Bool = false,
         limit: Int = resultLimit
     ) -> [PlaceNameSuggestion] {
+        let positionedTitles = Set((visited + map).filter { $0.coordinate != nil }.map { $0.title.lowercased() })
         var seen = Set<String>()
+        var branches: [String: [CLLocationCoordinate2D]] = [:]
         var merged: [PlaceNameSuggestion] = []
         for row in visited + map {
-            let key = row.title.lowercased()
-            guard key != "unnamed place" else { continue }
-            guard seen.insert(key).inserted else { continue }
+            let name = row.title.lowercased()
+            guard name != "unnamed place" else { continue }
+            if keepingBranches, let coordinate = row.coordinate {
+                // One branch, however each source happens to have placed it.
+                let known = branches[name, default: []]
+                guard !known.contains(where: { RoutePlanner.meters($0, coordinate) < Self.sameBranch }) else { continue }
+                branches[name] = known + [coordinate]
+            } else if keepingBranches {
+                guard !positionedTitles.contains(name), seen.insert(name).inserted else { continue }
+            } else {
+                guard seen.insert(name).inserted else { continue }
+            }
             merged.append(row)
             if merged.count >= limit { break }
         }
         return merged
+    }
+
+    /// Places you have been whose name matches what was typed, however far away.
+    ///
+    /// Adding a stay is mostly adding one at somewhere you already go, and the
+    /// day's map is no guide to where that is: a coffee pick-up near home, added
+    /// from an hour's drive away, was filtered out for being far from the middle
+    /// of the day. Most visited first, then nearest to any of the day's stops.
+    static func visitedMatches(
+        _ query: String,
+        places: [(id: String, title: String, visitCount: Int, coordinate: CLLocationCoordinate2D)],
+        near stops: [CLLocationCoordinate2D]
+    ) -> [PlaceNameSuggestion] {
+        let needle = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !needle.isEmpty else { return [] }
+        return places.compactMap { place -> (PlaceNameSuggestion, Double)? in
+            let title = place.title.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !title.isEmpty, title != "Unnamed place", title != "Place" else { return nil }
+            guard title.lowercased().contains(needle) else { return nil }
+            let distance = stops.map { RoutePlanner.meters($0, place.coordinate) }.min() ?? .infinity
+            let plural = place.visitCount == 1 ? "" : "s"
+            let whereabouts = distance.isFinite ? " · \(distanceLabel(distance)) from that day's stops" : ""
+            return (
+                PlaceNameSuggestion(
+                    id: "visited:\(place.id)",
+                    title: title,
+                    subtitle: "\(place.visitCount) visit\(plural)\(whereabouts)",
+                    source: .visited,
+                    visitCount: place.visitCount,
+                    distanceMeters: distance,
+                    targetPlaceID: place.id,
+                    latitude: place.coordinate.latitude,
+                    longitude: place.coordinate.longitude
+                ),
+                distance
+            )
+        }
+        .sorted {
+            if $0.0.visitCount != $1.0.visitCount { return $0.0.visitCount > $1.0.visitCount }
+            return $0.1 < $1.1
+        }
+        .map(\.0)
+    }
+
+    /// The places worth searching around for a stay added to a day: where the
+    /// day's stays were, one per neighbourhood, at most `limit` of them.
+    ///
+    /// Neighbourhoods rather than stops, because each search already covers a
+    /// couple of kilometres — home and the coffee shop down the road are one
+    /// search, and the budget goes on the far end of the day instead.
+    static func searchAnchors(
+        _ coordinates: [CLLocationCoordinate2D],
+        apart: CLLocationDistance = 3_000,
+        limit: Int = 5
+    ) -> [CLLocationCoordinate2D] {
+        var anchors: [CLLocationCoordinate2D] = []
+        for coordinate in coordinates where CLLocationCoordinate2DIsValid(coordinate) {
+            guard !anchors.contains(where: { RoutePlanner.meters($0, coordinate) < apart }) else { continue }
+            anchors.append(coordinate)
+            if anchors.count == limit { break }
+        }
+        return anchors
     }
 
     /// Visited stays ranked the way the sheet ranks them: most visited, then nearest.

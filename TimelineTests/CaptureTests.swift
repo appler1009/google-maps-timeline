@@ -277,6 +277,61 @@ final class VisitNotificationPolicyTests: XCTestCase {
 }
 
 final class PlaceGuessRankerTests: XCTestCase {
+    /// A pick-up near home, added from an hour away: the usual branch is found
+    /// by name however far it is from the middle of the day.
+    func testAddingAStayFindsAVisitedBranchAtAnyDistance() {
+        let places: [(id: String, title: String, visitCount: Int, coordinate: CLLocationCoordinate2D)] = [
+            (id: "near-home", title: "Bean Around the World Coffees", visitCount: 10, coordinate: offset(home, metersNorth: 1_400)),
+            (id: "downtown", title: "Bean Around the World Coffees", visitCount: 1, coordinate: offset(home, metersNorth: 9_000)),
+            (id: "other", title: "JJ Bean", visitCount: 30, coordinate: home),
+        ]
+        let far = offset(home, metersNorth: 60_000)
+        let rows = PlaceGuessRanker.visitedMatches("bean around", places: places, near: [home, far])
+        XCTAssertEqual(rows.map(\.targetPlaceID), ["near-home", "downtown"])
+        XCTAssertTrue(PlaceGuessRanker.visitedMatches("  ", places: places, near: [home]).isEmpty)
+    }
+
+    /// Two branches of one chain are two answers when adding a stay, and one
+    /// name when renaming.
+    func testBranchesSurviveMergingOnlyWhenAddingAStay() {
+        func row(_ id: String, _ coordinate: CLLocationCoordinate2D?) -> PlaceNameSuggestion {
+            PlaceNameSuggestion(
+                id: id,
+                title: "Bean Around the World Coffees",
+                subtitle: nil,
+                source: .map,
+                visitCount: 0,
+                distanceMeters: 0,
+                targetPlaceID: nil,
+                latitude: coordinate?.latitude,
+                longitude: coordinate?.longitude
+            )
+        }
+        let rows = [
+            row("home", home),
+            row("home-again", offset(home, metersNorth: 20)),
+            row("downtown", offset(home, metersNorth: 9_000)),
+            // A typed completion cannot say which branch it is.
+            row("completion", nil),
+        ]
+        XCTAssertEqual(PlaceGuessRanker.merge(visited: [], map: rows).map(\.id), ["home"])
+        XCTAssertEqual(
+            PlaceGuessRanker.merge(visited: [], map: rows, keepingBranches: true).map(\.id),
+            ["home", "downtown"]
+        )
+    }
+
+    func testSearchAnchorsTakeOnePerNeighbourhood() {
+        let anchors = PlaceGuessRanker.searchAnchors([
+            home,
+            offset(home, metersNorth: 1_400),
+            offset(home, metersNorth: 20_000),
+            offset(home, metersNorth: 21_000),
+            offset(home, metersNorth: 60_000),
+        ])
+        XCTAssertEqual(anchors.count, 3)
+    }
+
     func testVisitedPlacesOutrankMapResultsAndNamesAreDeduped() {
         let visited = PlaceGuessRanker.visitedRows(
             near: home,
@@ -593,6 +648,29 @@ final class TimelineRecorderTests: XCTestCase {
         let visits = try await database.loadBatch()?.visits ?? []
         XCTAssertEqual(visits.count, 1)
         XCTAssertEqual(Set(visits.map(\.placeKey)).count, 1)
+    }
+
+    /// The departure repeats the arrival, but not exactly. Home opened at
+    /// 20:43:36 came back closed at 20:43:37 — a different id — and the open
+    /// row stayed behind, running on to the present over the whole next day.
+    func testADepartureReportingTheArrivalLateClosesTheOpenRow() async throws {
+        let (recorder, _, _, database, url) = makeRecorder()
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let start = Date(timeIntervalSince1970: 1_700_000_000.412)
+        await recorder.handle(stop: stop(start: start, minutes: nil))
+        let reported = CapturedStop(
+            coordinate: home,
+            horizontalAccuracy: 65,
+            start: start.addingTimeInterval(0.9),
+            end: start.addingTimeInterval(18 * 3_600)
+        )
+        await recorder.handle(stop: reported)
+
+        let visits = try await database.loadBatch(now: start.addingTimeInterval(20 * 3_600))?.visits ?? []
+        XCTAssertEqual(visits.count, 1)
+        XCTAssertEqual(visits.first?.start, start)
+        XCTAssertEqual(visits.first?.isOpen, false)
     }
 
     func testASecondStayAtTheSamePlaceReusesItsKey() async throws {
