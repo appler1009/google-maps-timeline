@@ -187,10 +187,17 @@ final class TimelineRecorder {
             // metres west of itself, which is further than clustering would ever
             // have accepted as the same place. The arrival is the fix taken while
             // you were actually there, so that is the one the stay keeps.
+            //
+            // And when it began, as it was first written. The departure report
+            // repeats the arrival, but not to the millisecond — a stay at home
+            // came back a second later than it opened — and a stay's id is its
+            // start, so the closed stay landed as a second row beside the open
+            // one, which then ran on to the present over everything after it.
+            let arrivalWasWritten = stop.arrivalIsKnown && known.stop.arrivalIsKnown
             stop = CapturedStop(
                 coordinate: known.stop.coordinate,
                 horizontalAccuracy: known.stop.horizontalAccuracy,
-                start: stop.start,
+                start: arrivalWasWritten ? known.stop.start : stop.start,
                 end: stop.end,
                 arrivalIsKnown: stop.arrivalIsKnown
             )
@@ -233,6 +240,15 @@ final class TimelineRecorder {
         guard let visit = PlaceClusterer.visit(for: usable, placeKey: placeKey) else { return }
         do {
             try await database.record(batch: TimelineBatch(visits: [visit], activities: [], paths: []))
+            // Should the closed stay still have come out under another id — its
+            // arrival inferred, say — the open row it replaces must not outlive
+            // it, or it goes on claiming you never left.
+            if let known, known.stop.arrivalIsKnown {
+                let openID = PlaceClusterer.visitID(placeKey: known.placeKey, start: known.stop.start)
+                if openID != visit.id {
+                    try? await database.deleteVisit(id: openID, reason: "closed as \(visit.id)")
+                }
+            }
             try? await database.clearOpenStop()
             recordedVisitCount += 1
             TimelineLog.info(

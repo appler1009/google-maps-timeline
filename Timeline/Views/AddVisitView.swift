@@ -133,8 +133,12 @@ struct AddVisitView: View {
         let centre = store.day(for: day)?.region.center
             ?? store.parsed?.places.compactMap(\.coordinate).first
             ?? CLLocationCoordinate2D(latitude: 49.25, longitude: -123.12)
+        // Where the day's stops were, not only the middle of them: a day spent
+        // at both ends of a city has its middle somewhere nobody went.
+        let stops = (store.day(for: day)?.visits ?? []).compactMap(\.coordinate)
         suggester.configure(
             around: centre,
+            searchingNear: stops.isEmpty ? [centre] : stops,
             excludingPlaceID: "",
             visitedPlaces: store.visitedPlaceNameCandidates(excluding: "")
         )

@@ -63,6 +63,15 @@ final class PlaceNameSuggester: NSObject, MKLocalSearchCompleterDelegate {
     private var completionsByID: [String: MKLocalSearchCompletion] = [:]
     private var searchTask: Task<Void, Never>?
     private var requestID = UUID()
+    /// For adding a stay: the day's stops, searched around as you type, and
+    /// every place you have been, matched by name at any distance. Empty for
+    /// renaming, where a suggestion is something to merge with and only a
+    /// place nearby could be the same one.
+    private var stops: [CLLocationCoordinate2D] = []
+    private var everyVisited: [(id: String, title: String, visitCount: Int, coordinate: CLLocationCoordinate2D)] = []
+    private var stopResults: [PlaceNameSuggestion] = []
+    private var stopSearchTask: Task<Void, Never>?
+    private var isAddingStay: Bool { !stops.isEmpty }
 
     override init() {
         super.init()
@@ -72,11 +81,15 @@ final class PlaceNameSuggester: NSObject, MKLocalSearchCompleterDelegate {
 
     func configure(
         around coordinate: CLLocationCoordinate2D,
+        searchingNear stops: [CLLocationCoordinate2D] = [],
         excludingPlaceID: String,
         visitedPlaces: [(id: String, title: String, visitCount: Int, coordinate: CLLocationCoordinate2D)]
     ) {
         self.coordinate = coordinate
         self.excludingPlaceID = excludingPlaceID
+        self.stops = PlaceGuessRanker.searchAnchors(stops)
+        everyVisited = self.stops.isEmpty ? [] : visitedPlaces.filter { $0.id != excludingPlaceID }
+        stopResults = []
         let region = MKCoordinateRegion(
             center: coordinate,
             latitudinalMeters: 2_400,
@@ -103,6 +116,33 @@ final class PlaceNameSuggester: NSObject, MKLocalSearchCompleterDelegate {
         query = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         rebuild()
         completer.queryFragment = query
+        searchAroundStops()
+    }
+
+    /// Minimum typed before searching around each stop. MapKit limits how many
+    /// searches an app may make a minute, and a letter or two matches half a
+    /// city anyway.
+    private static let stopSearchMinimum = 3
+
+    private func searchAroundStops() {
+        stopSearchTask?.cancel()
+        guard isAddingStay else { return }
+        let typed = query
+        guard typed.count >= Self.stopSearchMinimum else {
+            stopResults = []
+            return
+        }
+        let stops = stops
+        stopSearchTask = Task { [weak self, guesses] in
+            // Wait for typing to pause, so a word costs one round of searches
+            // rather than one per letter.
+            try? await Task.sleep(for: .milliseconds(400))
+            guard !Task.isCancelled else { return }
+            let found = await guesses.search(typed, near: stops)
+            guard !Task.isCancelled, let self, self.query == typed else { return }
+            self.stopResults = found
+            self.rebuild()
+        }
     }
 
     nonisolated func completerDidUpdateResults(_ completer: MKLocalSearchCompleter) {
@@ -172,6 +212,11 @@ final class PlaceNameSuggester: NSObject, MKLocalSearchCompleterDelegate {
         var visitedRows = visited
         if !needle.isEmpty {
             visitedRows = visitedRows.filter { $0.title.lowercased().contains(needle) }
+            if isAddingStay {
+                let nearby = Set(visitedRows.map(\.id))
+                visitedRows += PlaceGuessRanker.visitedMatches(query, places: everyVisited, near: stops)
+                    .filter { !nearby.contains($0.id) }
+            }
         }
 
         var mapRows: [PlaceNameSuggestion]
@@ -189,11 +234,11 @@ final class PlaceNameSuggester: NSObject, MKLocalSearchCompleterDelegate {
             }
             // Keep nearby POIs that still match while typing short queries.
             let matchingNearby = nearbyMap.filter { $0.title.lowercased().contains(needle) }
-            mapRows = matchingNearby + mapRows
+            mapRows = matchingNearby + stopResults + mapRows
         }
 
         // Visited stays first, then map / address — the same ranking the recorder
         // uses for notification guesses, so the two can never disagree.
-        suggestions = PlaceGuessRanker.merge(visited: visitedRows, map: mapRows)
+        suggestions = PlaceGuessRanker.merge(visited: visitedRows, map: mapRows, keepingBranches: isAddingStay)
     }
 }
