@@ -90,14 +90,23 @@ struct TimelineAppScene: View {
             // A stay still in progress is drawn up to the moment the library was
             // read. Nothing is written while you stay put, so nothing else would
             // redraw it: left open overnight, the Mac showed no today at all.
-            .onReceive(NotificationCenter.default.publisher(for: .NSCalendarDayChanged)) { _ in
-                guard !TimelineLaunch.isUITesting else { return }
-                store.refreshIfStale()
-            }
+            // Coming back to the app redraws it, and this tick keeps it current
+            // where that is cheap: a Mac on the wall, or the phone app on screen.
+            // Nothing redraws at midnight by itself. "Coming back" means the app
+            // becoming active: a Mac on battery with Timeline already in front
+            // stays active overnight, and shows no today until you switch away
+            // and back — clicking its window is not enough.
             .task {
                 guard !TimelineLaunch.isUITesting else { return }
                 while !Task.isCancelled {
                     try? await Task.sleep(for: .seconds(60))
+                    #if os(macOS)
+                    // Plugged in, keep current by the clock. On battery, both
+                    // wait for the app to become active again, and iCloud's own
+                    // notice still fetches.
+                    guard PowerSource.isOnWallPower else { continue }
+                    CloudSyncController.shared.fetchIfOnWallPower(onWallPower: true)
+                    #endif
                     #if os(iOS)
                     // Relaunched in the background for every visit; redrawing a
                     // screen nobody can see is battery spent on nothing.

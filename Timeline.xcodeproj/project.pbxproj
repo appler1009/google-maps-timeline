@@ -54,6 +54,7 @@
 		3E226BEC4DFB2D987C35CB34 /* SetPlaceLocationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BA95E29E2060D32FA6E125D0 /* SetPlaceLocationView.swift */; };
 		3E4D415C25F38653CD8E3894 /* CaptureModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 23DA5434853946FA3CE2CEE8 /* CaptureModels.swift */; };
 		40449CF36ACF875214B50EB0 /* PlaceLocationRepairTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F9B2EFCC4A562040DDCDBD04 /* PlaceLocationRepairTests.swift */; };
+		4301A7752F75D52B88909612 /* PowerSource.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3E6C015B9E57664F694B0E2 /* PowerSource.swift */; };
 		43AE5B25E3DCCC5819276DA1 /* MapDirectionsClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E2B0CEA1726213918DF87C9 /* MapDirectionsClient.swift */; };
 		440BDDFA36C5E534D7EA8F21 /* TimelineModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A498B0C8D72090AC4BAF657 /* TimelineModels.swift */; };
 		45AB66324806BAD817122ABC /* SidebarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E27C0E12EC51D3A3D0B395AC /* SidebarView.swift */; };
@@ -73,6 +74,7 @@
 		53527DCD3CC12C525EAB1BCB /* eiffel-tower-day.json in Resources */ = {isa = PBXBuildFile; fileRef = 6DA6D178D95EAD82BA6BC956 /* eiffel-tower-day.json */; };
 		54B3E36A108BFBC38D3E55F4 /* PhotoViewerDragTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 078DBF24B14EB2D43A20DAE6 /* PhotoViewerDragTests.swift */; };
 		557DEBB2DFDC88D8C1285ACE /* TimelineDatabase.swift in Sources */ = {isa = PBXBuildFile; fileRef = A6C2E6A823AF58F47F778B43 /* TimelineDatabase.swift */; };
+		560D8A3A6B55BAECAA710098 /* PowerSourceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B28B4B752B995F6CDC6F28C /* PowerSourceTests.swift */; };
 		56AC0F7D3F93FDC861D91797 /* MarkerMapTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E0F49A8E7037AC3A6458AD93 /* MarkerMapTests.swift */; };
 		576FD552B5785CCC31A57FA3 /* LogShip in Frameworks */ = {isa = PBXBuildFile; productRef = 6D9A07CFFF4C65ABB4682378 /* LogShip */; };
 		577315CD06BFA62322AD8CEA /* MCPTimelineToolsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B047398999757AF8FEF209EF /* MCPTimelineToolsTests.swift */; };
@@ -101,11 +103,13 @@
 		703D4BE2FDCEC6A644E9F46A /* TrackingSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 668EEBFE37A08864E7B86FB0 /* TrackingSettings.swift */; };
 		720EB8925A1E08FD9695D0FC /* StopRepair.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1E0B1C927BDA1F4B664231A /* StopRepair.swift */; };
 		73E631A74E00F2CE83BC3DAE /* TimelineRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3C9897691FC0C05406D4C21 /* TimelineRecorder.swift */; };
+		743A912F66D3BA1C4CADD106 /* PowerSourceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B28B4B752B995F6CDC6F28C /* PowerSourceTests.swift */; };
 		74E4753A8141BD410C95C7DF /* LuxCompanionClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 779DB6859B7B0D720B7E4A39 /* LuxCompanionClient.swift */; };
 		773FBE1749F5A7C4C1F7FB1C /* MCPService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A23761AFD697B0BB9D1253B /* MCPService.swift */; };
 		787BF16488900AB0D19B37A1 /* PlaceClusterer.swift in Sources */ = {isa = PBXBuildFile; fileRef = E62991B0B2E82A1FDD015746 /* PlaceClusterer.swift */; };
 		78EB08269EB87666280C8E94 /* MCPValueTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A604B7E6CBD25EC104C00640 /* MCPValueTests.swift */; };
 		7A74D1B04FAE1EA6391CBF29 /* MCPPairingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 24F64B96847236B8848F89D0 /* MCPPairingTests.swift */; };
+		7DA32D91ADB11824158E486A /* PowerSource.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3E6C015B9E57664F694B0E2 /* PowerSource.swift */; };
 		7EDC335A598EFD40C2167EFC /* VisitNotifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = 65CCC73028B6C647F56ABDDB /* VisitNotifier.swift */; };
 		7EE7764734BB4F10B52D60C8 /* MapCanvasView+iOS.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8EF9167F835586F0B2E5C8F5 /* MapCanvasView+iOS.swift */; };
 		7FE8672CD823E5AF443DE9FC /* PlaceRenameView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 75D604A7F0EBB14A8B11077A /* PlaceRenameView.swift */; };
@@ -312,6 +316,7 @@
 		8F895E08056A9011D506D07C /* PlaceEntityMigrationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaceEntityMigrationTests.swift; sourceTree = "<group>"; };
 		8F98682C57BC32F76EC4E722 /* LuxShared */ = {isa = PBXFileReference; lastKnownFileType = folder; name = LuxShared; path = Vendor/LuxShared; sourceTree = SOURCE_ROOT; };
 		90632FA9D1FDE2C394D78D7E /* TimelineMacUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = TimelineMacUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		9B28B4B752B995F6CDC6F28C /* PowerSourceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PowerSourceTests.swift; sourceTree = "<group>"; };
 		9E6BAFAEE844C25B64EFCA57 /* TimelineLogTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimelineLogTests.swift; sourceTree = "<group>"; };
 		A604B7E6CBD25EC104C00640 /* MCPValueTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MCPValueTests.swift; sourceTree = "<group>"; };
 		A6C2E6A823AF58F47F778B43 /* TimelineDatabase.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimelineDatabase.swift; sourceTree = "<group>"; };
@@ -350,6 +355,7 @@
 		E27C0E12EC51D3A3D0B395AC /* SidebarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarView.swift; sourceTree = "<group>"; };
 		E287FB63343C613714A43C04 /* PlaceLocationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaceLocationTests.swift; sourceTree = "<group>"; };
 		E296CA76980924F3017D7F8F /* VisitNamingContextBuilder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VisitNamingContextBuilder.swift; sourceTree = "<group>"; };
+		E3E6C015B9E57664F694B0E2 /* PowerSource.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PowerSource.swift; sourceTree = "<group>"; };
 		E62991B0B2E82A1FDD015746 /* PlaceClusterer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaceClusterer.swift; sourceTree = "<group>"; };
 		E86F17483CBD93F47E5F1321 /* MCPMapLookup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MCPMapLookup.swift; sourceTree = "<group>"; };
 		EB213F964DB381BD3165B823 /* StayGapFillerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StayGapFillerTests.swift; sourceTree = "<group>"; };
@@ -408,6 +414,7 @@
 				E287FB63343C613714A43C04 /* PlaceLocationTests.swift */,
 				B5D5FCA5DDE8A0A4A770F452 /* PlaceMergeTests.swift */,
 				7F28B4F667D6FE05CE4975FF /* PlaceRankingTests.swift */,
+				9B28B4B752B995F6CDC6F28C /* PowerSourceTests.swift */,
 				C9CE48A4EB64147FB0C81DD9 /* RealLibraryMigrationTests.swift */,
 				C3743ECF459145619A53BAFE /* RoutePlannerTests.swift */,
 				71B4F471B4A574BC0ABB38C6 /* RouteSnapperTests.swift */,
@@ -549,6 +556,7 @@
 				C08195A7F67D3510159D7068 /* PlaceEntityMigration.swift */,
 				C4B262EA915626D212E4F5F5 /* PlaceIdentitySync.swift */,
 				6A19F7BC9CF304A702197F76 /* PlaceNameSuggester.swift */,
+				E3E6C015B9E57664F694B0E2 /* PowerSource.swift */,
 				76BAF0A4F92F29FA98081ADB /* RoutePlanner.swift */,
 				AD3B7EEBCFA7764518D9E18E /* RouteSnapper.swift */,
 				52C957366874AE084D0C1499 /* TimelineChangeLog.swift */,
@@ -870,6 +878,7 @@
 				F63AEA2289CFB6250D530B40 /* PlaceNameSuggester.swift in Sources */,
 				A04B301AE9D38AD7562B2665 /* PlaceRanking.swift in Sources */,
 				92296AD651C936956782CEE7 /* PlaceRenameView.swift in Sources */,
+				4301A7752F75D52B88909612 /* PowerSource.swift in Sources */,
 				931622D8BC51D41E309E61BE /* RoutePlanner.swift in Sources */,
 				D6A7FF8397BE356AD52900B5 /* RouteSnapper.swift in Sources */,
 				BFE52C226D35B6C19BCA1A39 /* SetPlaceLocationView.swift in Sources */,
@@ -945,6 +954,7 @@
 				E2C517938A94BCFC60717CC9 /* PlaceNameSuggester.swift in Sources */,
 				D3DCAC6B4E27E77F960E3464 /* PlaceRanking.swift in Sources */,
 				7FE8672CD823E5AF443DE9FC /* PlaceRenameView.swift in Sources */,
+				7DA32D91ADB11824158E486A /* PowerSource.swift in Sources */,
 				F7982D38B7D6F507D5347CEB /* RoutePlanner.swift in Sources */,
 				EE77B27F0E6DF16DDF11864E /* RouteSnapper.swift in Sources */,
 				3E226BEC4DFB2D987C35CB34 /* SetPlaceLocationView.swift in Sources */,
@@ -1017,6 +1027,7 @@
 				0D604CF6225657C3135C598C /* PlaceLocationTests.swift in Sources */,
 				A126257F25349B281FF4D9FF /* PlaceMergeTests.swift in Sources */,
 				B0F50AEE842775C1BD588A3F /* PlaceRankingTests.swift in Sources */,
+				560D8A3A6B55BAECAA710098 /* PowerSourceTests.swift in Sources */,
 				E9A1766550CC13FAA417BBFF /* RealLibraryMigrationTests.swift in Sources */,
 				6480458E08F5E4B3A0C83A58 /* RoutePlannerTests.swift in Sources */,
 				FC0A7F53D600B675C1DD07A5 /* RouteSnapperTests.swift in Sources */,
@@ -1052,6 +1063,7 @@
 				C25605D8FE6671B88A355B8E /* PlaceLocationTests.swift in Sources */,
 				1F23CB5DC494DCD3AA2BA9F7 /* PlaceMergeTests.swift in Sources */,
 				0BE5BF076CDD93411DC6D9AA /* PlaceRankingTests.swift in Sources */,
+				743A912F66D3BA1C4CADD106 /* PowerSourceTests.swift in Sources */,
 				BCCE9AA94B17E9918E2DFD76 /* RealLibraryMigrationTests.swift in Sources */,
 				C36CFB977724E83B2402615A /* RoutePlannerTests.swift in Sources */,
 				18B9EA1106022C3C35237159 /* RouteSnapperTests.swift in Sources */,
