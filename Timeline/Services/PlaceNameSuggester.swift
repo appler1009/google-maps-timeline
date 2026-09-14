@@ -70,6 +70,9 @@ final class PlaceNameSuggester: NSObject, MKLocalSearchCompleterDelegate {
     private var stops: [CLLocationCoordinate2D] = []
     private var everyVisited: [(id: String, title: String, visitCount: Int, coordinate: CLLocationCoordinate2D)] = []
     private var stopResults: [PlaceNameSuggestion] = []
+    /// What `stopResults` were searched for. They arrive a beat behind the
+    /// typing, so they are shown only while still an answer to it.
+    private var stopResultsQuery = ""
     private var stopSearchTask: Task<Void, Never>?
     private var isAddingStay: Bool { !stops.isEmpty }
 
@@ -141,6 +144,7 @@ final class PlaceNameSuggester: NSObject, MKLocalSearchCompleterDelegate {
             let found = await guesses.search(typed, near: stops)
             guard !Task.isCancelled, let self, self.query == typed else { return }
             self.stopResults = found
+            self.stopResultsQuery = typed.lowercased()
             self.rebuild()
         }
     }
@@ -234,7 +238,11 @@ final class PlaceNameSuggester: NSObject, MKLocalSearchCompleterDelegate {
             }
             // Keep nearby POIs that still match while typing short queries.
             let matchingNearby = nearbyMap.filter { $0.title.lowercased().contains(needle) }
-            mapRows = matchingNearby + stopResults + mapRows
+            // Searched results for an earlier prefix of this still apply — the
+            // search narrows as you type. For anything else they are an answer
+            // to a question no longer being asked.
+            let searched = needle.hasPrefix(stopResultsQuery) && !stopResultsQuery.isEmpty ? stopResults : []
+            mapRows = matchingNearby + searched + mapRows
         }
 
         // Visited stays first, then map / address — the same ranking the recorder
