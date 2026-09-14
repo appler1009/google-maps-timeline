@@ -475,7 +475,14 @@ struct TimelineKitMap: UIViewRepresentable {
             return renderer
         }
 
+        /// Every frame of a zoom or pan: how close two pins look changes with
+        /// the scale, and so does whether their names collide.
+        func mapViewDidChangeVisibleRegion(_ mapView: MKMapView) {
+            PinLabelLayout.apply(to: mapView)
+        }
+
         func mapView(_ mapView: MKMapView, didAdd views: [MKAnnotationView]) {
+            PinLabelLayout.apply(to: mapView)
             guard annotationFadeIn else { return }
             annotationFadeIn = false
             for view in views { view.alpha = 0 }
@@ -513,8 +520,12 @@ struct TimelineKitMap: UIViewRepresentable {
     }
 }
 
-private final class VisitMarkerView: MKAnnotationView, VisitMarkerTitleUpdating {
+private final class VisitMarkerView: MKAnnotationView, VisitMarkerTitleUpdating, VisitMarkerLabelPlacing {
     private let hostingController = UIHostingController(rootView: MapVisitPinChrome(title: nil, semantic: nil))
+    private var pinTitle: String?
+    private var semantic: String?
+    var labelPlacement: PinLabelPlacement = .below
+    private(set) var labelSize: CGSize?
 
     override init(annotation: MKAnnotation?, reuseIdentifier: String?) {
         super.init(annotation: annotation, reuseIdentifier: reuseIdentifier)
@@ -523,12 +534,11 @@ private final class VisitMarkerView: MKAnnotationView, VisitMarkerTitleUpdating 
         canShowCallout = false
         clipsToBounds = false
         // Safe-area insets on the hosting view push the pin down inside the
-        // annotation bounds; centerOffset then anchors the wrong point, so marks
-        // drift south when zoomed out (macOS NSHostingView has no safe area).
+        // annotation bounds, so marks drift south when zoomed out (macOS
+        // NSHostingView has no safe area).
         if #available(iOS 16.4, *) {
             hostingController.safeAreaRegions = []
         }
-        hostingController.sizingOptions = [.intrinsicContentSize]
         hostingController.view.backgroundColor = .clear
         hostingController.view.isOpaque = false
         hostingController.view.isUserInteractionEnabled = false
@@ -554,27 +564,46 @@ private final class VisitMarkerView: MKAnnotationView, VisitMarkerTitleUpdating 
             accessibilityIdentifier = "map-marker"
             accessibilityValue = nil
         }
-        hostingController.rootView = MapVisitPinChrome(title: annotation?.title, semantic: annotation?.semantic)
-        hostingController.view.invalidateIntrinsicContentSize()
+        if annotation?.title != pinTitle || labelSize == nil {
+            pinTitle = annotation?.title
+            labelSize = pinTitle.flatMap { title in
+                guard MapVisitPinChrome.showsLabel(title) else { return nil }
+                return UIHostingController(rootView: MapVisitPinLabel(title: title))
+                    .sizeThatFits(in: CGSize(width: 320, height: 200))
+            }
+        }
+        semantic = annotation?.semantic
+        // The pin sits in the middle of the canvas, so the view's centre is the
+        // coordinate and there is nothing to offset.
+        bounds.size = MapVisitPinChrome.canvasSize(labelSize: labelSize)
+        centerOffset = .zero
+        layOutForPlacement()
+    }
+
+    func layOutForPlacement() {
+        hostingController.rootView = MapVisitPinChrome(
+            title: pinTitle,
+            semantic: semantic,
+            placement: labelPlacement,
+            labelSize: labelSize
+        )
         setNeedsLayout()
     }
 
     override func layoutSubviews() {
         super.layoutSubviews()
-        let size = hostingController.sizeThatFits(in: CGSize(width: 320, height: 200))
-        let width = max(MapVisitPinChrome.pinSpan, size.width)
-        let height = max(MapVisitPinChrome.pinSpan, size.height)
-        bounds.size = CGSize(width: width, height: height)
-        // Top-align the chrome so the pin sits at the top of the annotation view.
-        hostingController.view.frame = CGRect(
-            x: (width - size.width) / 2,
-            y: 0,
-            width: size.width,
-            height: size.height
-        )
-        // Positive y moves the view down; shift so the pin center (not the
-        // label-inclusive view center) stays on the coordinate.
-        centerOffset = CGPoint(x: 0, y: height / 2 - MapVisitPinChrome.pinSpan / 2)
+        hostingController.view.frame = bounds
+    }
+
+    /// Only the pin and its label take a tap; the rest of the canvas is map.
+    override func point(inside point: CGPoint, with event: UIEvent?) -> Bool {
+        let centre = CGPoint(x: bounds.midX, y: bounds.midY)
+        let span = MapVisitPinChrome.pinSpan
+        if CGRect(x: centre.x - span / 2, y: centre.y - span / 2, width: span, height: span).contains(point) {
+            return true
+        }
+        guard let labelSize else { return false }
+        return PinLabelLayout.rect(for: labelPlacement, size: labelSize, at: centre).contains(point)
     }
 }
 #endif

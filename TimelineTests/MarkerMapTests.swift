@@ -314,3 +314,48 @@ final class TimelineStoreTests: XCTestCase {
         XCTAssertEqual(store.focusRegion.center.latitude, day.region.center.latitude, accuracy: 0.0001)
     }
 }
+
+/// Place names written on the map do not land on top of one another.
+final class PinLabelLayoutTests: XCTestCase {
+    private let label = CGSize(width: 150, height: 28)
+
+    func testFarApartPinsKeepTheirLabelsBelow() {
+        let placements = PinLabelLayout.place([
+            .init(id: "a", point: CGPoint(x: 100, y: 100), labelSize: label),
+            .init(id: "b", point: CGPoint(x: 400, y: 400), labelSize: label),
+        ])
+        XCTAssertEqual(placements["a"], .below)
+        XCTAssertEqual(placements["b"], .below)
+    }
+
+    /// A supermarket and the liquor store beside it, one label on the other.
+    func testNeighboursDoNotShareASpot() {
+        let pins: [PinLabelLayout.Pin] = [
+            .init(id: "superstore", point: CGPoint(x: 200, y: 200), labelSize: label),
+            .init(id: "liquor", point: CGPoint(x: 212, y: 206), labelSize: label),
+        ]
+        let placements = PinLabelLayout.place(pins)
+        let frames = pins.map { pin in
+            PinLabelLayout.rect(for: placements[pin.id]!, size: pin.labelSize!, at: pin.point)
+        }
+        XCTAssertFalse(frames[0].intersects(frames[1]))
+        XCTAssertNotEqual(placements["superstore"], placements["liquor"])
+    }
+
+    /// A label is kept off another place's pin, not only off its label.
+    func testALabelDoesNotCoverAPinBelowIt() {
+        let placements = PinLabelLayout.place([
+            .init(id: "upper", point: CGPoint(x: 200, y: 200), labelSize: label),
+            .init(id: "lower", point: CGPoint(x: 200, y: 240), labelSize: nil),
+        ])
+        XCTAssertNotEqual(placements["upper"], .below)
+        XCTAssertNil(placements["lower"])
+    }
+
+    /// The same pins, however they are listed, come out the same way.
+    func testPlacementDoesNotDependOnOrder() {
+        let a = PinLabelLayout.Pin(id: "a", point: CGPoint(x: 200, y: 200), labelSize: label)
+        let b = PinLabelLayout.Pin(id: "b", point: CGPoint(x: 210, y: 205), labelSize: label)
+        XCTAssertEqual(PinLabelLayout.place([a, b]), PinLabelLayout.place([b, a]))
+    }
+}

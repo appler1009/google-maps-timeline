@@ -77,17 +77,34 @@ extension View {
 struct MapVisitPinChrome: View {
     let title: String?
     let semantic: String?
+    var placement: PinLabelPlacement = .below
+    /// The label's measured size. The chrome is drawn on a canvas with room for
+    /// the label on every side, pin in the middle, so moving the label never
+    /// changes the marker's size — resizing an annotation view on the Mac
+    /// keeps its corner rather than its centre, and walks the pin off its place.
+    var labelSize: CGSize? = nil
 
     static let pinSpan: CGFloat = 30
+    /// Between the pin and its label, on whichever side the label is.
+    static let labelSpacing: CGFloat = 6
+
+    /// Hide placeholder titles; show Home/Work, custom names, and other real labels.
+    static func showsLabel(_ title: String?) -> Bool {
+        let value = title?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return !value.isEmpty && value != "Unnamed place" && value != "Place"
+    }
+
+    /// The marker's size: the pin, with a label's reach on all four sides.
+    static func canvasSize(labelSize: CGSize?) -> CGSize {
+        guard let labelSize else { return CGSize(width: pinSpan, height: pinSpan) }
+        return CGSize(
+            width: pinSpan + 2 * (labelSpacing + labelSize.width),
+            height: pinSpan + 2 * (labelSpacing + labelSize.height)
+        )
+    }
 
     private var resolvedTitle: String {
         title?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-    }
-
-    /// Hide placeholder titles; show Home/Work, custom names, and other real labels.
-    private var showsLabel: Bool {
-        let value = resolvedTitle
-        return !value.isEmpty && value != "Unnamed place" && value != "Place"
     }
 
     private var pinColor: Color {
@@ -99,20 +116,17 @@ struct MapVisitPinChrome: View {
     }
 
     var body: some View {
-        VStack(spacing: 6) {
+        let canvas = Self.canvasSize(labelSize: Self.showsLabel(title) ? labelSize : nil)
+        ZStack {
             pinBody
-            if showsLabel {
-                Text(resolvedTitle)
-                    .font(.system(size: 13, weight: .semibold, design: .serif))
-                    .foregroundStyle(Palette.parchment)
-                    .shadow(color: .black.opacity(0.65), radius: 1.5, y: 0.5)
-                    .lineLimit(1)
-                    .padding(.horizontal, 11)
-                    .padding(.vertical, 6)
-                    .mapPinLabelChip(cornerRadius: 12)
+            if Self.showsLabel(title), let labelSize {
+                let centre = CGPoint(x: canvas.width / 2, y: canvas.height / 2)
+                let frame = PinLabelLayout.rect(for: placement, size: labelSize, at: centre)
+                MapVisitPinLabel(title: resolvedTitle)
+                    .offset(x: frame.midX - centre.x, y: frame.midY - centre.y)
             }
         }
-        .fixedSize()
+        .frame(width: canvas.width, height: canvas.height)
     }
 
     @ViewBuilder
@@ -136,6 +150,24 @@ struct MapVisitPinChrome: View {
         .frame(width: Self.pinSpan, height: Self.pinSpan)
         .mapGlassChip(cornerRadius: Self.pinSpan / 2)
         .shadow(color: .black.opacity(0.28), radius: 8, y: 3)
+    }
+}
+
+/// A place's name as written on the map. Its own view so a marker can measure
+/// it before deciding where it goes.
+struct MapVisitPinLabel: View {
+    let title: String
+
+    var body: some View {
+        Text(title)
+            .font(.system(size: 13, weight: .semibold, design: .serif))
+            .foregroundStyle(Palette.parchment)
+            .shadow(color: .black.opacity(0.65), radius: 1.5, y: 0.5)
+            .lineLimit(1)
+            .padding(.horizontal, 11)
+            .padding(.vertical, 6)
+            .mapPinLabelChip(cornerRadius: 12)
+            .fixedSize()
     }
 }
 
