@@ -71,7 +71,7 @@ struct AddVisitView: View {
                             Text("Could not find where this place is. Pick another result.")
                         } else if !timesAreInOrder {
                             Text("Left is before Arrived. Set the times in order.")
-                                .foregroundStyle(.red)
+                                .foregroundStyle(Palette.copper)
                         } else {
                             Text(timingExplanation)
                         }
