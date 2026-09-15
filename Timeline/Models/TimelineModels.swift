@@ -7,6 +7,14 @@ enum SidebarTab: String, CaseIterable, Identifiable {
     case dates = "Dates"
     case places = "Places"
     var id: String { rawValue }
+
+    /// SF Symbol for the sidebar segmented control.
+    var symbolName: String {
+        switch self {
+        case .dates: "calendar"
+        case .places: "mappin.and.ellipse"
+        }
+    }
 }
 
 enum Geo {

@@ -63,9 +63,15 @@ final class MarkersAndRoutesUITests: XCTestCase {
     }
 
     private func tapPlaces(in app: XCUIApplication) {
-        let tab = app.buttons["tab-places"]
-        XCTAssertTrue(tab.waitForExistence(timeout: 8), "Places tab button should exist")
-        tab.clickOrTap()
+        let byId = app.buttons["tab-places"]
+        if byId.waitForExistence(timeout: 2) {
+            byId.clickOrTap()
+            return
+        }
+        // macOS Dates/Places is an NSSegmentedControl; segments are titled, not id'd.
+        let byTitle = app.segmentedControls.buttons["Places"]
+        XCTAssertTrue(byTitle.waitForExistence(timeout: 8), "Places tab should exist")
+        byTitle.clickOrTap()
     }
 }
 
