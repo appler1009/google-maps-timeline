@@ -59,14 +59,22 @@ struct AddVisitView: View {
                     Section {
                         DatePicker("Arrived", selection: $start, displayedComponents: [.hourAndMinute])
                             .accessibilityIdentifier("add-visit-start")
-                        DatePicker("Left", selection: $end, in: start..., displayedComponents: [.hourAndMinute])
+                        // No `in: start...`: a time-only picker with a lower bound
+                        // wraps a step below it round to the other half of the
+                        // day, so 8:46 AM before an 8:49 arrival became 8:46 PM.
+                        DatePicker("Left", selection: $end, displayedComponents: [.hourAndMinute])
                             .accessibilityIdentifier("add-visit-end")
                     } header: {
                         Text("When")
                     } footer: {
-                        Text(chosenCoordinate == nil && !isGuessing
-                            ? "Could not find where this place is. Pick another result."
-                            : timingExplanation)
+                        if chosenCoordinate == nil && !isGuessing {
+                            Text("Could not find where this place is. Pick another result.")
+                        } else if !timesAreInOrder {
+                            Text("Left is before Arrived. Set the times in order.")
+                                .foregroundStyle(.red)
+                        } else {
+                            Text(timingExplanation)
+                        }
                     }
                 } else {
                     suggestionList
@@ -84,7 +92,7 @@ struct AddVisitView: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Add", action: save)
-                        .disabled(chosen == nil || chosenCoordinate == nil)
+                        .disabled(chosen == nil || chosenCoordinate == nil || !timesAreInOrder)
                         .accessibilityIdentifier("add-visit-save")
                 }
             }
@@ -122,6 +130,8 @@ struct AddVisitView: View {
             }
         }
     }
+
+    private var timesAreInOrder: Bool { end >= start }
 
     private var timingExplanation: String {
         if isGuessing { return "Reading the day's movement…" }
@@ -178,7 +188,7 @@ struct AddVisitView: View {
     private func save() {
         // Never fall back to the middle of the map: a stay placed there did not
         // happen anywhere.
-        guard let chosen, let coordinate = chosenCoordinate else { return }
+        guard let chosen, let coordinate = chosenCoordinate, timesAreInOrder else { return }
         store.addVisit(
             name: chosen.title,
             coordinate: coordinate,
