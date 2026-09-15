@@ -140,7 +140,8 @@ final class OpenStayRefreshTests: XCTestCase {
         XCTAssertEqual(store.selectedVisitID, "home-open")
     }
 
-    /// A stay arriving for the day on screen does change its pins.
+    /// A stay arriving for the day on screen does change its pins, and the
+    /// camera follows so the new stay is not left off the edge.
     func testANewStayOnTheSameDayRedrawsItsPins() async throws {
         try await recordOpenStay()
         let store = TimelineStore(database: database)
@@ -148,6 +149,7 @@ final class OpenStayRefreshTests: XCTestCase {
         let day = try XCTUnwrap(store.parsed?.days.first { $0.day == calendar.startOfDay(for: arrival) })
         store.select(day: day)
         let content = store.dayContentGeneration
+        let focus = store.focusGeneration
 
         try await database.record(batch: TimelineBatch(visits: [TimelineVisit(
             id: "gym",
@@ -159,6 +161,7 @@ final class OpenStayRefreshTests: XCTestCase {
         )], activities: [], paths: []))
         await store.reloadFromLibrary(now: at(day: 12, hour: 21, minute: 1))
         XCTAssertNotEqual(store.dayContentGeneration, content)
+        XCTAssertNotEqual(store.focusGeneration, focus)
     }
 
     /// A reload asked for while one is reading folds into it, so a write that

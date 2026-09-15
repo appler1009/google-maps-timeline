@@ -595,10 +595,13 @@ final class TimelineStore {
 
     /// The body of `refreshFromLibrary`, awaitable so a test can see it land.
     ///
-    /// The map stays where it is. `apply` frames the newest day on the Mac,
-    /// which is right for opening a library and wrong for every reload after
-    /// it: the selection came back but the map did not, and the day's routes
-    /// were dropped for a day nobody was looking at.
+    /// The day the user is looking at stays selected. `apply` frames the newest
+    /// day on the Mac, which is right for opening a library and wrong for every
+    /// reload after it: the selection came back but the map did not, and the
+    /// day's routes were dropped for a day nobody was looking at. When that
+    /// day's own pins change — a stay arriving from the other device — the
+    /// framing is refit so the new stay is not left off the edge of a camera
+    /// that was right before it arrived.
     ///
     /// One at a time. Waking the app asks both the clock and iCloud for a
     /// reload, and two reading side by side finish in whatever order they
@@ -677,12 +680,20 @@ final class TimelineStore {
         }
         if Self.pinSignature(previousDay) != Self.pinSignature(day) {
             dayContentGeneration &+= 1
+            // New pins change how much ground the day covers. The rebuild
+            // already draws them; refit so a stay from the other phone is not
+            // left off a framing that was right before it arrived. Leave the
+            // Places tab alone — its camera is on a place, not this day.
+            if tab == .dates {
+                focus(day: day)
+            }
         }
     }
 
     /// Bumped when a reload changes the pins of the day already on screen —
     /// a stay arriving from the other device, or midnight handing the day a
     /// new one. The map rebuilds on a change of day, and this is the same day.
+    /// The framing is refit in the same breath when Dates is showing.
     private(set) var dayContentGeneration: UInt64 = 0
 
     /// What the day's pins are drawn from: which places, where, in what order.
