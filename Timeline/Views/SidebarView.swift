@@ -10,10 +10,7 @@ struct SidebarView: View {
     var body: some View {
         @Bindable var store = store
         VStack(spacing: 0) {
-            tabPicker
-            if store.tab == .dates {
-                dateFilters
-            }
+            sidebarChrome
             Divider().opacity(0.35)
             Group {
                 if store.isLoading || !store.hasCheckedLibrary {
@@ -42,41 +39,58 @@ struct SidebarView: View {
         .setPlaceLocationSheet(placeID: $relocatingPlaceID, store: store)
     }
 
-    private var tabPicker: some View {
-        Picker("Section", selection: Binding(
-            get: { store.tab },
-            set: { store.selectTab($0) }
-        )) {
-            ForEach(SidebarTab.allCases) { tab in
-                Text(tab.rawValue)
-                    .tag(tab)
-                    .accessibilityIdentifier("tab-\(tab.rawValue.lowercased())")
+    /// Dates / Places and the year–month filters as one sidebar header strip.
+    /// Symbols need the platform segmented control; SwiftUI's picker drops them.
+    private var sidebarChrome: some View {
+        VStack(spacing: 10) {
+            tabPicker
+            if store.tab == .dates {
+                dateFilters
             }
         }
-        .pickerStyle(.segmented)
-        .labelsHidden()
         .padding(.horizontal, 16)
-        .padding(.bottom, 10)
-        .accessibilityElement(children: .contain)
+        .padding(.top, 12)
+        .padding(.bottom, 12)
+    }
+
+    private var tabPicker: some View {
+        // SwiftUI's segmented Picker only forwards titles to the system control,
+        // so symbols never appear. Platform segmented controls set both.
+        SidebarTabSegmentedControl(
+            selection: Binding(
+                get: { store.tab },
+                set: { store.selectTab($0) }
+            )
+        )
+        .frame(maxWidth: .infinity)
+        .frame(height: tabControlHeight)
+        .accessibilityLabel("Dates or Places")
     }
 
     private var dateFilters: some View {
-        HStack(spacing: 8) {
-            filterMenu("Year", selection: Bindable(store).filterYear) {
-                Text("All years").tag(0)
-                ForEach(store.availableYears, id: \.self) { year in
-                    Text(String(year)).tag(year)
+        // Explicit halves — bordered menus on macOS ignore maxWidth and stay
+        // title-sized, so GeometryReader is what lines them up with Dates/Places.
+        GeometryReader { geo in
+            let half = max(0, (geo.size.width - 8) / 2)
+            HStack(spacing: 8) {
+                filterMenu("Year", selection: Bindable(store).filterYear) {
+                    Text("All years").tag(0)
+                    ForEach(store.availableYears, id: \.self) { year in
+                        Text(String(year)).tag(year)
+                    }
                 }
-            }
-            filterMenu("Month", selection: Bindable(store).filterMonth) {
-                Text("All months").tag(0)
-                ForEach(store.availableMonths, id: \.self) { month in
-                    Text(Self.monthName(month)).tag(month)
+                .frame(width: half, height: filterRowHeight)
+
+                filterMenu("Month", selection: Bindable(store).filterMonth) {
+                    Text("All months").tag(0)
+                    ForEach(store.availableMonths, id: \.self) { month in
+                        Text(Self.monthName(month)).tag(month)
+                    }
                 }
+                .frame(width: half, height: filterRowHeight)
             }
         }
-        .padding(.horizontal, 16)
-        .padding(.bottom, 12)
+        .frame(height: filterRowHeight)
         .onChange(of: store.filterYear) { _, _ in
             store.clampDateFilters()
         }
@@ -90,36 +104,79 @@ struct SidebarView: View {
         selection: Binding<Int>,
         @ViewBuilder content: () -> Content
     ) -> some View {
-        #if os(iOS)
         Menu {
             Picker(title, selection: selection) {
                 content()
             }
+            .labelsHidden()
+            .pickerStyle(.inline)
         } label: {
             HStack(spacing: 6) {
                 Text(filterCaption(title, selection.wrappedValue))
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
                     .allowsTightening(true)
-                Spacer(minLength: 4)
+                Spacer(minLength: 0)
                 Image(systemName: "chevron.up.chevron.down")
                     .font(.system(size: 10, weight: .semibold))
                     .foregroundStyle(Palette.muted)
             }
-            .font(.system(size: 15, weight: .medium))
+            .font(.system(size: filterLabelSize, weight: .medium))
             .foregroundStyle(Palette.parchment)
-            .frame(maxWidth: .infinity, minHeight: 36, alignment: .leading)
+            .padding(.horizontal, 10)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
         }
-        .buttonStyle(.bordered)
-        .frame(maxWidth: .infinity)
+        .menuIndicator(.hidden)
+        .buttonStyle(.plain)
+        .background {
+            RoundedRectangle(cornerRadius: filterCornerRadius, style: .continuous)
+                .fill(filterFill)
+        }
+        .overlay {
+            RoundedRectangle(cornerRadius: filterCornerRadius, style: .continuous)
+                .strokeBorder(Palette.parchment.opacity(0.14), lineWidth: 1)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private var tabControlHeight: CGFloat {
+        #if os(iOS)
+        32
         #else
-        Picker(title, selection: selection) {
-            content()
-        }
-        .pickerStyle(.menu)
-        .labelsHidden()
-        .tint(Palette.parchment)
-        .frame(maxWidth: .infinity)
+        28
+        #endif
+    }
+
+    private var filterRowHeight: CGFloat {
+        #if os(iOS)
+        36
+        #else
+        28
+        #endif
+    }
+
+    private var filterLabelSize: CGFloat {
+        #if os(iOS)
+        15
+        #else
+        13
+        #endif
+    }
+
+    private var filterCornerRadius: CGFloat {
+        #if os(iOS)
+        8
+        #else
+        6
+        #endif
+    }
+
+    private var filterFill: Color {
+        #if os(iOS)
+        Palette.parchment.opacity(0.10)
+        #else
+        Palette.parchment.opacity(0.08)
         #endif
     }
 
@@ -449,3 +506,155 @@ struct PlaceActionsMenu: View {
         .accessibilityIdentifier("place-actions-\(placeID)")
     }
 }
+
+#if os(macOS)
+import AppKit
+
+/// System segmented control with a symbol and title on each segment.
+///
+/// SwiftUI's `.pickerStyle(.segmented)` only forwards the title string to
+/// `NSSegmentedControl`, which is why calendar / map-pin never appeared.
+struct SidebarTabSegmentedControl: NSViewRepresentable {
+    @Binding var selection: SidebarTab
+
+    func makeNSView(context: Context) -> NSSegmentedControl {
+        let tabs = SidebarTab.allCases
+        let control = NSSegmentedControl(
+            labels: tabs.map(\.rawValue),
+            trackingMode: .selectOne,
+            target: context.coordinator,
+            action: #selector(Coordinator.changed(_:))
+        )
+        control.segmentStyle = .rounded
+        control.segmentDistribution = .fill
+        control.controlSize = .large
+        let symbol = NSImage.SymbolConfiguration(pointSize: 12, weight: .medium)
+        for (index, tab) in tabs.enumerated() {
+            if let image = NSImage(systemSymbolName: tab.symbolName, accessibilityDescription: tab.rawValue)?
+                .withSymbolConfiguration(symbol)
+            {
+                control.setImage(image, forSegment: index)
+            }
+            control.setLabel(tab.rawValue, forSegment: index)
+            control.setToolTip(tab.rawValue, forSegment: index)
+        }
+        control.selectedSegment = tabs.firstIndex(of: selection) ?? 0
+        control.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        return control
+    }
+
+    func updateNSView(_ control: NSSegmentedControl, context: Context) {
+        context.coordinator.selection = $selection
+        let index = SidebarTab.allCases.firstIndex(of: selection) ?? 0
+        if control.selectedSegment != index {
+            control.selectedSegment = index
+        }
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(selection: $selection)
+    }
+
+    final class Coordinator: NSObject {
+        var selection: Binding<SidebarTab>
+
+        init(selection: Binding<SidebarTab>) {
+            self.selection = selection
+        }
+
+        @objc func changed(_ sender: NSSegmentedControl) {
+            let tabs = SidebarTab.allCases
+            guard tabs.indices.contains(sender.selectedSegment) else { return }
+            selection.wrappedValue = tabs[sender.selectedSegment]
+        }
+    }
+}
+#elseif os(iOS)
+import UIKit
+
+/// System segmented control with a symbol and title on each segment.
+///
+/// UIKit's `UISegmentedControl` accepts either a title or an image per segment,
+/// not both — so each segment is a single template image of the symbol and
+/// label drawn together. SwiftUI's segmented `Picker` drops symbols the same
+/// way the Mac one did.
+struct SidebarTabSegmentedControl: UIViewRepresentable {
+    @Binding var selection: SidebarTab
+
+    func makeUIView(context: Context) -> UISegmentedControl {
+        let tabs = SidebarTab.allCases
+        let control = UISegmentedControl(items: tabs.map(Self.segmentImage(for:)))
+        control.selectedSegmentIndex = tabs.firstIndex(of: selection) ?? 0
+        control.apportionsSegmentWidthsByContent = false
+        control.selectedSegmentTintColor = UIColor(Palette.parchment.opacity(0.28))
+        control.setTitleTextAttributes(
+            [.foregroundColor: UIColor(Palette.parchment)],
+            for: .normal
+        )
+        control.addTarget(
+            context.coordinator,
+            action: #selector(Coordinator.changed(_:)),
+            for: .valueChanged
+        )
+        control.accessibilityLabel = "Dates or Places"
+        return control
+    }
+
+    func updateUIView(_ control: UISegmentedControl, context: Context) {
+        context.coordinator.selection = $selection
+        let index = SidebarTab.allCases.firstIndex(of: selection) ?? 0
+        if control.selectedSegmentIndex != index {
+            control.selectedSegmentIndex = index
+        }
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(selection: $selection)
+    }
+
+    /// Symbol + title as one template image so the segment can tint with the control.
+    private static func segmentImage(for tab: SidebarTab) -> UIImage {
+        let font = UIFont.systemFont(ofSize: 13, weight: .medium)
+        let symbolConfig = UIImage.SymbolConfiguration(pointSize: 12, weight: .medium)
+        let symbol = UIImage(systemName: tab.symbolName, withConfiguration: symbolConfig)
+            ?? UIImage()
+        let title = tab.rawValue as NSString
+        let titleSize = title.size(withAttributes: [.font: font])
+        let spacing: CGFloat = 5
+        let size = CGSize(
+            width: ceil(symbol.size.width + spacing + titleSize.width),
+            height: ceil(max(symbol.size.height, titleSize.height))
+        )
+        let rendered = UIGraphicsImageRenderer(size: size).image { _ in
+            let iconOrigin = CGPoint(x: 0, y: (size.height - symbol.size.height) / 2)
+            symbol.draw(at: iconOrigin)
+            title.draw(
+                at: CGPoint(x: symbol.size.width + spacing, y: (size.height - titleSize.height) / 2),
+                withAttributes: [
+                    .font: font,
+                    .foregroundColor: UIColor.black,
+                ]
+            )
+        }
+        let image = rendered.withRenderingMode(.alwaysTemplate)
+        // Drawn text is not readable text: without this the segment is a button
+        // with no name, to VoiceOver and to the UI tests alike.
+        image.accessibilityLabel = tab.rawValue
+        return image
+    }
+
+    final class Coordinator: NSObject {
+        var selection: Binding<SidebarTab>
+
+        init(selection: Binding<SidebarTab>) {
+            self.selection = selection
+        }
+
+        @objc func changed(_ sender: UISegmentedControl) {
+            let tabs = SidebarTab.allCases
+            guard tabs.indices.contains(sender.selectedSegmentIndex) else { return }
+            selection.wrappedValue = tabs[sender.selectedSegmentIndex]
+        }
+    }
+}
+#endif
