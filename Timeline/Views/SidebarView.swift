@@ -636,7 +636,11 @@ struct SidebarTabSegmentedControl: UIViewRepresentable {
                 ]
             )
         }
-        return rendered.withRenderingMode(.alwaysTemplate)
+        let image = rendered.withRenderingMode(.alwaysTemplate)
+        // Drawn text is not readable text: without this the segment is a button
+        // with no name, to VoiceOver and to the UI tests alike.
+        image.accessibilityLabel = tab.rawValue
+        return image
     }
 
     final class Coordinator: NSObject {
