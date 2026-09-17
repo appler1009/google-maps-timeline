@@ -639,6 +639,10 @@ final class TimelineStore {
         let keptMonth = filterMonth
         let keptSearch = search
         let previousDay = selectedDay
+        // Whether the day on screen was the newest the library had. Someone
+        // parked there is watching the front of the timeline, not a day they
+        // navigated back to.
+        let wasAtFront = keptDay != nil && keptDay == parsed?.days.first?.day
         let previousRoutes = (day: snappedDayID, hops: snappedRoutes, cached: keptDay.flatMap { routesByDay[$0] })
         let isFirstLoad = parsed == nil
         apply(timeline, reframing: isFirstLoad)
@@ -650,6 +654,21 @@ final class TimelineStore {
         clampDateFilters()
         if let keptDay, daysByID[keptDay] != nil {
             selectedDayID = keptDay
+            #if os(macOS)
+            // Midnight, or a stay from the phone opening a day newer than the
+            // one on screen. Watching the front of the timeline means being
+            // carried forward to it: a Mac left open since yesterday held on to
+            // yesterday, and showed no today until someone clicked one. A day
+            // navigated back to is nobody's to move, and neither is the Places
+            // tab's camera, which is on a place rather than a day. The filters
+            // come along, or the sidebar would list a month without it.
+            if wasAtFront, tab == .dates, let newest = parsed?.days.first, newest.day > keptDay {
+                filterYear = Calendar.current.component(.year, from: newest.day)
+                filterMonth = 0
+                rebuildDateIndexes()
+                select(day: newest)
+            }
+            #endif
         } else if !isFirstLoad, keptDay != nil {
             // The day went away — its last stay was deleted or moved.
             #if os(macOS)
