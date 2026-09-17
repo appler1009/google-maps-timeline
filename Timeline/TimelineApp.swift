@@ -1,7 +1,14 @@
 import SwiftUI
+#if os(macOS)
+import AppKit
+#endif
 
 @main
 struct TimelineApp: App {
+    #if os(macOS)
+    @NSApplicationDelegateAdaptor(TimelineAppDelegate.self) private var appDelegate
+    #endif
+
     init() {
         TimelineLog.start()
     }
@@ -41,6 +48,63 @@ struct TimelineApp: App {
         #endif
     }
 }
+
+#if os(macOS)
+/// XCTest launches on recent macOS can leave SwiftUI's WindowGroup with a menu
+/// bar and zero NSWindows — every accessibility query then fails. If the scene
+/// has not materialized after a short beat, host the root view ourselves.
+final class TimelineAppDelegate: NSObject, NSApplicationDelegate {
+    private var fallbackWindow: NSWindow?
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        NSApp.setActivationPolicy(.regular)
+        DispatchQueue.main.async {
+            self.ensureWindow(allowFallback: false)
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+            self.ensureWindow(allowFallback: true)
+        }
+    }
+
+    private func ensureWindow(allowFallback: Bool) {
+        if let window = NSApp.windows.first(where: { $0.contentView != nil }) {
+            present(window)
+            return
+        }
+        guard allowFallback, TimelineLaunch.isUITesting, fallbackWindow == nil else { return }
+
+        let host = NSHostingController(
+            rootView: TimelineAppScene()
+                .frame(minWidth: 980, minHeight: 640)
+        )
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 1280, height: 820),
+            styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
+            backing: .buffered,
+            defer: false
+        )
+        window.title = "Timeline"
+        window.contentViewController = host
+        window.isOpaque = true
+        window.backgroundColor = .black
+        window.setFrameAutosaveName("TimelineUITestFallback")
+        window.center()
+        fallbackWindow = window
+        present(window)
+    }
+
+    private func present(_ window: NSWindow) {
+        if TimelineLaunch.isUITesting {
+            // Clear + non-opaque windows drop out of the accessibility tree
+            // under XCTest — the app shows as Disabled with only a menu bar.
+            window.isOpaque = true
+            window.backgroundColor = .black
+        }
+        window.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+}
+#endif
 
 extension Notification.Name {
     static let openTimelineRequested = Notification.Name("openTimelineRequested")
