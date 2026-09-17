@@ -5,6 +5,25 @@ final class MarkersAndRoutesUITests: XCTestCase {
         continueAfterFailure = false
     }
 
+    private func tapPlaces(in app: XCUIApplication) {
+        let byId = app.buttons["tab-places"]
+        if byId.waitForExistence(timeout: 2) {
+            byId.clickOrTap()
+            return
+        }
+        // macOS Dates/Places is an NSSegmentedControl. Hosted in a normal
+        // WindowGroup its segments are buttons; under the XCTest fallback
+        // window they show up as radio buttons instead.
+        let byTitle = app.segmentedControls.buttons["Places"]
+        if byTitle.waitForExistence(timeout: 2) {
+            byTitle.clickOrTap()
+            return
+        }
+        let byRadio = app.radioButtons["Places"]
+        XCTAssertTrue(byRadio.waitForExistence(timeout: 8), "Places tab should exist")
+        byRadio.clickOrTap()
+    }
+
     func testEmptyLibrary() {
         let app = launchedApp(empty: true)
         let open = app.buttons["Open Timeline.json"]
@@ -55,25 +74,23 @@ final class MarkersAndRoutesUITests: XCTestCase {
 
     private func launchedApp(empty: Bool) -> XCUIApplication {
         let app = XCUIApplication()
-        app.launchArguments = empty ? ["emptyLibrary"] : ["loadFixture"]
+        // Ignore saved window state so a previous "no windows" session cannot
+        // leave the UI test attached to a menu-bar-only process.
+        app.launchArguments = [
+            "-ApplePersistenceIgnoreState", "YES",
+            empty ? "emptyLibrary" : "loadFixture",
+        ]
         app.launchEnvironment["TIMELINE_UI_TESTING"] = "1"
         app.launchEnvironment["TIMELINE_EMPTY_LIBRARY"] = empty ? "1" : "0"
         app.launchEnvironment["TIMELINE_LOAD_FIXTURE"] = empty ? "0" : "1"
         app.launch()
         app.activate()
+        #if os(macOS)
+        // WindowGroup may not present under XCTest; the app delegate hosts a
+        // fallback a beat later. Wait for it before assertions race ahead.
+        _ = app.windows.firstMatch.waitForExistence(timeout: 5)
+        #endif
         return app
-    }
-
-    private func tapPlaces(in app: XCUIApplication) {
-        let byId = app.buttons["tab-places"]
-        if byId.waitForExistence(timeout: 2) {
-            byId.clickOrTap()
-            return
-        }
-        // macOS Dates/Places is an NSSegmentedControl; segments are titled, not id'd.
-        let byTitle = app.segmentedControls.buttons["Places"]
-        XCTAssertTrue(byTitle.waitForExistence(timeout: 8), "Places tab should exist")
-        byTitle.clickOrTap()
     }
 }
 
