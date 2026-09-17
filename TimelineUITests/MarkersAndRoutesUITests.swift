@@ -17,8 +17,10 @@ final class MarkersAndRoutesUITests: XCTestCase {
     func testMarkersAndRoutesUseEiffelTowerCoordinates() {
         let app = launchedApp(empty: false)
 
-        XCTAssertTrue(app.staticTexts["eiffel-tower-day.json"].waitForExistence(timeout: 15))
-        XCTAssertTrue(app.id("day-row").waitForExistence(timeout: 10))
+        // The fixture's filename used to sit under the Timeline title and was
+        // what this waited on; 1217cc4 dropped that label, so the first day row
+        // is the earliest thing that proves the export parsed and landed.
+        XCTAssertTrue(app.id("day-row").waitForExistence(timeout: 15))
 
         #if os(iOS)
         app.id("day-row").tap()
