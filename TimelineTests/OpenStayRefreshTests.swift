@@ -121,6 +121,24 @@ final class OpenStayRefreshTests: XCTestCase {
         XCTAssertEqual(store.focusGeneration, generation)
     }
 
+    #if os(macOS)
+    /// Watching the newest day means being carried to the next one. The Mac,
+    /// left open since yesterday, held on to yesterday: today arrived from the
+    /// phone and went into the list, and the map never went to it.
+    func testMidnightCarriesTheNewestDayForward() async throws {
+        try await recordOpenStay()
+        let store = TimelineStore(database: database)
+        await store.reloadFromLibrary(now: at(day: 12, hour: 21))
+        XCTAssertEqual(store.selectedDayID, calendar.startOfDay(for: arrival))
+
+        await store.reloadFromLibrary(now: at(day: 13, hour: 12))
+        let today = calendar.startOfDay(for: at(day: 13, hour: 0))
+        XCTAssertEqual(store.selectedDayID, today)
+        XCTAssertEqual(store.selectedDay?.day, today)
+        XCTAssertTrue(store.filteredDays.contains { $0.day == today })
+    }
+    #endif
+
     /// A stay growing longer moves nothing on the map, so nothing is redrawn.
     func testAStayGrowingLongerLeavesTheMapAlone() async throws {
         try await recordOpenStay()
