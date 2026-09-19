@@ -103,7 +103,22 @@ final class CloudSyncController {
     }
 
     func fetchNow() {
-        Task { try? await sync.fetchNow() }
+        // Always ask the sidebar to rebuild after a fetch, even when CloudKit
+        // reports nothing new. apply() already posts when rows arrive, but a
+        // redraw that misses that notification — or a read that raced the
+        // write — used to leave the Mac showing yesterday until it was
+        // relaunched, while the library on disk already had today.
+        //
+        // Also push anything still sitting in the local change log. A hand-added
+        // stay used to write the log and refresh the phone UI without ever
+        // telling the sync engine, so it never left the device.
+        Task {
+            await sync.enqueuePendingChanges()
+            try? await sync.fetchNow()
+            await MainActor.run {
+                NotificationCenter.default.post(name: .timelineLibraryChanged, object: nil)
+            }
+        }
     }
 
     #if os(macOS)
