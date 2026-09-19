@@ -224,6 +224,13 @@ final class TimelineStore {
         true
     }
 
+    /// Tell listeners the library on disk changed. Cloud sync enqueues uploads
+    /// from this; the sidebar reloads from it. A local write that only refreshes
+    /// the store leaves the change log sitting until the next recorded stay.
+    private func noteLibraryChanged() {
+        NotificationCenter.default.post(name: .timelineLibraryChanged, object: nil)
+    }
+
     func renamePlace(id: String, to name: String) {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.isEmpty {
@@ -237,6 +244,7 @@ final class TimelineStore {
         Task {
             try? await database.setPlaceName(placeKey: id, name: trimmed)
             TimelineLog.info("place renamed", ["placeKey": id, "name": trimmed])
+            noteLibraryChanged()
             await pushPlaceIdentityToCloud()
         }
     }
@@ -260,6 +268,7 @@ final class TimelineStore {
                 TimelineLog.error("place location failed", ["error": error.localizedDescription])
             }
             isLoading = false
+            noteLibraryChanged()
             refreshFromLibrary()
         }
     }
@@ -275,6 +284,7 @@ final class TimelineStore {
                 TimelineLog.error("place location reset failed", ["error": error.localizedDescription])
             }
             isLoading = false
+            noteLibraryChanged()
             refreshFromLibrary()
         }
     }
@@ -306,6 +316,7 @@ final class TimelineStore {
             )
             await refreshPlaceIdentity()
             await pushPlaceIdentityToCloud()
+            noteLibraryChanged()
             if let batch = try? await database.loadBatch() {
                 let name = (try? await database.latestSourceName()) ?? sourceName ?? "Library"
                 let timeline = TimelineParser.assemble(batch, sourceName: name)
@@ -342,6 +353,7 @@ final class TimelineStore {
             try? await database.unmergePlace(from: sourceID)
             await refreshPlaceIdentity()
             await pushPlaceIdentityToCloud()
+            noteLibraryChanged()
             if let batch = try? await database.loadBatch() {
                 let name = (try? await database.latestSourceName()) ?? sourceName ?? "Library"
                 let keepPlaceID = selectedPlaceID
@@ -619,7 +631,17 @@ final class TimelineStore {
         repeat {
             reloadAgain = false
             let moment = now ?? Date()
-            guard let batch = try? await database.loadBatch(includingShadowed: showsShadowedImports, now: moment) else { return }
+            let batch: TimelineBatch
+            do {
+                guard let loaded = try await database.loadBatch(
+                    includingShadowed: showsShadowedImports,
+                    now: moment
+                ) else { return }
+                batch = loaded
+            } catch {
+                TimelineLog.error("library reload failed", ["error": error.localizedDescription])
+                return
+            }
             await refreshPlaceIdentity()
             let name = (try? await database.latestSourceName()) ?? sourceName ?? "This device"
             guard !reloadAgain else { continue }
@@ -849,6 +871,7 @@ final class TimelineStore {
                 ["placeKey": placeKey, "minutes": "\(Int(visit.duration / 60))"]
             )
             isLoading = false
+            noteLibraryChanged()
             refreshFromLibrary()
         }
     }
@@ -879,6 +902,7 @@ final class TimelineStore {
             await refreshPlaceIdentity()
             TimelineLog.info("stay moved", ["visit": visitID, "placeKey": placeKey])
             isLoading = false
+            noteLibraryChanged()
             refreshFromLibrary()
         }
     }
@@ -896,6 +920,7 @@ final class TimelineStore {
             try? await database.setPlaceName(placeKey: placeKey, name: trimmed)
             await pushPlaceIdentityToCloud()
             TimelineLog.info("recorded place named", ["placeKey": placeKey, "name": trimmed])
+            noteLibraryChanged()
             refreshFromLibrary()
         }
     }

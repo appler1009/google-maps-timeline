@@ -83,7 +83,10 @@ struct TimelineAppScene: View {
             }
             .onChange(of: scenePhase) { _, phase in
                 guard phase == .active, !TimelineLaunch.isUITesting else { return }
-                store.refreshIfStale()
+                // Read the library again, not only when an open stay is stale:
+                // stays from the phone can sit on disk while the sidebar still
+                // ends on an older day.
+                store.refreshFromLibrary()
                 CloudSyncController.shared.fetchNow()
             }
             #endif
