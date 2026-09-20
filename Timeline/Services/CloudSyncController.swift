@@ -122,7 +122,8 @@ final class CloudSyncController {
     }
 
     #if os(macOS)
-    /// How often a plugged-in Mac asks iCloud for changes on its own.
+    /// How often a plugged-in Mac asks iCloud for changes on its own, and how
+    /// often it rereads the library from disk even when CloudKit is quiet.
     static let wallPowerFetchInterval: TimeInterval = 5 * 60
     private var lastScheduledFetch: Date?
 
@@ -133,11 +134,21 @@ final class CloudSyncController {
     /// and sat unfetched for minutes at another, until the window was
     /// clicked. Plugged in, a regular look costs nothing that matters. On
     /// battery the Mac keeps waiting to be told.
-    func fetchIfOnWallPower(now: Date = Date(), onWallPower: Bool = PowerSource.isOnWallPower) {
-        guard status == .on, onWallPower else { return }
-        if let lastScheduledFetch, now.timeIntervalSince(lastScheduledFetch) < Self.wallPowerFetchInterval { return }
+    ///
+    /// Returns whether this call started a poll interval, so the UI can reread
+    /// the library from disk on the same cadence — notifications alone have
+    /// left the sidebar on yesterday after today was already written.
+    @discardableResult
+    func fetchIfOnWallPower(now: Date = Date(), onWallPower: Bool = PowerSource.isOnWallPower) -> Bool {
+        guard onWallPower else { return false }
+        if let lastScheduledFetch, now.timeIntervalSince(lastScheduledFetch) < Self.wallPowerFetchInterval {
+            return false
+        }
         lastScheduledFetch = now
-        fetchNow()
+        if status == .on {
+            fetchNow()
+        }
+        return true
     }
     #endif
 

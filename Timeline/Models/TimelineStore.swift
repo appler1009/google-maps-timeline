@@ -600,8 +600,11 @@ final class TimelineStore {
     /// Reload after the recorder wrote something. Unlike `apply`, this keeps the
     /// day, place and filters the user is looking at — a stay recorded in the
     /// background must not yank the map out from under them.
+    ///
+    /// Do not gate on `isLoading`. A cloud fetch that lands while a local write
+    /// still has the flag set used to return here and never come back, so the
+    /// Mac kept yesterday's sidebar for hours after today was already on disk.
     func refreshFromLibrary() {
-        guard !isLoading else { return }
         Task { await reloadFromLibrary() }
     }
 
@@ -805,7 +808,7 @@ final class TimelineStore {
 
     /// Reload if the clock has moved past what is on screen.
     func refreshIfStale(now: Date = Date()) {
-        guard !isLoading, isStale(now: now) else { return }
+        guard isStale(now: now) else { return }
         TimelineLog.info("open stay redrawn")
         Task { await reloadFromLibrary() }
     }
