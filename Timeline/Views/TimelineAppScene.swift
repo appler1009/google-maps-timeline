@@ -83,7 +83,10 @@ struct TimelineAppScene: View {
             }
             .onChange(of: scenePhase) { _, phase in
                 guard phase == .active, !TimelineLaunch.isUITesting else { return }
-                store.refreshIfStale()
+                // Read the library again, not only when an open stay is stale:
+                // stays from the phone can sit on disk while the sidebar still
+                // ends on an older day.
+                store.refreshFromLibrary()
                 CloudSyncController.shared.fetchNow()
             }
             #endif
@@ -105,14 +108,22 @@ struct TimelineAppScene: View {
                     // wait for the app to become active again, and iCloud's own
                     // notice still fetches.
                     guard PowerSource.isOnWallPower else { continue }
-                    CloudSyncController.shared.fetchIfOnWallPower(onWallPower: true)
+                    // Same 5-minute cadence as the cloud poll: reread the library
+                    // from disk whether or not CloudKit had anything new. Relying
+                    // on timelineLibraryChanged alone left today missing for hours
+                    // after the rows were already written.
+                    if CloudSyncController.shared.fetchIfOnWallPower(onWallPower: true) {
+                        store.refreshFromLibrary()
+                    } else {
+                        store.refreshIfStale()
+                    }
                     #endif
                     #if os(iOS)
                     // Relaunched in the background for every visit; redrawing a
                     // screen nobody can see is battery spent on nothing.
                     guard UIApplication.shared.applicationState == .active else { continue }
-                    #endif
                     store.refreshIfStale()
+                    #endif
                 }
             }
             .sheet(isPresented: $luxSettingsPresented) {

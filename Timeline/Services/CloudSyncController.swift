@@ -103,11 +103,27 @@ final class CloudSyncController {
     }
 
     func fetchNow() {
-        Task { try? await sync.fetchNow() }
+        // Always ask the sidebar to rebuild after a fetch, even when CloudKit
+        // reports nothing new. apply() already posts when rows arrive, but a
+        // redraw that misses that notification — or a read that raced the
+        // write — used to leave the Mac showing yesterday until it was
+        // relaunched, while the library on disk already had today.
+        //
+        // Also push anything still sitting in the local change log. A hand-added
+        // stay used to write the log and refresh the phone UI without ever
+        // telling the sync engine, so it never left the device.
+        Task {
+            await sync.enqueuePendingChanges()
+            try? await sync.fetchNow()
+            await MainActor.run {
+                NotificationCenter.default.post(name: .timelineLibraryChanged, object: nil)
+            }
+        }
     }
 
     #if os(macOS)
-    /// How often a plugged-in Mac asks iCloud for changes on its own.
+    /// How often a plugged-in Mac asks iCloud for changes on its own, and how
+    /// often it rereads the library from disk even when CloudKit is quiet.
     static let wallPowerFetchInterval: TimeInterval = 5 * 60
     private var lastScheduledFetch: Date?
 
@@ -118,11 +134,21 @@ final class CloudSyncController {
     /// and sat unfetched for minutes at another, until the window was
     /// clicked. Plugged in, a regular look costs nothing that matters. On
     /// battery the Mac keeps waiting to be told.
-    func fetchIfOnWallPower(now: Date = Date(), onWallPower: Bool = PowerSource.isOnWallPower) {
-        guard status == .on, onWallPower else { return }
-        if let lastScheduledFetch, now.timeIntervalSince(lastScheduledFetch) < Self.wallPowerFetchInterval { return }
+    ///
+    /// Returns whether this call started a poll interval, so the UI can reread
+    /// the library from disk on the same cadence — notifications alone have
+    /// left the sidebar on yesterday after today was already written.
+    @discardableResult
+    func fetchIfOnWallPower(now: Date = Date(), onWallPower: Bool = PowerSource.isOnWallPower) -> Bool {
+        guard onWallPower else { return false }
+        if let lastScheduledFetch, now.timeIntervalSince(lastScheduledFetch) < Self.wallPowerFetchInterval {
+            return false
+        }
         lastScheduledFetch = now
-        fetchNow()
+        if status == .on {
+            fetchNow()
+        }
+        return true
     }
     #endif
 
