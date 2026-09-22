@@ -605,7 +605,31 @@ final class TimelineStore {
     /// still has the flag set used to return here and never come back, so the
     /// Mac kept yesterday's sidebar for hours after today was already on disk.
     func refreshFromLibrary() {
-        Task { await reloadFromLibrary() }
+        reloadWanted = true
+        guard reloadTask == nil else { return }
+        reloadTask = Task { await drainLibraryReloads() }
+    }
+
+    /// Reassemble only when the library on disk has a day newer than the
+    /// sidebar. Used on battery / Low Power Mode where a full redraw every five
+    /// minutes is not worth it, but sitting on yesterday after today's rows
+    /// already landed still is.
+    func reloadFromLibraryIfBehind(now: Date = Date()) async {
+        let moment = now
+        let diskDay = try? await database.newestDayStart(now: moment)
+        let shown = parsed?.days.first?.day
+        if let diskDay, shown == nil || diskDay > shown! {
+            TimelineLog.info(
+                "sidebar behind library",
+                [
+                    "disk": ISO8601DateFormatter().string(from: diskDay),
+                    "shown": shown.map { ISO8601DateFormatter().string(from: $0) } ?? "none"
+                ]
+            )
+            await reloadFromLibrary(now: moment)
+            return
+        }
+        refreshIfStale(now: moment)
     }
 
     /// The body of `refreshFromLibrary`, awaitable so a test can see it land.
@@ -625,35 +649,56 @@ final class TimelineStore {
     /// one is under way is folded into it: that one reads again rather than
     /// showing what it read before the write.
     func reloadFromLibrary(now: Date? = nil) async {
-        if isReloading {
-            reloadAgain = true
-            return
+        reloadWanted = true
+        while reloadWanted || reloadTask != nil {
+            if reloadTask == nil {
+                reloadTask = Task { await drainLibraryReloads(now: now) }
+            }
+            await reloadTask?.value
+            if !reloadWanted { return }
         }
-        isReloading = true
-        defer { isReloading = false }
-        repeat {
-            reloadAgain = false
+    }
+
+    /// Drain every folded reload request. The previous boolean gate could leave
+    /// `reloadAgain` set after an early return (empty read / error) with no
+    /// worker left to honour it — the Mac then kept yesterday's sidebar until
+    /// relaunch even though refresh kept being asked for.
+    private func drainLibraryReloads(now: Date? = nil) async {
+        defer { reloadTask = nil }
+        while reloadWanted {
+            reloadWanted = false
             let moment = now ?? Date()
             let batch: TimelineBatch
             do {
                 guard let loaded = try await database.loadBatch(
                     includingShadowed: showsShadowedImports,
                     now: moment
-                ) else { return }
+                ) else {
+                    continue
+                }
                 batch = loaded
             } catch {
                 TimelineLog.error("library reload failed", ["error": error.localizedDescription])
-                return
+                continue
             }
             await refreshPlaceIdentity()
             let name = (try? await database.latestSourceName()) ?? sourceName ?? "This device"
-            guard !reloadAgain else { continue }
-            layOut(TimelineParser.assemble(batch, sourceName: name, now: moment), at: moment)
-        } while reloadAgain
+            // Another ask landed while we read — fold it into a fresh pass so
+            // we never paint a snapshot taken before the write.
+            if reloadWanted { continue }
+            let timeline = TimelineParser.assemble(batch, sourceName: name, now: moment)
+            layOut(timeline, at: moment)
+            if let newest = timeline.days.first?.day {
+                TimelineLog.info(
+                    "library relaid",
+                    ["newest": ISO8601DateFormatter().string(from: newest), "days": "\(timeline.days.count)"]
+                )
+            }
+        }
     }
 
-    private var isReloading = false
-    private var reloadAgain = false
+    private var reloadWanted = false
+    private var reloadTask: Task<Void, Never>?
 
     private func layOut(_ timeline: ParsedTimeline, at moment: Date) {
         let keptDay = selectedDayID

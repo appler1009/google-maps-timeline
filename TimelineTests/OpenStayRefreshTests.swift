@@ -205,6 +205,29 @@ final class OpenStayRefreshTests: XCTestCase {
         XCTAssertTrue(visits.contains { $0.id == "gym" })
     }
 
+    /// A stay written to disk while the sidebar still shows yesterday must be
+    /// noticed without waiting for a cloud notification or a relaunch.
+    func testSidebarBehindDiskReloadsTheNewerDay() async throws {
+        try await recordOpenStay()
+        let store = TimelineStore(database: database)
+        await store.reloadFromLibrary(now: at(day: 12, hour: 21))
+        XCTAssertEqual(store.parsed?.days.first?.day, calendar.startOfDay(for: arrival))
+
+        try await database.record(batch: TimelineBatch(visits: [TimelineVisit(
+            id: "monday-cafe",
+            start: at(day: 13, hour: 9),
+            end: at(day: 13, hour: 10),
+            coordinate: CLLocationCoordinate2D(latitude: 49.2700, longitude: -123.1000),
+            semanticType: nil,
+            placeKey: "cafe"
+        )], activities: [], paths: []))
+
+        await store.reloadFromLibraryIfBehind(now: at(day: 13, hour: 12))
+        let monday = calendar.startOfDay(for: at(day: 13, hour: 0))
+        XCTAssertEqual(store.parsed?.days.first?.day, monday)
+        XCTAssertEqual(store.selectedDayID, monday)
+    }
+
     /// Past the cap the library stops stretching the stay, so the clock has
     /// nothing to add — but a midnight before the cap still counts.
     func testAStayPastTheCapStopsGoingStale() async throws {

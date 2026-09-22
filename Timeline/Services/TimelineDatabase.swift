@@ -55,6 +55,42 @@ actor TimelineDatabase {
         try string("SELECT source_name FROM imports ORDER BY imported_at DESC LIMIT 1")
     }
 
+    /// The calendar day of the newest stay on disk, including an open stay
+    /// stretched up to `now`. Cheap enough to ask every minute so the sidebar
+    /// can notice it has fallen behind without reassembling the library.
+    func newestDayStart(now: Date = Date(), calendar: Calendar = .current) throws -> Date? {
+        guard let db else { return nil }
+        var statement: OpaquePointer?
+        defer { sqlite3_finalize(statement) }
+        guard sqlite3_prepare_v2(
+            db,
+            """
+            SELECT MAX(start), MAX("end"), MAX(is_open)
+            FROM visits WHERE shadowed = 0
+            """,
+            -1,
+            &statement,
+            nil
+        ) == SQLITE_OK else { throw TimelineDatabaseError.execute(errmsg()) }
+        guard sqlite3_step(statement) == SQLITE_ROW else { return nil }
+        var newest: Date?
+        if sqlite3_column_type(statement, 0) != SQLITE_NULL {
+            let start = Date(timeIntervalSince1970: sqlite3_column_double(statement, 0))
+            var end = Date(timeIntervalSince1970: sqlite3_column_double(statement, 1))
+            if sqlite3_column_int64(statement, 2) == 1 {
+                let cap = start.addingTimeInterval(Self.longestOpenStay)
+                end = max(end, min(now, cap))
+            }
+            newest = max(start, end)
+        }
+        // An open_visit row with no matching visits row still counts — first day
+        // of a fresh install before anything has been closed.
+        if let open = try openStay(now: now) {
+            newest = newest.map { max($0, open.start, open.end) } ?? max(open.start, open.end)
+        }
+        return newest.map { calendar.startOfDay(for: $0) }
+    }
+
     func loadBatch(includingShadowed: Bool = false, now: Date = Date()) throws -> TimelineBatch? {
         // A library holding nothing but the stay you are currently inside is not
         // empty — that is exactly the first day of a fresh install.

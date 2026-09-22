@@ -104,18 +104,19 @@ struct TimelineAppScene: View {
                 while !Task.isCancelled {
                     try? await Task.sleep(for: .seconds(60))
                     #if os(macOS)
-                    // Plugged in, keep current by the clock. On battery, both
-                    // wait for the app to become active again, and iCloud's own
-                    // notice still fetches.
-                    guard PowerSource.isOnWallPower else { continue }
-                    // Same 5-minute cadence as the cloud poll: reread the library
-                    // from disk whether or not CloudKit had anything new. Relying
-                    // on timelineLibraryChanged alone left today missing for hours
-                    // after the rows were already written.
-                    if CloudSyncController.shared.fetchIfOnWallPower(onWallPower: true) {
-                        store.refreshFromLibrary()
+                    // Plugged in: poll iCloud and reread the library on the same
+                    // 5-minute cadence. On battery / Low Power Mode, still notice
+                    // when disk has a newer day than the sidebar — that is what
+                    // left Monday missing all evening while today's rows sat in
+                    // the library — but skip the empty cloud poll.
+                    if PowerSource.isOnWallPower {
+                        if CloudSyncController.shared.fetchIfOnWallPower(onWallPower: true) {
+                            await store.reloadFromLibrary()
+                        } else {
+                            await store.reloadFromLibraryIfBehind()
+                        }
                     } else {
-                        store.refreshIfStale()
+                        await store.reloadFromLibraryIfBehind()
                     }
                     #endif
                     #if os(iOS)
