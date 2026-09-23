@@ -253,7 +253,7 @@ final class TimelineRecorder {
                 }
             }
             try? await database.clearOpenStop()
-            try? await database.retireSupersededOpenStays()
+            _ = try? await database.retireSupersededOpenStays()
             recordedVisitCount += 1
             TimelineLog.info(
                 "stay recorded",
