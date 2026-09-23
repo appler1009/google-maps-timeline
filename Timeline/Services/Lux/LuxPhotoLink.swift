@@ -641,6 +641,8 @@ final class LuxPhotoLink {
             guard let filedRun = runIndexByVisit[visitID], let photos = cached[visitID] else { continue }
             let place = runs[filedRun].placeKey
             for photo in photos where placed.insert(photo.id).inserted {
+                // No capture time to go by: it stays on the run it was filed
+                // under — the first half of a split — until Lux is asked again.
                 var target = filedRun
                 if let captured = photo.item.capturedAt {
                     target = runs.indices
