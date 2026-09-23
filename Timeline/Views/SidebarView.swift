@@ -251,8 +251,12 @@ struct SidebarView: View {
             }
             .listStyle(.sidebar)
             .scrollContentBackground(.hidden)
+            .id(store.dateListIdentity)
             .onChange(of: store.selectedDayID) { _, _ in
                 store.handleDaySelectionChange()
+            }
+            .onChange(of: store.dateListIdentity) { _, _ in
+                scrollDatesToSelection(proxy)
             }
             .onChange(of: store.filterYear) { _, _ in
                 scrollDatesToSelection(proxy)

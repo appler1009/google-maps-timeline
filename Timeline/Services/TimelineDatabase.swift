@@ -55,6 +55,42 @@ actor TimelineDatabase {
         try string("SELECT source_name FROM imports ORDER BY imported_at DESC LIMIT 1")
     }
 
+    /// The calendar day of the newest stay on disk, including an open stay
+    /// stretched up to `now`. Cheap enough to ask every minute so the sidebar
+    /// can notice it has fallen behind without reassembling the library.
+    func newestDayStart(now: Date = Date(), calendar: Calendar = .current) throws -> Date? {
+        guard let db else { return nil }
+        var statement: OpaquePointer?
+        defer { sqlite3_finalize(statement) }
+        guard sqlite3_prepare_v2(
+            db,
+            """
+            SELECT MAX(start), MAX("end"), MAX(is_open)
+            FROM visits WHERE shadowed = 0
+            """,
+            -1,
+            &statement,
+            nil
+        ) == SQLITE_OK else { throw TimelineDatabaseError.execute(errmsg()) }
+        guard sqlite3_step(statement) == SQLITE_ROW else { return nil }
+        var newest: Date?
+        if sqlite3_column_type(statement, 0) != SQLITE_NULL {
+            let start = Date(timeIntervalSince1970: sqlite3_column_double(statement, 0))
+            var end = Date(timeIntervalSince1970: sqlite3_column_double(statement, 1))
+            if sqlite3_column_int64(statement, 2) == 1 {
+                let cap = start.addingTimeInterval(Self.longestOpenStay)
+                end = max(end, min(now, cap))
+            }
+            newest = max(start, end)
+        }
+        // An open_visit row with no matching visits row still counts — first day
+        // of a fresh install before anything has been closed.
+        if let open = try openStay(now: now) {
+            newest = newest.map { max($0, open.start, open.end) } ?? max(open.start, open.end)
+        }
+        return newest.map { calendar.startOfDay(for: $0) }
+    }
+
     func loadBatch(includingShadowed: Bool = false, now: Date = Date()) throws -> TimelineBatch? {
         // A library holding nothing but the stay you are currently inside is not
         // empty — that is exactly the first day of a fresh install.
@@ -62,9 +98,12 @@ actor TimelineDatabase {
         if open == nil, try isEmpty() { return nil }
         // Merges are materialised in place_id now, so nothing is resolved here.
         let locations = Self.resolved(try loadPlaceLocations(), merges: try loadPlaceMerges())
-        var visits = try loadVisits(includingShadowed: includingShadowed)
+        let rows = try loadVisits(includingShadowed: includingShadowed)
             .map { Self.relocated($0, locations: locations) }
-            .map { Self.extendedIfOpen($0, now: now) }
+        let starts = rows.map(\.start).filter { $0 <= now }.sorted()
+        var visits = rows.map { visit in
+            Self.extendedIfOpen(visit, now: now, nextStart: Self.firstStart(after: visit.start, in: starts))
+        }
         // Older libraries kept the open stay only in open_visit, with no row
         // behind it. Read it from there until the next one opens as a row.
         if let open, !visits.contains(where: { $0.id == open.id }) {
@@ -88,11 +127,18 @@ actor TimelineDatabase {
     /// Capped, because an unclosed stay outlives its own credibility: past a
     /// week it means the departure was missed or the app has not run, and
     /// stretching it further asserts something nobody witnessed.
-    private static func extendedIfOpen(_ visit: TimelineVisit, now: Date) -> TimelineVisit {
+    ///
+    /// And only up to the next stay. An open row that something began after
+    /// was left behind — a second arrival replaced it before any departure
+    /// closed it — and stretching it to the present drew a supermarket stop
+    /// running on past midnight over everything recorded since.
+    private static func extendedIfOpen(_ visit: TimelineVisit, now: Date, nextStart: Date? = nil) -> TimelineVisit {
         guard visit.isOpen else { return visit }
         let cap = visit.start.addingTimeInterval(longestOpenStay)
-        let end = max(visit.end, min(now, cap))
-        guard end > visit.end else { return visit }
+        let reach = [now, cap, nextStart].compactMap { $0 }.min()!
+        let end = max(visit.end, reach)
+        let stillOpen = nextStart == nil
+        guard end > visit.end || !stillOpen else { return visit }
         return TimelineVisit(
             id: visit.id,
             start: visit.start,
@@ -101,8 +147,79 @@ actor TimelineDatabase {
             semanticType: visit.semanticType,
             placeKey: visit.placeKey,
             isDerived: visit.isDerived,
-            isOpen: true
+            isOpen: stillOpen
         )
+    }
+
+    /// The earliest start strictly after `moment`, from starts sorted ascending.
+    private static func firstStart(after moment: Date, in starts: [Date]) -> Date? {
+        var low = 0
+        var high = starts.count
+        while low < high {
+            let mid = (low + high) / 2
+            if starts[mid] <= moment { low = mid + 1 } else { high = mid }
+        }
+        return low < starts.count ? starts[low] : nil
+    }
+
+    /// Retire open rows the recorder has since moved on from.
+    ///
+    /// Only one stay is ever in progress, so an open row with a recorded stay
+    /// beginning after it was never closed: its departure was reported against
+    /// a later arrival at the same place, which had overwritten `open_visit`,
+    /// and nothing was left pointing at the first row.
+    ///
+    /// When the next stay is at the same place you were still there, so the
+    /// row is closed where that stay begins and keeps the arrival nobody else
+    /// has. When it is somewhere else, when you left is unknown and the stays
+    /// after it already say where you went, so the row is deleted. Either
+    /// change is logged so it reaches the other devices.
+    ///
+    /// Only recorded stays count as having moved on. A stay added by hand says
+    /// where you were, not that the recorder saw you leave, and the read path
+    /// already stops an open row at whatever stay comes next.
+    @discardableResult
+    func retireSupersededOpenStays(now: Date = Date()) throws -> Int {
+        guard let db else { return 0 }
+        var statement: OpaquePointer?
+        defer { sqlite3_finalize(statement) }
+        guard sqlite3_prepare_v2(
+            db,
+            """
+            SELECT o.id, o.start, COALESCE(o.place_id, o.place_key), n.start, COALESCE(n.place_id, n.place_key)
+            FROM visits o
+            JOIN visits n ON n.id = (
+                SELECT v.id FROM visits v
+                WHERE v.id != o.id AND v.shadowed = 0 AND v.source = 'device'
+                  AND v.start > o.start AND v.start <= ?1
+                ORDER BY v.start LIMIT 1
+            )
+            WHERE o.is_open = 1
+            """,
+            -1,
+            &statement,
+            nil
+        ) == SQLITE_OK else { throw TimelineDatabaseError.execute(errmsg()) }
+        // A stay that has not begun yet ended nothing.
+        sqlite3_bind_double(statement, 1, now.timeIntervalSince1970)
+        var superseded: [(id: String, start: Date, samePlace: Bool, nextStart: Date)] = []
+        while sqlite3_step(statement) == SQLITE_ROW {
+            guard let id = text(statement, 0) else { continue }
+            superseded.append((
+                id: id,
+                start: Date(timeIntervalSince1970: sqlite3_column_double(statement, 1)),
+                samePlace: text(statement, 2) != nil && text(statement, 2) == text(statement, 4),
+                nextStart: Date(timeIntervalSince1970: sqlite3_column_double(statement, 3))
+            ))
+        }
+        var retired = 0
+        for row in superseded {
+            let done = row.samePlace
+                ? try setVisitTimes(id: row.id, start: row.start, end: row.nextStart, now: now)
+                : try deleteVisit(id: row.id, reason: "open stay superseded", now: now)
+            if done { retired += 1 }
+        }
+        return retired
     }
 
     /// The in-progress stay as a visit ending now, or nil when there isn't one.
@@ -1492,6 +1609,8 @@ actor TimelineDatabase {
             isOpen: true
         )
         try record(batch: TimelineBatch(visits: [opened], activities: [], paths: []))
+        // The stay this arrival replaces, if its departure never closed it.
+        try retireSupersededOpenStays(now: max(Date(), stop.start))
     }
 
     /// Give the stay we are inside a row, if it has not got one.
