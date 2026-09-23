@@ -46,6 +46,11 @@ struct MapCanvasView: View {
             lux.refreshPhotos(for: store.activeDay)
             lux.dismissViewer()
         }
+        // The same day with different stays — one added, moved or split —
+        // has its photos to share out again.
+        .onChange(of: store.dayContentGeneration) { _, _ in
+            lux.refreshPhotos(for: store.activeDay)
+        }
         #if os(iOS)
         .overlay(alignment: .top) { iosTopChrome }
         .overlay {

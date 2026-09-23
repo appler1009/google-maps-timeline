@@ -1,3 +1,5 @@
+import CoreLocation
+import LuxShared
 import SwiftUI
 import XCTest
 @testable import Timeline
@@ -106,5 +108,71 @@ final class PhotoViewerDragTests: XCTestCase {
         XCTAssertEqual(PhotoViewerDrag.progress(height: PhotoViewerDrag.dismissDistance), 1)
         XCTAssertEqual(PhotoViewerDrag.progress(height: 1_000), 1, "never past the end")
         XCTAssertEqual(PhotoViewerDrag.progress(height: -PhotoViewerDrag.dismissDistance), 1, "either way")
+    }
+}
+
+/// A day's photos are cached by day, and the day's stays change under the
+/// cache. A stay added between two at home split one run into two, and the
+/// photo filed under the run came back on both.
+final class LuxPhotoFitTests: XCTestCase {
+    private let home = CLLocationCoordinate2D(latitude: 49.2717, longitude: -123.2498)
+    private let school = CLLocationCoordinate2D(latitude: 49.2610, longitude: -123.1860)
+    private let midnight = Date(timeIntervalSince1970: 1_790_060_400)
+
+    private func at(_ hour: Double) -> Date { midnight.addingTimeInterval(hour * 3_600) }
+
+    private func stay(_ id: String, _ place: String, _ from: Double, _ to: Double) -> TimelineVisit {
+        TimelineVisit(
+            id: id,
+            start: at(from),
+            end: at(to),
+            coordinate: place == "home" ? home : school,
+            semanticType: nil,
+            placeKey: place
+        )
+    }
+
+    private func photo(_ id: String, takenAt hour: Double) -> LuxVisitPhoto {
+        LuxVisitPhoto(
+            libraryId: "lib",
+            libraryName: "Photos",
+            item: QueriedMediaItem(
+                id: id, filename: "\(id).heic", capturedAt: at(hour), mediaType: "photo",
+                latitude: home.latitude, longitude: home.longitude, distanceMeters: 5,
+                geocode: nil, hasThumbnail: false
+            ),
+            thumbnail: nil
+        )
+    }
+
+    func testAPhotoCachedOnBothHalvesOfASplitStayShowsOnTheNearerOne() {
+        let morning = stay("morning", "home", 0, 8.57)
+        let evening = stay("evening", "home", 8.85, 20.6)
+        let school = stay("school", "school", 8.7, 8.72)
+        // As the old cache filed it: one run at home, the photo under both.
+        let eggs = photo("eggs", takenAt: 12)
+        let cached = ["morning": [eggs], "evening": [eggs]]
+
+        let fitted = LuxPhotoLink.fitted(cached, to: [morning, school, evening])
+        XCTAssertNil(fitted["morning"])
+        XCTAssertEqual(fitted["evening"]?.map(\.item.id), ["eggs"])
+    }
+
+    func testTwoStaysThatBecomeOneRunShareTheirPhotosOnTheFirst() {
+        let morning = stay("morning", "home", 0, 8.57)
+        let evening = stay("evening", "home", 8.85, 20.6)
+        let cached = ["morning": [photo("a", takenAt: 7)], "evening": [photo("b", takenAt: 12)]]
+
+        let fitted = LuxPhotoLink.fitted(cached, to: [morning, evening])
+        let ids: [String] = (fitted["morning"] ?? []).map { $0.item.id }
+        XCTAssertEqual(Set(ids), ["a", "b"])
+        XCTAssertNil(fitted["evening"])
+    }
+
+    func testAStayThatIsGoneTakesItsPhotosWithIt() {
+        let morning = stay("morning", "home", 0, 8.57)
+        let cached = ["deleted": [photo("a", takenAt: 12)]]
+        let fitted = LuxPhotoLink.fitted(cached, to: [morning])
+        XCTAssertTrue(fitted.isEmpty)
     }
 }
