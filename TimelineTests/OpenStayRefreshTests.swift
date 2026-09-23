@@ -371,4 +371,27 @@ final class OpenStayRefreshTests: XCTestCase {
         await store.reloadFromLibrary(now: at(day: 13, hour: 1))
         XCTAssertNotEqual(store.dateListIdentity, before)
     }
+
+    /// Launch reloads the library twice: the restore, which tidies for a few
+    /// seconds first, and a cloud fetch or catch-up that lands meanwhile and
+    /// opens the day. The restore landing second must not take the day away.
+    func testARestoreLandingAfterAReloadKeepsTheDayOnScreen() async throws {
+        try await recordOpenStay()
+        try await database.record(batch: TimelineBatch(visits: [TimelineVisit(
+            id: "earlier",
+            start: at(day: 10, hour: 9),
+            end: at(day: 10, hour: 10),
+            coordinate: CLLocationCoordinate2D(latitude: 49.2700, longitude: -123.1000),
+            semanticType: nil,
+            placeKey: "cafe"
+        )], activities: [], paths: []))
+        let store = TimelineStore(database: database)
+        await store.reloadFromLibrary(now: at(day: 12, hour: 22))
+        let earlier = try XCTUnwrap(store.day(for: calendar.startOfDay(for: at(day: 10, hour: 0))))
+        store.select(day: earlier)
+
+        await store.restoreLibrary()
+        XCTAssertEqual(store.selectedDayID, earlier.day)
+        XCTAssertNotNil(store.activeDay)
+    }
 }
