@@ -470,39 +470,52 @@ final class TimelineStore {
     }
 
     func restoreLastOpenedFile() {
-        Task {
-            // Every exit path has to settle `hasCheckedLibrary`, or the sidebar
-            // sits on a spinner forever.
-            defer { hasCheckedLibrary = true }
-            if isLoading { return }
-            await refreshPlaceNames()
-            await pullPlaceIdentityFromCloud()
-            // A stay that ends before it starts is never legitimate, and one
-            // already written would otherwise keep coming back from the server.
-            if let purged = try? await database.purgeInvalidVisits(), purged > 0 {
-                TimelineLog.info("invalid stays removed", ["count": "\(purged)"])
-            }
-            if let collapsed = try? await database.collapseDuplicateVisits(), collapsed > 0 {
-                TimelineLog.info("duplicate stays collapsed", ["count": "\(collapsed)"])
-            }
-            if let migrated = try? await database.migrateToPlaceEntities(), migrated.visitsLinked > 0 {
-                TimelineLog.info(
-                    "places migrated",
-                    ["places": "\(migrated.placesCreated)", "stays": "\(migrated.visitsLinked)"]
-                )
-            }
-            if let merged = try? await database.collapseDuplicateStays(), merged > 0 {
-                TimelineLog.info("same stay under two places collapsed", ["count": "\(merged)"])
-            }
-            if let batch = try? await database.loadBatch() {
-                if isLoading { return }
-                let name = (try? await database.latestSourceName()) ?? "Library"
-                apply(TimelineParser.assemble(batch, sourceName: name))
-                return
-            }
-            if restoreBookmark() { return }
-            tryOpenDownloadsExample()
+        Task { await restoreLibrary() }
+    }
+
+    /// The body of `restoreLastOpenedFile`, awaitable so a test can see it land.
+    func restoreLibrary() async {
+        // Every exit path has to settle `hasCheckedLibrary`, or the sidebar
+        // sits on a spinner forever.
+        defer { hasCheckedLibrary = true }
+        if isLoading { return }
+        await refreshPlaceNames()
+        await pullPlaceIdentityFromCloud()
+        // A stay that ends before it starts is never legitimate, and one
+        // already written would otherwise keep coming back from the server.
+        if let purged = try? await database.purgeInvalidVisits(), purged > 0 {
+            TimelineLog.info("invalid stays removed", ["count": "\(purged)"])
         }
+        if let collapsed = try? await database.collapseDuplicateVisits(), collapsed > 0 {
+            TimelineLog.info("duplicate stays collapsed", ["count": "\(collapsed)"])
+        }
+        if let migrated = try? await database.migrateToPlaceEntities(), migrated.visitsLinked > 0 {
+            TimelineLog.info(
+                "places migrated",
+                ["places": "\(migrated.placesCreated)", "stays": "\(migrated.visitsLinked)"]
+            )
+        }
+        if let merged = try? await database.collapseDuplicateStays(), merged > 0 {
+            TimelineLog.info("same stay under two places collapsed", ["count": "\(merged)"])
+        }
+        if let batch = try? await database.loadBatch() {
+            if isLoading { return }
+            let name = (try? await database.latestSourceName()) ?? "Library"
+            let timeline = TimelineParser.assemble(batch, sourceName: name)
+            // The tidying above takes seconds, and a cloud fetch or the
+            // recorder catching up reloads the library meanwhile — which
+            // opens today's map. Applying over it cleared the day under
+            // the map on iOS and left it blank: no pins, no title, no
+            // arrows. Keep whatever is already on screen.
+            if parsed != nil {
+                layOut(timeline, at: Date())
+            } else {
+                apply(timeline)
+            }
+            return
+        }
+        if restoreBookmark() { return }
+        tryOpenDownloadsExample()
     }
 
     func tryOpenDownloadsExample() {

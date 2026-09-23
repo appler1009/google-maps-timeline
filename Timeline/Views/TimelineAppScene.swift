@@ -208,6 +208,13 @@ struct TimelineAppScene: View {
                     presentCompactMap()
                 }
             }
+            // A map with nothing selected has nothing to draw and no title or
+            // arrows to leave by — go back to the list rather than sit blank.
+            .onChange(of: store.activeDay == nil && store.activePlace == nil) { _, nothingShown in
+                if nothingShown, showingCompactMap {
+                    dismissCompactMap()
+                }
+            }
             #endif
     }
 
