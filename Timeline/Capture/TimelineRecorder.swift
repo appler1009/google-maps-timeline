@@ -122,6 +122,9 @@ final class TimelineRecorder {
         if (try? await database.backfillOpenStayRow()) == true {
             TimelineLog.info("open stay given a row")
         }
+        if let retired = try? await database.retireSupersededOpenStays(), retired > 0 {
+            TimelineLog.info("superseded open stays retired", ["count": "\(retired)"])
+        }
         await backfillMotion()
         await flushFixes()
         await enrichFromHealth()
@@ -250,6 +253,7 @@ final class TimelineRecorder {
                 }
             }
             try? await database.clearOpenStop()
+            try? await database.retireSupersededOpenStays()
             recordedVisitCount += 1
             TimelineLog.info(
                 "stay recorded",

@@ -242,4 +242,92 @@ final class OpenStayRefreshTests: XCTestCase {
         XCTAssertFalse(store.isStale(now: cap.addingTimeInterval(7_200), calendar: calendar))
         XCTAssertFalse(store.isStale(now: cap.addingTimeInterval(3 * 86_400), calendar: calendar))
     }
+
+    // MARK: - An open row left behind
+
+    private let supermarket = CLLocationCoordinate2D(latitude: 49.2094, longitude: -123.1157)
+
+    private func visit(_ id: String, start: Date, end: Date, open: Bool = false) -> TimelineVisit {
+        TimelineVisit(
+            id: id,
+            start: start,
+            end: end,
+            coordinate: supermarket,
+            semanticType: nil,
+            placeKey: "supermarket",
+            isOpen: open
+        )
+    }
+
+    /// Monday 16:37 an arrival opened a row, 16:59 a second arrival at the same
+    /// place replaced it in open_visit, and the departure closed only the
+    /// second. The first ran on to the present, into Tuesday at midnight.
+    private func recordLeftBehindOpenRow() async throws {
+        try await database.record(batch: TimelineBatch(visits: [
+            visit("left-open", start: at(day: 21, hour: 16, minute: 37), end: at(day: 21, hour: 16, minute: 37), open: true),
+            visit("closed", start: at(day: 21, hour: 16, minute: 59), end: at(day: 21, hour: 17, minute: 18)),
+        ], activities: [], paths: []))
+    }
+
+    func testAnOpenRowAStayBeganAfterStopsAtThatStay() async throws {
+        try await recordLeftBehindOpenRow()
+        let loaded = try await database.loadBatch(now: at(day: 22, hour: 10))
+        let batch = try XCTUnwrap(loaded)
+        let row = try XCTUnwrap(batch.visits.first { $0.id == "left-open" })
+        XCTAssertEqual(row.end, at(day: 21, hour: 16, minute: 59))
+        XCTAssertFalse(row.isOpen)
+
+        let store = TimelineStore(database: database)
+        await store.reloadFromLibrary(now: at(day: 22, hour: 10))
+        // What remains on Tuesday is derived from the last stay, not the row.
+        let tuesday = calendar.startOfDay(for: at(day: 22, hour: 0))
+        let carried = store.parsed?.days.first { $0.day == tuesday }?.visits ?? []
+        XCTAssertFalse(carried.contains { $0.id == "left-open" })
+        XCTAssertFalse(store.hasOpenStay)
+    }
+
+    func testTheStayInProgressStillRunsToThePresent() async throws {
+        try await recordLeftBehindOpenRow()
+        try await database.record(batch: TimelineBatch(visits: [
+            visit("now-open", start: at(day: 21, hour: 18), end: at(day: 21, hour: 18), open: true)
+        ], activities: [], paths: []))
+        let loaded = try await database.loadBatch(now: at(day: 22, hour: 10))
+        let batch = try XCTUnwrap(loaded)
+        let row = try XCTUnwrap(batch.visits.first { $0.id == "now-open" })
+        XCTAssertEqual(row.end, at(day: 22, hour: 10))
+        XCTAssertTrue(row.isOpen)
+    }
+
+    func testARecordedStayAfterAnOpenRowRetiresIt() async throws {
+        try await recordLeftBehindOpenRow()
+        let retired = try await database.retireSupersededOpenStays(now: at(day: 22, hour: 10))
+        XCTAssertEqual(retired, 1)
+        let loaded = try await database.loadBatch(now: at(day: 22, hour: 10))
+        let batch = try XCTUnwrap(loaded)
+        XCTAssertEqual(batch.visits.map(\.id), ["closed"])
+    }
+
+    func testASecondArrivalRetiresTheOpenRowItReplaces() async throws {
+        let first = CapturedStop(coordinate: supermarket, horizontalAccuracy: 20, start: at(day: 21, hour: 16, minute: 37), end: nil)
+        let second = CapturedStop(coordinate: supermarket, horizontalAccuracy: 20, start: at(day: 21, hour: 16, minute: 59), end: nil)
+        try await database.setOpenStop(first, placeKey: "supermarket")
+        try await database.setOpenStop(second, placeKey: "supermarket")
+        let loaded = try await database.loadBatch(now: at(day: 21, hour: 17, minute: 30))
+        let batch = try XCTUnwrap(loaded)
+        let open = batch.visits.filter(\.isOpen)
+        XCTAssertEqual(open.count, 1)
+        XCTAssertEqual(open.first?.start, second.start)
+    }
+
+    /// The Mac list is rebuilt off this, so it has to move when a day arrives.
+    func testTheDateListIdentityMovesWhenADayArrives() async throws {
+        try await recordOpenStay()
+        let store = TimelineStore(database: database)
+        await store.reloadFromLibrary(now: at(day: 12, hour: 22))
+        let before = store.dateListIdentity
+        await store.reloadFromLibrary(now: at(day: 12, hour: 23))
+        XCTAssertEqual(store.dateListIdentity, before)
+        await store.reloadFromLibrary(now: at(day: 13, hour: 1))
+        XCTAssertNotEqual(store.dateListIdentity, before)
+    }
 }

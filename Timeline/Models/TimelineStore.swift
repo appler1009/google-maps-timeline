@@ -71,6 +71,11 @@ final class TimelineStore {
     /// redo every time a merge or a recorded stay reloads the library.
     private var hasOpenedOnLaunch = false
     private(set) var monthGroups: [(month: Date, days: [DayRecord])] = []
+    /// Which days the Dates list holds, as one value. The macOS sidebar list
+    /// failed to draw a day inserted at the top of a month it already showed —
+    /// today arrived, was selected and put on the map, and its row never
+    /// appeared — so the list is rebuilt whenever this changes.
+    private(set) var dateListIdentity = 0
     private(set) var yearOptions: [Int] = []
     private(set) var monthOptions: [Int] = []
 
@@ -1320,6 +1325,12 @@ final class TimelineStore {
             }
         }
         monthGroups = groups
+        var hasher = Hasher()
+        for group in groups {
+            for day in group.days { hasher.combine(day.day) }
+        }
+        let identity = hasher.finalize()
+        if identity != dateListIdentity { dateListIdentity = identity }
     }
 
     static func dayTitle(_ date: Date) -> String {
