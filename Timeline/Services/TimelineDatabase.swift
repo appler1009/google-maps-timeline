@@ -162,14 +162,22 @@ actor TimelineDatabase {
         return low < starts.count ? starts[low] : nil
     }
 
-    /// Delete open rows the recorder has since moved on from.
+    /// Retire open rows the recorder has since moved on from.
     ///
     /// Only one stay is ever in progress, so an open row with a recorded stay
     /// beginning after it was never closed: its departure was reported against
     /// a later arrival at the same place, which had overwritten `open_visit`,
-    /// and nothing was left pointing at the first row. Deleted rather than
-    /// closed — when you left is unknown, and the stays after it already say
-    /// where you went. The deletion is logged so it reaches the other devices.
+    /// and nothing was left pointing at the first row.
+    ///
+    /// When the next stay is at the same place you were still there, so the
+    /// row is closed where that stay begins and keeps the arrival nobody else
+    /// has. When it is somewhere else, when you left is unknown and the stays
+    /// after it already say where you went, so the row is deleted. Either
+    /// change is logged so it reaches the other devices.
+    ///
+    /// Only recorded stays count as having moved on. A stay added by hand says
+    /// where you were, not that the recorder saw you leave, and the read path
+    /// already stops an open row at whatever stay comes next.
     @discardableResult
     func retireSupersededOpenStays(now: Date = Date()) throws -> Int {
         guard let db else { return 0 }
@@ -178,12 +186,15 @@ actor TimelineDatabase {
         guard sqlite3_prepare_v2(
             db,
             """
-            SELECT o.id FROM visits o
-            WHERE o.is_open = 1 AND EXISTS (
-                SELECT 1 FROM visits v
+            SELECT o.id, o.start, COALESCE(o.place_id, o.place_key), n.start, COALESCE(n.place_id, n.place_key)
+            FROM visits o
+            JOIN visits n ON n.id = (
+                SELECT v.id FROM visits v
                 WHERE v.id != o.id AND v.shadowed = 0 AND v.source = 'device'
-                  AND v.start > o.start AND v.start <= ?
+                  AND v.start > o.start AND v.start <= ?1
+                ORDER BY v.start LIMIT 1
             )
+            WHERE o.is_open = 1
             """,
             -1,
             &statement,
@@ -191,15 +202,24 @@ actor TimelineDatabase {
         ) == SQLITE_OK else { throw TimelineDatabaseError.execute(errmsg()) }
         // A stay that has not begun yet ended nothing.
         sqlite3_bind_double(statement, 1, now.timeIntervalSince1970)
-        var ids: [String] = []
+        var superseded: [(id: String, start: Date, samePlace: Bool, nextStart: Date)] = []
         while sqlite3_step(statement) == SQLITE_ROW {
-            if let id = text(statement, 0) { ids.append(id) }
+            guard let id = text(statement, 0) else { continue }
+            superseded.append((
+                id: id,
+                start: Date(timeIntervalSince1970: sqlite3_column_double(statement, 1)),
+                samePlace: text(statement, 2) != nil && text(statement, 2) == text(statement, 4),
+                nextStart: Date(timeIntervalSince1970: sqlite3_column_double(statement, 3))
+            ))
         }
-        var removed = 0
-        for id in ids {
-            if try deleteVisit(id: id, reason: "open stay superseded", now: now) { removed += 1 }
+        var retired = 0
+        for row in superseded {
+            let done = row.samePlace
+                ? try setVisitTimes(id: row.id, start: row.start, end: row.nextStart, now: now)
+                : try deleteVisit(id: row.id, reason: "open stay superseded", now: now)
+            if done { retired += 1 }
         }
-        return removed
+        return retired
     }
 
     /// The in-progress stay as a visit ending now, or nil when there isn't one.

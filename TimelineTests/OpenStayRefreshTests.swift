@@ -298,13 +298,52 @@ final class OpenStayRefreshTests: XCTestCase {
         XCTAssertTrue(row.isOpen)
     }
 
-    func testARecordedStayAfterAnOpenRowRetiresIt() async throws {
+    /// Still there when the next stay began, so the arrival is kept.
+    func testAnOpenRowFollowedByTheSamePlaceIsClosedWhereThatStayBegins() async throws {
         try await recordLeftBehindOpenRow()
         let retired = try await database.retireSupersededOpenStays(now: at(day: 22, hour: 10))
         XCTAssertEqual(retired, 1)
         let loaded = try await database.loadBatch(now: at(day: 22, hour: 10))
         let batch = try XCTUnwrap(loaded)
-        XCTAssertEqual(batch.visits.map(\.id), ["closed"])
+        let row = try XCTUnwrap(batch.visits.first { $0.id == "left-open" })
+        XCTAssertEqual(row.start, at(day: 21, hour: 16, minute: 37))
+        XCTAssertEqual(row.end, at(day: 21, hour: 16, minute: 59))
+        XCTAssertFalse(row.isOpen)
+    }
+
+    /// Gone somewhere else, at a time nobody saw, so the row goes.
+    func testAnOpenRowFollowedBySomewhereElseIsDeleted() async throws {
+        try await database.record(batch: TimelineBatch(visits: [
+            visit("left-open", start: at(day: 21, hour: 16, minute: 37), end: at(day: 21, hour: 16, minute: 37), open: true),
+            TimelineVisit(
+                id: "cafe",
+                start: at(day: 21, hour: 16, minute: 43),
+                end: at(day: 21, hour: 16, minute: 58),
+                coordinate: CLLocationCoordinate2D(latitude: 49.2113, longitude: -123.1124),
+                semanticType: nil,
+                placeKey: "cafe"
+            ),
+        ], activities: [], paths: []))
+        let retired = try await database.retireSupersededOpenStays(now: at(day: 22, hour: 10))
+        XCTAssertEqual(retired, 1)
+        let loaded = try await database.loadBatch(now: at(day: 22, hour: 10))
+        let batch = try XCTUnwrap(loaded)
+        XCTAssertEqual(batch.visits.map(\.id), ["cafe"])
+    }
+
+    /// A stay added by hand is not the recorder seeing you leave.
+    func testAHandAddedStayDoesNotRetireAnOpenRow() async throws {
+        try await database.record(batch: TimelineBatch(visits: [
+            visit("left-open", start: at(day: 21, hour: 16, minute: 37), end: at(day: 21, hour: 16, minute: 37), open: true)
+        ], activities: [], paths: []))
+        try await database.record(
+            batch: TimelineBatch(visits: [
+                visit("typed", start: at(day: 21, hour: 17), end: at(day: 21, hour: 17, minute: 10))
+            ], activities: [], paths: []),
+            source: .manual
+        )
+        let retired = try await database.retireSupersededOpenStays(now: at(day: 22, hour: 10))
+        XCTAssertEqual(retired, 0)
     }
 
     func testASecondArrivalRetiresTheOpenRowItReplaces() async throws {
@@ -317,6 +356,8 @@ final class OpenStayRefreshTests: XCTestCase {
         let open = batch.visits.filter(\.isOpen)
         XCTAssertEqual(open.count, 1)
         XCTAssertEqual(open.first?.start, second.start)
+        let earlier = try XCTUnwrap(batch.visits.first { $0.start == first.start })
+        XCTAssertEqual(earlier.end, second.start)
     }
 
     /// The Mac list is rebuilt off this, so it has to move when a day arrives.
