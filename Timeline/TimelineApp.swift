@@ -93,6 +93,24 @@ final class TimelineAppDelegate: NSObject, NSApplicationDelegate {
         present(window)
     }
 
+    /// WindowGroup can still wake up after the fallback is showing. Two
+    /// windows put every element in the tree twice, and the test may already
+    /// be driving the first — so the late one goes. Checked on every pass of
+    /// the event loop, since a window opened behind the key one never becomes
+    /// key itself; nothing is done until a fallback exists.
+    func applicationDidUpdate(_ notification: Notification) {
+        guard let fallback = fallbackWindow else { return }
+        for window in NSApp.windows where window !== fallback && window.isVisible {
+            // A sheet, panel, child, menu, tooltip or popover belongs to the
+            // fallback; only a second titled top-level window is WindowGroup
+            // arriving late.
+            guard window.styleMask.contains(.titled), window.level == .normal,
+                  window.sheetParent == nil, window.parent == nil, !(window is NSPanel),
+                  window.contentView != nil else { continue }
+            window.close()
+        }
+    }
+
     private func present(_ window: NSWindow) {
         if TimelineLaunch.isUITesting {
             // Clear + non-opaque windows drop out of the accessibility tree

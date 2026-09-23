@@ -1,7 +1,12 @@
 import SwiftUI
 
 struct TimelineAppScene: View {
-    @State private var store = TimelineLaunch.isUITesting ? TimelineStore.uiTesting() : TimelineStore()
+    @State private var store = TimelineLaunch.isUITesting ? Self.uiTestStore : TimelineStore()
+    /// One per process. Under XCTest on macOS the scene can be hosted twice —
+    /// the app delegate's fallback window, then WindowGroup waking up late —
+    /// and `uiTesting()` starts by deleting the test library, so a second
+    /// store would wipe the first one's rows out from under it.
+    private static let uiTestStore = TimelineStore.uiTesting()
     #if os(macOS)
     @State private var mcp = MCPController.shared
     #endif
