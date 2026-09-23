@@ -1,7 +1,12 @@
 import SwiftUI
 
 struct TimelineAppScene: View {
-    @State private var store = TimelineLaunch.isUITesting ? TimelineStore.uiTesting() : TimelineStore()
+    @State private var store = TimelineLaunch.isUITesting ? Self.uiTestStore : TimelineStore()
+    /// One per process. Under XCTest on macOS the scene can be hosted twice —
+    /// the app delegate's fallback window, then WindowGroup waking up late —
+    /// and `uiTesting()` starts by deleting the test library, so a second
+    /// store would wipe the first one's rows out from under it.
+    private static let uiTestStore = TimelineStore.uiTesting()
     #if os(macOS)
     @State private var mcp = MCPController.shared
     #endif
@@ -424,8 +429,16 @@ private final class WindowChromeView: NSView {
         window.styleMask.insert(.fullSizeContentView)
         window.toolbarStyle = .unified
         window.appearance = NSAppearance(named: .darkAqua)
-        window.backgroundColor = .clear
-        window.isOpaque = false
+        if TimelineLaunch.isUITesting {
+            // Clear + non-opaque windows drop out of the accessibility tree
+            // under XCTest on recent macOS — the app shows as Disabled with
+            // only a menu bar, and every UI test query fails.
+            window.backgroundColor = NSColor.black
+            window.isOpaque = true
+        } else {
+            window.backgroundColor = .clear
+            window.isOpaque = false
+        }
     }
 }
 
@@ -437,8 +450,13 @@ private func bringWindowOnscreen() {
         window.titlebarSeparatorStyle = .automatic
         window.styleMask.insert(.fullSizeContentView)
         window.appearance = NSAppearance(named: .darkAqua)
-        window.backgroundColor = .clear
-        window.isOpaque = false
+        if TimelineLaunch.isUITesting {
+            window.backgroundColor = NSColor.black
+            window.isOpaque = true
+        } else {
+            window.backgroundColor = .clear
+            window.isOpaque = false
+        }
         let target = NSScreen.main?.visibleFrame ?? NSRect(x: 80, y: 80, width: 1400, height: 900)
         if window.frame.width > target.width * 0.95 || !target.intersects(window.frame) {
             let width = min(1280, target.width - 40)
