@@ -238,7 +238,7 @@ final class LuxPhotoLink {
 
         // Always paint cache synchronously first — don’t wait on Lux.
         if let cached = dayStripCache[cacheKey] {
-            let painted = Self.withSyncThumbnails(cached)
+            let painted = Self.withSyncThumbnails(Self.fitted(cached, to: day.visits))
             photosByVisitID = painted
             dayStripCache[cacheKey] = painted
             if canQuery {
@@ -248,7 +248,7 @@ final class LuxPhotoLink {
         }
 
         if let refs = Self.loadDayStripRefs(cacheKey) {
-            let painted = Self.withSyncThumbnails(Self.photos(from: refs))
+            let painted = Self.withSyncThumbnails(Self.fitted(Self.photos(from: refs), to: day.visits))
             photosByVisitID = painted
             dayStripCache[cacheKey] = painted
             TimelineLog.info("lux day strip disk hit", ["day": cacheKey, "visits": "\(painted.count)"])
@@ -600,11 +600,65 @@ final class LuxPhotoLink {
             if list.count > maxPhotosPerVisit {
                 list = Array(list.prefix(maxPhotosPerVisit))
             }
-            for visitID in visitIDs {
-                next[visitID] = list
-            }
+            // Under the stay the row reads, and no other. Filing the list under
+            // every stay in the run kept it there after the run was split — a
+            // stay added between two stays at home — so one photo showed on both.
+            next[visitIDs[0]] = list
         }
         return next
+    }
+
+    /// Cached photos, moved onto the stays the day has now.
+    ///
+    /// The cache is by day, and a day's stays change under it: a stay added
+    /// between two at home splits one run into two. Each photo goes to the run
+    /// at the place it was filed under whose time is nearest its capture, and
+    /// is filed under that run's first stay. Stays that are gone take their
+    /// photos with them until the next query.
+    nonisolated static func fitted(
+        _ cached: [String: [LuxVisitPhoto]],
+        to visits: [TimelineVisit]
+    ) -> [String: [LuxVisitPhoto]] {
+        let runs = PlaceVisitRun.coalesced(from: visits)
+        var runIndexByVisit: [String: Int] = [:]
+        for (index, run) in runs.enumerated() {
+            for visit in run.visits { runIndexByVisit[visit.id] = index }
+        }
+        func span(_ run: PlaceVisitRun) -> (start: Date, end: Date) {
+            (run.visits.map(\.start).min() ?? run.representative.start,
+             run.visits.map(\.end).max() ?? run.representative.end)
+        }
+        func gap(_ moment: Date, _ run: PlaceVisitRun) -> TimeInterval {
+            let (start, end) = span(run)
+            if moment < start { return start.timeIntervalSince(moment) }
+            if moment > end { return moment.timeIntervalSince(end) }
+            return 0
+        }
+
+        var result: [String: [LuxVisitPhoto]] = [:]
+        var placed = Set<String>()
+        for visitID in cached.keys.sorted() {
+            guard let filedRun = runIndexByVisit[visitID], let photos = cached[visitID] else { continue }
+            let place = runs[filedRun].placeKey
+            for photo in photos where placed.insert(photo.id).inserted {
+                // No capture time to go by: it stays on the run it was filed
+                // under — the first half of a split — until Lux is asked again.
+                var target = filedRun
+                if let captured = photo.item.capturedAt {
+                    target = runs.indices
+                        .filter { runs[$0].placeKey == place }
+                        .min { gap(captured, runs[$0]) < gap(captured, runs[$1]) } ?? filedRun
+                }
+                result[runs[target].representative.id, default: []].append(photo)
+            }
+        }
+        for key in result.keys {
+            result[key]?.sort {
+                ($0.item.distanceMeters ?? .greatestFiniteMagnitude)
+                    < ($1.item.distanceMeters ?? .greatestFiniteMagnitude)
+            }
+        }
+        return result
     }
 
     private nonisolated static func haversineMeters(
