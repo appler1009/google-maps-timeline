@@ -28,6 +28,7 @@
 		18B9EA1106022C3C35237159 /* RouteSnapperTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 71B4F471B4A574BC0ABB38C6 /* RouteSnapperTests.swift */; };
 		18E2A4AA27EBF3384CC2D4CB /* PlaceClusterer.swift in Sources */ = {isa = PBXBuildFile; fileRef = E62991B0B2E82A1FDD015746 /* PlaceClusterer.swift */; };
 		192A91265123FFACBAE52284 /* MCPTimelineToolsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B047398999757AF8FEF209EF /* MCPTimelineToolsTests.swift */; };
+		1994F8659D87D6274011F9E4 /* LuxCompanionPoolTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 565E0F050CCB9118DAC611F5 /* LuxCompanionPoolTests.swift */; };
 		1ACE10F721E4F439B3D73E69 /* StopRepairTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB8F7FB10F4B9C7394C7A61D /* StopRepairTests.swift */; };
 		1D208523AE317032693F9545 /* MCPMapLookup.swift in Sources */ = {isa = PBXBuildFile; fileRef = E86F17483CBD93F47E5F1321 /* MCPMapLookup.swift */; };
 		1D8314A3B0A26F26DE99CCFE /* LuxPhotoLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F42083B6EA50D85B014CFA4 /* LuxPhotoLink.swift */; };
@@ -189,6 +190,7 @@
 		D043A1DCB7AAD23D56E7DA4D /* TimelineStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 55715F8BD5815481AB80CCAE /* TimelineStore.swift */; };
 		D13FF8A865DAAD258FCE22A3 /* TimelineRecordMapper.swift in Sources */ = {isa = PBXBuildFile; fileRef = DF833A290D79E26BC71C097D /* TimelineRecordMapper.swift */; };
 		D1F27AE9FF7657C211F99A26 /* AddVisitView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0418004F2FF8827C613D6289 /* AddVisitView.swift */; };
+		D368D2E75BFD9CD1F6C3BC2C /* LuxCompanionPoolTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 565E0F050CCB9118DAC611F5 /* LuxCompanionPoolTests.swift */; };
 		D3A7619A930F8160FB9D2A07 /* CaptureTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B79901C791A24DE1AB1AEA0 /* CaptureTests.swift */; };
 		D3DCAC6B4E27E77F960E3464 /* PlaceRanking.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D2CF03D1D5D400E2DAF6AB3 /* PlaceRanking.swift */; };
 		D3FE925EC69D1014ADE3817B /* Landmark.swift in Sources */ = {isa = PBXBuildFile; fileRef = 89C557260FF448CAE3747FD8 /* Landmark.swift */; };
@@ -289,6 +291,7 @@
 		4DD3E1CBBB5D1358CFDEB296 /* MCPTimelineTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MCPTimelineTools.swift; sourceTree = "<group>"; };
 		52C957366874AE084D0C1499 /* TimelineChangeLog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimelineChangeLog.swift; sourceTree = "<group>"; };
 		55715F8BD5815481AB80CCAE /* TimelineStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimelineStore.swift; sourceTree = "<group>"; };
+		565E0F050CCB9118DAC611F5 /* LuxCompanionPoolTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LuxCompanionPoolTests.swift; sourceTree = "<group>"; };
 		5A23761AFD697B0BB9D1253B /* MCPService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MCPService.swift; sourceTree = "<group>"; };
 		5CA4D65EE9994C83850722CB /* Timeline.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Timeline.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		5D2CF03D1D5D400E2DAF6AB3 /* PlaceRanking.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaceRanking.swift; sourceTree = "<group>"; };
@@ -402,6 +405,7 @@
 				1B79901C791A24DE1AB1AEA0 /* CaptureTests.swift */,
 				F3D570FD3C06A7239A56A812 /* GeoTests.swift */,
 				1692891C22F086F7BA2EFC90 /* LocalExportTests.swift */,
+				565E0F050CCB9118DAC611F5 /* LuxCompanionPoolTests.swift */,
 				0809CE40B88079A889499141 /* ManualVisitSyncTests.swift */,
 				E0F49A8E7037AC3A6458AD93 /* MarkerMapTests.swift */,
 				3898D1067B77FFEBFE4EBE72 /* MCPHTTPTests.swift */,
@@ -1016,6 +1020,7 @@
 				D3A7619A930F8160FB9D2A07 /* CaptureTests.swift in Sources */,
 				893BAC3E9EAA11C4E9636968 /* GeoTests.swift in Sources */,
 				67058B211D8ECBDB38334062 /* LocalExportTests.swift in Sources */,
+				1994F8659D87D6274011F9E4 /* LuxCompanionPoolTests.swift in Sources */,
 				96BD5D3EE3F3FC2BF78253FB /* MCPHTTPTests.swift in Sources */,
 				7A74D1B04FAE1EA6391CBF29 /* MCPPairingTests.swift in Sources */,
 				8C6052AB3315F0BF4385EB24 /* MCPServiceTests.swift in Sources */,
@@ -1053,6 +1058,7 @@
 				AF6D80DC85AE05797F4B2A65 /* CaptureTests.swift in Sources */,
 				A0FC3C8AB26379B2D2DEFE7C /* GeoTests.swift in Sources */,
 				B3C48913289C760257E4D815 /* LocalExportTests.swift in Sources */,
+				D368D2E75BFD9CD1F6C3BC2C /* LuxCompanionPoolTests.swift in Sources */,
 				944FD0185935A0A2DEA26606 /* MCPHTTPTests.swift in Sources */,
 				5A6A39CBB8B707C26054F239 /* MCPPairingTests.swift in Sources */,
 				A5B57248CF40DB0F390E75A6 /* MCPServiceTests.swift in Sources */,
