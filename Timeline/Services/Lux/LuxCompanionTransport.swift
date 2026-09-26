@@ -90,9 +90,19 @@ actor LuxCompanionHTTPPool {
     private let channels: [Channel]
     private var next = 0
 
-    init(endpoint: NWEndpoint, pinnedFingerprint: String?, size: Int = 4) {
+    /// `parameters` exists so tests can run the pool over plain TCP; production always uses the
+    /// pinned TLS parameters.
+    init(
+        endpoint: NWEndpoint,
+        pinnedFingerprint: String?,
+        size: Int = 4,
+        parameters: (@Sendable () -> NWParameters)? = nil
+    ) {
+        let makeParameters = parameters ?? {
+            LuxCompanionTLS.parameters(pinnedFingerprint: pinnedFingerprint, capture: nil)
+        }
         channels = (0..<max(1, size)).map { _ in
-            Channel(endpoint: endpoint, pinnedFingerprint: pinnedFingerprint)
+            Channel(endpoint: endpoint, isPinned: pinnedFingerprint != nil, makeParameters: makeParameters)
         }
     }
 
@@ -122,12 +132,24 @@ actor LuxCompanionHTTPPool {
 /// One serial keep-alive channel (actor = one in-flight request).
 private actor Channel {
     private let endpoint: NWEndpoint
-    private let pinnedFingerprint: String?
+    private let isPinned: Bool
+    private let makeParameters: @Sendable () -> NWParameters
     private var connection: NWConnection?
 
-    init(endpoint: NWEndpoint, pinnedFingerprint: String?) {
+    init(endpoint: NWEndpoint, isPinned: Bool, makeParameters: @escaping @Sendable () -> NWParameters) {
         self.endpoint = endpoint
-        self.pinnedFingerprint = pinnedFingerprint
+        self.isPinned = isPinned
+        self.makeParameters = makeParameters
+    }
+
+    /// An `NWConnection` stays open until it is cancelled, whether or not anything still holds it.
+    /// `LuxPhotoLink` replaces its client on every reconnect and never invalidated the old pool, so
+    /// each reconnect left this channel's keep-alive connection open for the life of the process:
+    /// 173 of them to Lux after four days, by which point Lux could open no new network flow and
+    /// the phone could no longer reach it (2026-09-26). Closing on release covers every way a
+    /// client is dropped, including a failed reconnect's.
+    deinit {
+        connection?.cancel()
     }
 
     func invalidate() {
@@ -176,8 +198,8 @@ private actor Channel {
         }
         let opened = try await LuxCompanionHTTP.open(
             endpoint: endpoint,
-            pinnedFingerprint: pinnedFingerprint,
-            captureFingerprint: nil
+            parameters: makeParameters(),
+            isPinned: isPinned
         )
         connection = opened
         return opened
@@ -202,8 +224,11 @@ enum LuxCompanionHTTP {
     ) async throws -> Data {
         let connection = try await open(
             endpoint: endpoint,
-            pinnedFingerprint: pinnedFingerprint,
-            captureFingerprint: captureFingerprint
+            parameters: LuxCompanionTLS.parameters(
+                pinnedFingerprint: pinnedFingerprint,
+                capture: captureFingerprint
+            ),
+            isPinned: pinnedFingerprint != nil
         )
         defer { connection.cancel() }
         let (data, _) = try await exchange(
@@ -219,15 +244,10 @@ enum LuxCompanionHTTP {
 
     fileprivate static func open(
         endpoint: NWEndpoint,
-        pinnedFingerprint: String?,
-        captureFingerprint: LuxCompanionTLS.FingerprintBox?
+        parameters: NWParameters,
+        isPinned: Bool
     ) async throws -> NWConnection {
-        let params = LuxCompanionTLS.parameters(
-            pinnedFingerprint: pinnedFingerprint,
-            capture: captureFingerprint
-        )
-        let isPinned = pinnedFingerprint != nil
-        let connection = NWConnection(to: endpoint, using: params)
+        let connection = NWConnection(to: endpoint, using: parameters)
         let queue = DispatchQueue(label: "timeline.lux.http")
         try await withThrowingTaskGroup(of: Void.self) { group in
             group.addTask {
