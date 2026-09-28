@@ -30,6 +30,35 @@ final class TimelineParserTests: XCTestCase {
         XCTAssertEqual(coordinate.longitude, Landmark.eiffelTower.longitude, accuracy: 0.000001)
     }
 
+    /// A night at home that starts one evening and ends the next afternoon is one
+    /// stay. Each day shows the part of it that fell on that day.
+    func testAStayThatRunsPastMidnightShowsOnBothDays() throws {
+        let calendar = Calendar.current
+        let arrived = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 9, day: 26, hour: 18, minute: 45)))
+        let left = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 9, day: 27, hour: 16, minute: 15)))
+        let visit = TimelineVisit(
+            id: "home-overnight",
+            start: arrived,
+            end: left,
+            coordinate: CLLocationCoordinate2D(latitude: 49.27, longitude: -123.07),
+            semanticType: "Home",
+            placeKey: "home"
+        )
+        let parsed = TimelineParser.assemble(
+            TimelineBatch(visits: [visit], activities: [], paths: []),
+            sourceName: "test",
+            now: left
+        )
+        let saturday = calendar.startOfDay(for: arrived)
+        let sunday = calendar.startOfDay(for: left)
+        let onSaturday = try XCTUnwrap(parsed.days.first { $0.day == saturday }?.visits.first { $0.id == visit.id })
+        let onSunday = try XCTUnwrap(parsed.days.first { $0.day == sunday }?.visits.first { $0.id == visit.id })
+        XCTAssertEqual(onSaturday.start, arrived)
+        XCTAssertEqual(onSaturday.end, sunday)
+        XCTAssertEqual(onSunday.start, sunday)
+        XCTAssertEqual(onSunday.end, left)
+    }
+
     func testRejectsUnrecognizedJSON() {
         XCTAssertThrowsError(try TimelineParser.parse(data: Data("{\"foo\":1}".utf8), sourceName: "x")) { error in
             guard case TimelineParseError.unrecognized = error else {
