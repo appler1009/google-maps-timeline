@@ -57,12 +57,14 @@ struct AddVisitView: View {
                     }
 
                     Section {
-                        DatePicker("Arrived", selection: $start, displayedComponents: [.hourAndMinute])
+                        // Date as well as time. A time-only picker keeps both ends
+                        // on the day the sheet was opened for, so a night at home
+                        // that runs into the next afternoon cannot be entered.
+                        // No `in: start...` either: a bounded time wheel wraps a
+                        // step below the bound round to the other half of the day.
+                        DatePicker("Arrived", selection: $start, displayedComponents: [.date, .hourAndMinute])
                             .accessibilityIdentifier("add-visit-start")
-                        // No `in: start...`: a time-only picker with a lower bound
-                        // wraps a step below it round to the other half of the
-                        // day, so 8:46 AM before an 8:49 arrival became 8:46 PM.
-                        DatePicker("Left", selection: $end, displayedComponents: [.hourAndMinute])
+                        DatePicker("Left", selection: $end, displayedComponents: [.date, .hourAndMinute])
                             .accessibilityIdentifier("add-visit-end")
                     } header: {
                         Text("When")
@@ -72,6 +74,8 @@ struct AddVisitView: View {
                         } else if !timesAreInOrder {
                             Text("Left is before Arrived. Set the times in order.")
                                 .foregroundStyle(Palette.copper)
+                        } else if runsPastMidnight {
+                            Text("This runs past midnight, so it shows on both days. \(timingExplanation)")
                         } else {
                             Text(timingExplanation)
                         }
@@ -132,6 +136,10 @@ struct AddVisitView: View {
     }
 
     private var timesAreInOrder: Bool { end >= start }
+
+    private var runsPastMidnight: Bool {
+        Calendar.current.startOfDay(for: end) > Calendar.current.startOfDay(for: start)
+    }
 
     private var timingExplanation: String {
         if isGuessing { return "Reading the day's movement…" }
