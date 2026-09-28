@@ -269,12 +269,20 @@ actor TimelineDatabase {
 
     /// What the phone recorded. No `imports` row: this is not an import, and the
     /// sidebar's source name should keep naming the last export the user opened.
-    func record(batch: TimelineBatch, source: RecordSource = .device) throws {
+    ///
+    /// `replacingRemoval` is for putting a stay back on purpose. Every other
+    /// write leaves a hand-removed stay removed: its id is the moment it began,
+    /// so the same arrival delivered again would otherwise recreate the row.
+    func record(
+        batch: TimelineBatch,
+        source: RecordSource = .device,
+        replacingRemoval: Bool = false
+    ) throws {
         guard let db else { throw TimelineDatabaseError.open }
         guard !batch.visits.isEmpty || !batch.activities.isEmpty || !batch.paths.isEmpty else { return }
         try exec("BEGIN IMMEDIATE")
         do {
-            try upsertVisits(batch.visits, db: db, source: source)
+            try upsertVisits(batch.visits, db: db, source: source, replacingRemoval: replacingRemoval)
             try upsertActivities(batch.activities, db: db, source: source)
             try upsertPaths(batch.paths, db: db, source: source)
             try exec("COMMIT")
@@ -535,6 +543,46 @@ actor TimelineDatabase {
         }
     }
 
+    /// A stay taken off the day by the person it is about.
+    ///
+    /// The id is the moment the stay began, so the same arrival delivered again
+    /// would write the row straight back. This reason is how that removal is
+    /// told apart from one the recorder made itself.
+    static let removedByHand = "removed by hand"
+
+    /// True when this stay was taken off by hand and has not been put back.
+    func wasRemovedByHand(id: String) throws -> Bool {
+        guard let db, !id.isEmpty else { return false }
+        let present: Bool = {
+            var statement: OpaquePointer?
+            defer { sqlite3_finalize(statement) }
+            guard sqlite3_prepare_v2(
+                db,
+                "SELECT 1 FROM visits WHERE id = ? LIMIT 1",
+                -1,
+                &statement,
+                nil
+            ) == SQLITE_OK else { return false }
+            sqlite3_bind_text(statement, 1, id, -1, Self.transient)
+            return sqlite3_step(statement) == SQLITE_ROW
+        }()
+        if present { return false }
+
+        var statement: OpaquePointer?
+        defer { sqlite3_finalize(statement) }
+        guard sqlite3_prepare_v2(
+            db,
+            "SELECT change, reason FROM visit_history WHERE id = ? ORDER BY seq DESC LIMIT 1",
+            -1,
+            &statement,
+            nil
+        ) == SQLITE_OK else { return false }
+        sqlite3_bind_text(statement, 1, id, -1, Self.transient)
+        guard sqlite3_step(statement) == SQLITE_ROW else { return false }
+        return text(statement, 0) == VisitVersion.Change.deleted.rawValue
+            && text(statement, 1) == Self.removedByHand
+    }
+
     /// Take a stay out of the timeline without destroying it.
     @discardableResult
     func deleteVisit(id: String, reason: String? = nil, now: Date = Date()) throws -> Bool {
@@ -616,7 +664,11 @@ actor TimelineDatabase {
         }
         guard let version else { return nil }
         try? rememberVisit(id: id, change: .times, reason: "replaced by a restore", now: now, db: db)
-        try record(batch: TimelineBatch(visits: [version.visit], activities: [], paths: []), source: version.source)
+        try record(
+            batch: TimelineBatch(visits: [version.visit], activities: [], paths: []),
+            source: version.source,
+            replacingRemoval: true
+        )
         return version.visit
     }
 
@@ -1563,6 +1615,10 @@ actor TimelineDatabase {
 
     func setOpenStop(_ stop: CapturedStop, placeKey: String) throws {
         guard let db else { throw TimelineDatabaseError.open }
+        // Opening writes the row. A stay just taken off the day must not come
+        // back because the arrival is still the one Core Location is reporting.
+        let openedID = PlaceClusterer.visitID(placeKey: placeKey, start: stop.start)
+        if try wasRemovedByHand(id: openedID) { return }
         var statement: OpaquePointer?
         defer { sqlite3_finalize(statement) }
         guard sqlite3_prepare_v2(
@@ -1628,6 +1684,7 @@ actor TimelineDatabase {
         let since = now.timeIntervalSince(open.stop.start)
         guard since >= 0, since <= Self.longestOpenStay else { return false }
         let id = PlaceClusterer.visitID(placeKey: open.placeKey, start: open.stop.start)
+        if try wasRemovedByHand(id: id) { return false }
         if try loadVisits().contains(where: { $0.id == id }) { return false }
         try record(
             batch: TimelineBatch(
@@ -2781,7 +2838,12 @@ actor TimelineDatabase {
         try exec(db, "ALTER TABLE \(table) ADD COLUMN \(column)")
     }
 
-    private func upsertVisits(_ visits: [TimelineVisit], db: OpaquePointer, source: RecordSource) throws {
+    private func upsertVisits(
+        _ visits: [TimelineVisit],
+        db: OpaquePointer,
+        source: RecordSource,
+        replacingRemoval: Bool = false
+    ) throws {
         var statement: OpaquePointer?
         defer { sqlite3_finalize(statement) }
         let sql = """
@@ -2818,6 +2880,7 @@ actor TimelineDatabase {
             throw TimelineDatabaseError.execute(errmsg())
         }
         for visit in visits {
+            if !replacingRemoval, try wasRemovedByHand(id: visit.id) { continue }
             sqlite3_reset(statement)
             sqlite3_clear_bindings(statement)
             sqlite3_bind_text(statement, 1, visit.id, -1, Self.transient)

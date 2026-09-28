@@ -745,6 +745,8 @@ struct SelectionCard: View {
     @State private var addingStayOn: Date?
     /// The stay whose "Move to another place" was chosen.
     @State private var movingVisit: TimelineVisit?
+    /// The stay whose "Remove this stay" was chosen, waiting on confirmation.
+    @State private var pendingRemoval: StayRemoval?
     /// The place whose "Set location…" was chosen, from the map rather than the
     /// sidebar — correcting a pin is most natural while looking at it.
     @State private var relocatingPlaceID: String?
@@ -841,6 +843,24 @@ struct SelectionCard: View {
         .addVisitSheet(day: $addingStayOn, store: store)
         .moveVisitSheet(visit: $movingVisit, store: store)
         .setPlaceLocationSheet(placeID: $relocatingPlaceID, store: store)
+        .confirmationDialog(
+            pendingRemoval.map { "Remove \($0.placeName)?" } ?? "Remove this stay?",
+            isPresented: Binding(
+                get: { pendingRemoval != nil },
+                set: { if !$0 { pendingRemoval = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("Remove", role: .destructive) {
+                guard let pending = pendingRemoval else { return }
+                pendingRemoval = nil
+                store.removeVisits(pending.visitIDs, clearOpenStop: pending.includesOpen)
+            }
+            .accessibilityIdentifier("confirm-remove-stay")
+            Button("Cancel", role: .cancel) { pendingRemoval = nil }
+        } message: {
+            Text(pendingRemoval?.summary ?? "")
+        }
         .onAppear { lux.refreshPhotos(for: store.activeDay) }
         .onChange(of: store.selectedDayID) { _, _ in
             lux.refreshPhotos(for: store.activeDay)
@@ -1100,22 +1120,7 @@ struct SelectionCard: View {
             .accessibilityIdentifier("legend-visit-\(visit.id)")
             .accessibilityHint("Opens the place for this stay")
             .contextMenu {
-                if group.visits.contains(where: \.isOpen) {
-                    // Still happening, and a real row, so it can be put right
-                    // without waiting for it to end.
-                    Text("Still here — ends when you leave")
-                    Button("Move to another place…") {
-                        movingVisit = visit
-                    }
-                } else if visit.isDerived {
-                    // Nothing to move: this one was inferred from the absence of
-                    // travel and has no row behind it.
-                    Text("Filled in from the gap")
-                } else {
-                    Button("Move to another place…") {
-                        movingVisit = visit
-                    }
-                }
+                stayActions(group.visits, representative: visit, includeDate: false)
             }
         }
         #if os(iOS)
@@ -1205,6 +1210,9 @@ struct SelectionCard: View {
                         store.select(day: day)
                     }
                 }
+                .contextMenu {
+                    stayActions([visit], representative: visit, includeDate: true)
+                }
             }
             if place.visitCount > place.recentVisits.count {
                 Text("\(place.visitCount - place.recentVisits.count) older visits")
@@ -1275,6 +1283,54 @@ struct SelectionCard: View {
         return parts.joined(separator: " · ")
     }
 
+    /// Long-press (or right-click) a stay to move it, or to take it off the day.
+    /// A gap filled in from the absence of travel has no row, so it cannot be removed.
+    @ViewBuilder
+    private func stayActions(
+        _ visits: [TimelineVisit],
+        representative: TimelineVisit,
+        includeDate: Bool
+    ) -> some View {
+        if visits.contains(where: \.isOpen) {
+            // Still happening, and a real row, so it can be put right
+            // without waiting for it to end.
+            Text("Still here — ends when you leave")
+            Button("Move to another place…") { movingVisit = representative }
+        } else if representative.isDerived {
+            Text("Filled in from the gap")
+        } else {
+            Button("Move to another place…") { movingVisit = representative }
+        }
+        if let removal = stayRemoval(for: visits, includeDate: includeDate) {
+            Button("Remove this stay", role: .destructive) {
+                // The menu is still dismissing. Presenting the confirmation in
+                // the same turn drops it.
+                Task { @MainActor in pendingRemoval = removal }
+            }
+            .accessibilityIdentifier("remove-stay")
+        }
+    }
+
+    private func stayRemoval(for visits: [TimelineVisit], includeDate: Bool) -> StayRemoval? {
+        let editable = visits.filter { !$0.isDerived }
+        guard let earliest = editable.min(by: { $0.start < $1.start }) else { return nil }
+        let name = placeTitle(earliest)
+        let when = earliest.start.formatted(
+            date: includeDate ? .abbreviated : .omitted,
+            time: .shortened
+        )
+        let off = includeDate ? "the timeline" : "this day"
+        let summary = editable.count == 1
+            ? "\(when) comes off \(off)."
+            : "These \(editable.count) stays come off \(off)."
+        return StayRemoval(
+            visitIDs: editable.map(\.id),
+            placeName: name,
+            summary: summary,
+            includesOpen: editable.contains(where: \.isOpen)
+        )
+    }
+
     private func placeTitle(_ visit: TimelineVisit) -> String {
         store.displayName(placeKey: visit.placeKey, semanticType: visit.semanticType)
     }
@@ -1287,6 +1343,14 @@ struct SelectionCard: View {
         if rem == 0 { return "\(hours)h" }
         return "\(hours)h \(rem)m"
     }
+}
+
+/// A stay the user asked to take off the day, waiting on confirmation.
+private struct StayRemoval {
+    var visitIDs: [String]
+    var placeName: String
+    var summary: String
+    var includesOpen: Bool
 }
 
 /// Spinning glyph with no AppKit bezel — `ProgressView` draws an opaque well on the legend.
