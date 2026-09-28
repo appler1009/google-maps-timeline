@@ -210,6 +210,11 @@ final class TimelineRecorder {
         }
 
         guard stop.isClosed else {
+            let openID = PlaceClusterer.visitID(start: stop.start)
+            if (try? await database.wasRemovedByHand(id: openID)) == true {
+                TimelineLog.info("stay left removed", ["id": openID])
+                return
+            }
             try? await database.setOpenStop(stop, placeKey: placeKey)
             TimelineLog.info("stay opened", ["placeKey": placeKey])
             return
@@ -241,6 +246,14 @@ final class TimelineRecorder {
             return
         }
         guard let visit = PlaceClusterer.visit(for: usable, placeKey: placeKey) else { return }
+        if (try? await database.wasRemovedByHand(id: visit.id)) == true {
+            TimelineLog.info("stay left removed", ["id": visit.id])
+            if let known {
+                let openID = PlaceClusterer.visitID(start: known.stop.start)
+                if openID == visit.id { try? await database.clearOpenStop() }
+            }
+            return
+        }
         do {
             try await database.record(batch: TimelineBatch(visits: [visit], activities: [], paths: []))
             // Should the closed stay still have come out under another id — its

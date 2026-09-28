@@ -973,6 +973,33 @@ final class TimelineStore {
         }
     }
 
+    /// Take these stays off the day.
+    ///
+    /// They stay in the history. The same arrival is not written back the next
+    /// time the phone reports it, which is what a false stop would otherwise do.
+    func removeVisits(_ ids: [String], clearOpenStop: Bool) {
+        let unique = Array(Set(ids.filter { !$0.isEmpty }))
+        guard !unique.isEmpty else { return }
+        if let hovered = hoveredVisitID, unique.contains(hovered) { hoveredVisitID = nil }
+        if let selected = selectedVisitID, unique.contains(selected) { selectedVisitID = nil }
+        isLoading = true
+        Task {
+            var removed = 0
+            for id in unique {
+                if (try? await database.deleteVisit(id: id, reason: TimelineDatabase.removedByHand)) == true {
+                    removed += 1
+                }
+            }
+            if clearOpenStop {
+                try? await database.clearOpenStop()
+            }
+            TimelineLog.info("stays removed", ["count": "\(removed)"])
+            isLoading = false
+            noteLibraryChanged()
+            refreshFromLibrary()
+        }
+    }
+
     /// Apply a name the user picked straight from a visit notification. The key
     /// may be a place the app has not assembled yet, so this writes through to the
     /// library and reloads rather than going via `placesByID`.

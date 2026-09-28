@@ -665,6 +665,71 @@ final class TimelineRecorderTests: XCTestCase {
         XCTAssertEqual(recorder.recordedVisitCount, 1)
     }
 
+    /// A false stop, taken off the day, must not come back the next time Core
+    /// Location delivers that same arrival. The id is the arrival time, so a
+    /// redelivery is the same row.
+    func testAStayRemovedByHandIsNotWrittenAgain() async throws {
+        let (recorder, _, _, database, url) = makeRecorder()
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let start = Date(timeIntervalSince1970: 1_700_000_000)
+        let reported = stop(start: start, minutes: 4)
+        await recorder.handle(stop: reported)
+        let recorded = try await database.loadBatch()?.visits.first
+        let id = try XCTUnwrap(recorded?.id)
+
+        try await database.clearChangeLog()
+        let removed = try await database.deleteVisit(id: id, reason: TimelineDatabase.removedByHand)
+        XCTAssertTrue(removed)
+        let queued = try await database.pendingChanges()
+        XCTAssertEqual(queued.map(\.operation), [.delete], "the other devices have to drop it too")
+
+        await recorder.handle(stop: reported)
+        let after = try await database.loadBatch()?.visits ?? []
+        XCTAssertTrue(after.isEmpty, "the same arrival must not put the stay back")
+        let stayedRemoved = try await database.wasRemovedByHand(id: id)
+        XCTAssertTrue(stayedRemoved)
+    }
+
+    /// A removal the recorder made itself — closing one row as another — is not
+    /// a decision about where you were, and a later report of that arrival may
+    /// still be written.
+    func testAStayRemovedForAnotherReasonCanBeRecordedAgain() async throws {
+        let (recorder, _, _, database, url) = makeRecorder()
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let start = Date(timeIntervalSince1970: 1_700_000_000)
+        let reported = stop(start: start, minutes: 4)
+        await recorder.handle(stop: reported)
+        let recorded = try await database.loadBatch()?.visits.first
+        let id = try XCTUnwrap(recorded?.id)
+        let removed = try await database.deleteVisit(id: id, reason: "open stay superseded")
+        XCTAssertTrue(removed)
+
+        await recorder.handle(stop: reported)
+        let after = try await database.loadBatch()?.visits ?? []
+        XCTAssertEqual(after.map(\.id), [id])
+    }
+
+    func testAnOpenStayRemovedByHandDoesNotReopen() async throws {
+        let (recorder, _, _, database, url) = makeRecorder()
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let start = Date(timeIntervalSince1970: 1_700_000_000)
+        await recorder.handle(stop: stop(start: start, minutes: nil))
+        let recorded = try await database.loadBatch()?.visits.first
+        let id = try XCTUnwrap(recorded?.id)
+        let removed = try await database.deleteVisit(id: id, reason: TimelineDatabase.removedByHand)
+        XCTAssertTrue(removed)
+        try await database.clearOpenStop()
+
+        await recorder.handle(stop: stop(start: start, minutes: nil))
+        let open = try await database.openStop()
+        XCTAssertNil(open)
+        let after = try await database.loadBatch()?.visits ?? []
+        XCTAssertTrue(after.isEmpty)
+    }
+
     func testAnOpenStayIsHeldThenClosedAgainstTheSamePlace() async throws {
         let (recorder, _, _, database, url) = makeRecorder()
         defer { try? FileManager.default.removeItem(at: url) }
